@@ -1,61 +1,98 @@
-name: Build Device Installer
+name: Build
 
 on:
-  release:
-    types: [created]
-  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   build:
-    strategy:
-      matrix:
-        include:
-          - os: macos-latest
-            name: macos
-            artifact: Cartridge-Installer-macOS
-            sep: ":"
-          - os: ubuntu-latest
-            name: linux
-            artifact: Cartridge-Installer-Linux
-            sep: ":"
-          - os: windows-latest
-            name: windows
-            artifact: Cartridge-Installer-Windows.exe
-            sep: ";"
-
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Install PyInstaller
-        run: pip install pyinstaller
+      - name: Install SDL2 development libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev libsdl2-gfx-dev libsdl2-image-dev
 
-      - name: Build executable
-        run: >
-          pyinstaller
-          --onefile
-          --name "${{ matrix.artifact }}"
-          --clean
-          --add-data "src${{ matrix.sep }}src"
-          --add-data "cartridges${{ matrix.sep }}cartridges"
-          --add-data "pyproject.toml${{ matrix.sep }}."
-          --add-data "install.sh${{ matrix.sep }}."
-          --add-data "registry.json${{ matrix.sep }}."
-          install_to_device.py
+      - name: Build all binaries
+        run: cargo build --release
 
-      - name: Upload artifact
+      - name: Run tests
+        run: cargo test
+
+      - name: Upload cartridge binary
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}
+          name: cartridge-linux-x86_64
+          path: target/release/cartridge
 
-      - name: Upload to release
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
+      - name: Upload cartridge-boot binary
+        uses: actions/upload-artifact@v4
         with:
-          files: dist/${{ matrix.artifact }}
+          name: cartridge-boot-linux-x86_64
+          path: target/release/cartridge-boot
+
+  cross-compile:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cross-rs
+        run: cargo install cross
+
+      - name: Cross-compile all binaries for aarch64
+        run: cross build --release --target aarch64-unknown-linux-gnu
+
+      - name: Generate overlay assets
+        run: python3 scripts/generate_overlays.py
+
+      - name: Prepare device bundle
+        run: |
+          mkdir -p bundle/Cartridge/assets/fonts
+          mkdir -p bundle/Cartridge/assets/overlays
+          mkdir -p bundle/tools
+
+          # Binaries
+          cp target/aarch64-unknown-linux-gnu/release/cartridge bundle/Cartridge/
+          cp target/aarch64-unknown-linux-gnu/release/cartridge-boot bundle/Cartridge/
+          chmod +x bundle/Cartridge/cartridge
+          chmod +x bundle/Cartridge/cartridge-boot
+
+          # Boot scripts
+          cp deploy/cartridge-boot.sh bundle/Cartridge/
+          cp deploy/cartridge-boot.service bundle/Cartridge/
+          chmod +x bundle/Cartridge/cartridge-boot.sh
+
+          # Registry
+          cp registry.json bundle/Cartridge/ 2>/dev/null || true
+
+          # Assets
+          cp -r assets/fonts/* bundle/Cartridge/assets/fonts/ 2>/dev/null || true
+          cp -r assets/overlays/* bundle/Cartridge/assets/overlays/ 2>/dev/null || true
+
+          # Lua cartridges (bundled apps with icons)
+          cp -r lua_cartridges bundle/Cartridge/lua_cartridges 2>/dev/null || true
+
+          # Tools menu scripts
+          cp "deploy/tools/Cartridge.sh" bundle/tools/
+          cp "deploy/tools/Setup Cartridge Boot.sh" bundle/tools/
+          cp "deploy/tools/Undo Cartridge Boot.sh" bundle/tools/
+          chmod +x bundle/tools/*.sh
+
+      - name: Upload aarch64 device bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: cartridge-device-bundle-aarch64
+          path: bundle/

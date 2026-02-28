@@ -1,0 +1,12 @@
+[package]
+name = "cartridge-launcher"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cartridge-core = { path = "../cartridge-core" }
+cartridge-net = { path = "../cartridge-net" }
+sdl2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true

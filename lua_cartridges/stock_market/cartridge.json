@@ -1,0 +1,1 @@
+{"id":"dev.cartridge.stock-market","name":"Stock Market","version":"0.1.0","author":"Cartridge Team","description":"Track stocks, crypto, indices, and your watchlist","category":"Finance","tags":["stocks","crypto","finance","market"],"permissions":["network","storage"],"entry":"main.lua"}

@@ -1,0 +1,10 @@
+[package]
+name = "cartridge-net"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ureq.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true

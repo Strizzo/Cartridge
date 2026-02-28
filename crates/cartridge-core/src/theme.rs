@@ -46,6 +46,13 @@ pub struct Theme {
     pub negative: Color,
     pub orange: Color,
 
+    // Atmosphere / glow colors
+    pub glow_primary: Color,
+    pub glow_secondary: Color,
+    pub corner_marker: Color,
+    pub sweep_line: Color,
+    pub data_readout: Color,
+
     // Border radius defaults
     pub border_radius: u16,
     pub border_radius_small: u16,
@@ -101,6 +108,12 @@ impl Default for Theme {
             positive: Color::RGB(80, 210, 120),
             negative: Color::RGB(240, 80, 90),
             orange: Color::RGB(255, 140, 40),
+
+            glow_primary: Color::RGBA(100, 180, 255, 60),
+            glow_secondary: Color::RGBA(60, 80, 120, 40),
+            corner_marker: Color::RGBA(60, 80, 120, 100),
+            sweep_line: Color::RGBA(100, 180, 255, 12),
+            data_readout: Color::RGBA(60, 80, 120, 80),
 
             border_radius: 8,
             border_radius_small: 4,

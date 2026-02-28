@@ -1,0 +1,14 @@
+[package]
+name = "cartridge-lua"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cartridge-core = { path = "../cartridge-core" }
+cartridge-net = { path = "../cartridge-net" }
+mlua.workspace = true
+sdl2.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+log.workspace = true
+env_logger.workspace = true

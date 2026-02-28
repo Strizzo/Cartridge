@@ -1,0 +1,1 @@
+{"id":"dev.cartridge.weather","name":"Weather","version":"0.1.0","author":"Cartridge Team","description":"Current weather and 5-day forecast","category":"Tools","tags":["weather","forecast","temperature"],"permissions":["network","storage"],"entry":"main.lua"}

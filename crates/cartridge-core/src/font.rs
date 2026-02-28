@@ -21,8 +21,8 @@ impl FontCache {
     pub fn new(assets_dir: &Path) -> Result<Self, String> {
         let ttf_context = sdl2::ttf::init().map_err(|e| e.to_string())?;
 
-        let regular_path = assets_dir.join("fonts").join("CascadiaMono-Regular.ttf");
-        let bold_path = assets_dir.join("fonts").join("CascadiaMono-Bold.ttf");
+        let regular_path = assets_dir.join("fonts").join("ShareTechMono-Regular.ttf");
+        let bold_path = assets_dir.join("fonts").join("ShareTechMono-Regular.ttf");
 
         if !regular_path.exists() {
             return Err(format!(

@@ -45,10 +45,10 @@ impl AppStorage {
         if let Ok(entries) = fs::read_dir(&self.data_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) == Some("json") {
-                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        keys.push(stem.to_string());
-                    }
+                if path.extension().and_then(|e| e.to_str()) == Some("json")
+                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                {
+                    keys.push(stem.to_string());
                 }
             }
         }

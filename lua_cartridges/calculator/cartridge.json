@@ -1,0 +1,1 @@
+{"id":"dev.cartridge.calculator","name":"Calculator","version":"0.1.0","author":"Cartridge Team","description":"Calculator with expression history","category":"Tools","tags":["calculator","math","utility"],"permissions":["storage"],"entry":"main.lua"}

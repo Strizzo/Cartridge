@@ -66,6 +66,17 @@
       "tags": ["system", "monitor", "cpu", "memory"],
       "repo_url": "https://github.com/Strizzo/system-monitor-cartridge",
       "permissions": []
+    },
+    {
+      "id": "dev.cartridge.vibeboy",
+      "name": "VibeBoy",
+      "description": "Monitor and control tmux sessions with AI-powered suggestions",
+      "version": "0.1.0",
+      "author": "Cartridge Team",
+      "category": "tools",
+      "tags": ["tmux", "ai", "terminal", "productivity"],
+      "repo_url": "https://github.com/Strizzo/vibeboy-cartridge",
+      "permissions": ["network", "storage"]
     }
   ]
 }

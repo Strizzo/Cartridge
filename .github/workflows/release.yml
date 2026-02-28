@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cross-rs
+        run: cargo install cross
+
+      - name: Cross-compile all binaries for aarch64
+        run: cross build --release --target aarch64-unknown-linux-gnu
+
+      - name: Generate overlay assets
+        run: python3 scripts/generate_overlays.py
+
+      - name: Prepare release bundle
+        run: |
+          mkdir -p release/Cartridge/assets/fonts
+          mkdir -p release/Cartridge/assets/overlays
+          mkdir -p release/tools
+
+          # Binaries
+          cp target/aarch64-unknown-linux-gnu/release/cartridge release/Cartridge/
+          cp target/aarch64-unknown-linux-gnu/release/cartridge-boot release/Cartridge/
+          chmod +x release/Cartridge/cartridge
+          chmod +x release/Cartridge/cartridge-boot
+
+          # Boot scripts
+          cp deploy/cartridge-boot.sh release/Cartridge/
+          cp deploy/cartridge-boot.service release/Cartridge/
+          chmod +x release/Cartridge/cartridge-boot.sh
+
+          # Registry
+          cp registry.json release/Cartridge/ 2>/dev/null || true
+
+          # Assets
+          cp -r assets/fonts/* release/Cartridge/assets/fonts/
+          cp -r assets/overlays/* release/Cartridge/assets/overlays/
+
+          # Lua cartridges (bundled apps with icons)
+          cp -r lua_cartridges release/Cartridge/lua_cartridges
+
+          # Tools menu scripts
+          cp "deploy/tools/Cartridge.sh" release/tools/
+          cp "deploy/tools/Setup Cartridge Boot.sh" release/tools/
+          cp "deploy/tools/Undo Cartridge Boot.sh" release/tools/
+          chmod +x release/tools/*.sh
+
+          # Install instructions
+          cp INSTALL.md release/INSTALL.txt 2>/dev/null || true
+
+      - name: Create zip
+        working-directory: release
+        run: zip -r ../cartridge-r36s-plus.zip .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: cartridge-r36s-plus.zip
+          generate_release_notes: true
+          body: |
+            ## Installation
+
+            1. Download `cartridge-r36s-plus.zip`
+            2. Extract the zip contents to the `roms/` folder on your device's SD card
+            3. Boot your device into EmulationStation
+            4. Go to **Tools > Cartridge** to launch
+            5. Go to **Tools > Setup Cartridge Boot** to enable the boot selector
+               (lets you choose Cartridge or EmulationStation at startup)
+
+            See `INSTALL.txt` in the zip for full instructions.

@@ -1,0 +1,1 @@
+{"id":"dev.cartridge.hacker-news","name":"Hacker News","version":"0.1.0","author":"Cartridge Team","description":"Browse Hacker News top stories, new stories, and comments","category":"News","tags":["news","hacker news","tech"],"permissions":["network","storage"],"entry":"main.lua"}
