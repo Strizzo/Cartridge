@@ -21,7 +21,7 @@ jobs:
         run: cargo install cross
 
       - name: Cross-compile all binaries for aarch64
-        run: cross build --release --target aarch64-unknown-linux-gnu
+        run: cross build --workspace --release --target aarch64-unknown-linux-gnu
 
       - name: Generate overlay assets
         run: python3 scripts/generate_overlays.py
