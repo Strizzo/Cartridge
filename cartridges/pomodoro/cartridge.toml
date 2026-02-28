@@ -1,0 +1,13 @@
+[app]
+id = "dev.cartridge.pomodoro"
+name = "Pomodoro"
+description = "Pomodoro productivity timer with stats"
+version = "0.1.0"
+author = "Cartridge Team"
+
+[app.entry]
+main = "src/main.py"
+
+[permissions]
+network = false
+storage = true

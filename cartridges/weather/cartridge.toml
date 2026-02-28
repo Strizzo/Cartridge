@@ -1,0 +1,13 @@
+[app]
+id = "dev.cartridge.weather"
+name = "Weather"
+description = "Current weather and 5-day forecast"
+version = "0.1.0"
+author = "Cartridge Team"
+
+[app.entry]
+main = "src/main.py"
+
+[permissions]
+network = true
+storage = true

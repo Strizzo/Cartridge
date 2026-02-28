@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "apps": [
+    {
+      "id": "dev.cartridge.hacker-news",
+      "name": "Hacker News",
+      "description": "Browse Hacker News top stories, new stories, and comments",
+      "version": "0.1.0",
+      "author": "Cartridge Team",
+      "category": "news",
+      "tags": ["news", "tech", "social"],
+      "repo_url": "https://github.com/Strizzo/hacker-news-cartridge",
+      "permissions": ["network", "storage"]
+    },
+    {
+      "id": "dev.cartridge.stock-market",
+      "name": "Stock Market",
+      "description": "Track stocks, indices, and your watchlist",
+      "version": "0.1.0",
+      "author": "Cartridge Team",
+      "category": "finance",
+      "tags": ["finance", "stocks", "market"],
+      "repo_url": "https://github.com/Strizzo/stock-market-cartridge",
+      "permissions": ["network", "storage"]
+    },
+    {
+      "id": "dev.cartridge.weather",
+      "name": "Weather",
+      "description": "Current weather and 5-day forecast",
+      "version": "0.1.0",
+      "author": "Cartridge Team",
+      "category": "tools",
+      "tags": ["weather", "forecast", "utility"],
+      "repo_url": "https://github.com/Strizzo/weather-cartridge",
+      "permissions": ["network", "storage"]
+    },
+    {
+      "id": "dev.cartridge.calculator",
+      "name": "Calculator",
+      "description": "Calculator with expression history",
+      "version": "0.1.0",
+      "author": "Cartridge Team",
+      "category": "tools",
+      "tags": ["calculator", "math", "utility"],
+      "repo_url": "https://github.com/Strizzo/calculator-cartridge",
+      "permissions": ["storage"]
+    },
+    {
+      "id": "dev.cartridge.pomodoro",
+      "name": "Pomodoro",
+      "description": "Pomodoro productivity timer with stats",
+      "version": "0.1.0",
+      "author": "Cartridge Team",
+      "category": "productivity",
+      "tags": ["timer", "pomodoro", "productivity"],
+      "repo_url": "https://github.com/Strizzo/pomodoro-cartridge",
+      "permissions": ["storage"]
+    },
+    {
+      "id": "dev.cartridge.system-monitor",
+      "name": "System Monitor",
+      "description": "Real-time CPU, memory, disk, and network monitoring",
+      "version": "0.1.0",
+      "author": "Cartridge Team",
+      "category": "tools",
+      "tags": ["system", "monitor", "cpu", "memory"],
+      "repo_url": "https://github.com/Strizzo/system-monitor-cartridge",
+      "permissions": []
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+[package]
+name = "cartridge-runner"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cartridge-core = { path = "../cartridge-core" }
+sdl2.workspace = true
+log.workspace = true
+env_logger.workspace = true

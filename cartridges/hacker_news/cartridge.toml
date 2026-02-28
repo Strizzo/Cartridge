@@ -1,0 +1,13 @@
+[app]
+id = "dev.cartridge.hacker-news"
+name = "Hacker News"
+description = "Browse Hacker News top stories, new stories, and comments"
+version = "0.1.0"
+author = "Cartridge Team"
+
+[app.entry]
+main = "src/main.py"
+
+[permissions]
+network = true
+storage = true

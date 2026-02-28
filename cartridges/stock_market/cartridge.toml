@@ -1,0 +1,13 @@
+[app]
+id = "dev.cartridge.stock-market"
+name = "Stock Market"
+description = "Track stocks, crypto, indices, and your watchlist"
+version = "0.1.0"
+author = "Cartridge Team"
+
+[app.entry]
+main = "src/main.py"
+
+[permissions]
+network = true
+storage = true

@@ -1,0 +1,13 @@
+[app]
+id = "dev.cartridge.system-monitor"
+name = "System Monitor"
+description = "Real-time CPU, memory, disk, and network monitoring"
+version = "0.1.0"
+author = "Cartridge Team"
+
+[app.entry]
+main = "src/main.py"
+
+[permissions]
+network = false
+storage = false

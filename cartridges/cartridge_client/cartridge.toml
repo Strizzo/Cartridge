@@ -1,0 +1,13 @@
+[app]
+id = "dev.cartridge.client"
+name = "Cartridge"
+description = "Browse, install, and launch cartridge apps"
+version = "0.1.0"
+author = "Cartridge Team"
+
+[app.entry]
+main = "src/main.py"
+
+[permissions]
+network = true
+storage = true
