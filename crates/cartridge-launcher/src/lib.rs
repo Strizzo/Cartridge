@@ -63,10 +63,10 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
         last_frame = frame_start;
         atmosphere.update(dt);
 
-        // Poll system info once per second
+        // Poll system info every 2 seconds
         sysinfo_timer += dt;
-        if sysinfo_timer >= 1.0 {
-            sysinfo_timer -= 1.0;
+        if sysinfo_timer >= 2.0 {
+            sysinfo_timer -= 2.0;
             launcher.poll_sysinfo();
         }
 

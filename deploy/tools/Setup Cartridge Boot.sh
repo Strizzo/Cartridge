@@ -9,14 +9,17 @@
 #   2. Installs the boot selector as a systemd service
 #   3. Reboots the device
 
-set -euo pipefail
-
-CARTRIDGE_DIR="/roms/Cartridge"
+# Resolve Cartridge directory relative to this script's location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROMS_DIR="$(dirname "$SCRIPT_DIR")"
+CARTRIDGE_DIR="${ROMS_DIR}/Cartridge"
 
 echo ""
 echo "==================================="
 echo "  Cartridge Boot Selector Setup"
 echo "==================================="
+echo ""
+echo "  Cartridge dir: ${CARTRIDGE_DIR}"
 echo ""
 
 # ── Verify Cartridge is installed ────────────────────────────────────────────
@@ -74,7 +77,28 @@ fi
 
 echo "[2/3] Installing boot selector service..."
 
-cp "${CARTRIDGE_DIR}/cartridge-boot.service" /etc/systemd/system/
+# Generate service file with the correct path for this device
+cat > /etc/systemd/system/cartridge-boot.service << SVCEOF
+[Unit]
+Description=Cartridge Boot Selector
+After=multi-user.target
+Before=emulationstation.service cartridge.service
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+ExecStart=${CARTRIDGE_DIR}/cartridge-boot.sh
+StandardInput=tty
+TTYPath=/dev/tty1
+Environment=HOME=/root
+Environment=SDL_VIDEODRIVER=kmsdrm
+Environment=SDL_AUDIODRIVER=alsa
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
 systemctl daemon-reload
 systemctl enable cartridge-boot.service
 echo "  Boot selector enabled."

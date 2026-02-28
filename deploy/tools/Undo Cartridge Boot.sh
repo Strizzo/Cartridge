@@ -4,8 +4,6 @@
 # Run this from the EmulationStation Tools menu to remove the boot selector
 # and go back to booting directly into EmulationStation.
 
-set -euo pipefail
-
 echo ""
 echo "==================================="
 echo "  Undo Cartridge Boot Selector"

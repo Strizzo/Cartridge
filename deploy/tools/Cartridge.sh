@@ -2,7 +2,10 @@
 # Launch Cartridge from EmulationStation Tools menu
 # This script appears as "Cartridge" in the Tools section of ES.
 
-CARTRIDGE_DIR="/roms/Cartridge"
+# Resolve Cartridge directory relative to this script's location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROMS_DIR="$(dirname "$SCRIPT_DIR")"
+CARTRIDGE_DIR="${ROMS_DIR}/Cartridge"
 
 if [[ ! -x "${CARTRIDGE_DIR}/cartridge" ]]; then
     echo "Cartridge not found at ${CARTRIDGE_DIR}"
