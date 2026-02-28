@@ -285,18 +285,22 @@ impl SystemInfo {
 
     #[cfg(target_os = "linux")]
     fn poll_disk_linux(&mut self) {
-        // Use libc statvfs
-        use std::ffi::CString;
-        let path = CString::new("/").unwrap();
-        unsafe {
-            let mut stat: libc::statvfs = std::mem::zeroed();
-            if libc::statvfs(path.as_ptr(), &mut stat) == 0 {
-                let block_size = stat.f_frsize as u64;
-                let total = stat.f_blocks as u64 * block_size;
-                let avail = stat.f_bavail as u64 * block_size;
-                self.disk_total_gb = total as f32 / (1024.0 * 1024.0 * 1024.0);
-                self.disk_used_gb =
-                    (total - avail) as f32 / (1024.0 * 1024.0 * 1024.0);
+        // Parse df output for root filesystem
+        if let Ok(output) = std::process::Command::new("df")
+            .args(["--output=size,used", "-B1", "/"])
+            .output()
+        {
+            let text = String::from_utf8_lossy(&output.stdout);
+            if let Some(line) = text.lines().nth(1) {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    if let (Ok(total), Ok(used)) =
+                        (parts[0].parse::<u64>(), parts[1].parse::<u64>())
+                    {
+                        self.disk_total_gb = total as f32 / (1024.0 * 1024.0 * 1024.0);
+                        self.disk_used_gb = used as f32 / (1024.0 * 1024.0 * 1024.0);
+                    }
+                }
             }
         }
     }
