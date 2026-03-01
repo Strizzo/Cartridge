@@ -185,8 +185,28 @@ impl LauncherScreen for HomeScreen {
             true,
             None,
         );
-        // WiFi indicator + hostname on right side of header
+        // Status indicators on right side of header
         let mut hx = SCREEN_WIDTH as i32 - 12;
+
+        // Battery indicator
+        if sysinfo.battery_percent >= 0 {
+            let pct = sysinfo.battery_percent;
+            let bat_str = if sysinfo.battery_charging {
+                format!("{}%+", pct)
+            } else {
+                format!("{}%", pct)
+            };
+            let bat_color = if pct > 50 {
+                theme.positive
+            } else if pct > 20 {
+                theme.text_warning
+            } else {
+                theme.negative
+            };
+            let bw = screen.get_text_width(&bat_str, 11, false);
+            screen.draw_text(&bat_str, hx - bw as i32, 10, Some(bat_color), 11, false, None);
+            hx -= bw as i32 + 8;
+        }
 
         // WiFi signal bars (4 ascending bars)
         let bars = sysinfo.wifi_bars();

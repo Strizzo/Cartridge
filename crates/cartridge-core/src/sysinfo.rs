@@ -27,6 +27,8 @@ pub struct SystemInfo {
     pub hostname: String,
     pub wifi_ssid: Option<String>,
     pub wifi_signal: i32, // dBm, 0 = unknown
+    pub battery_percent: i32, // 0-100, -1 = unknown
+    pub battery_charging: bool,
     pub net_rx_rate: f32, // KB/s
     pub net_tx_rate: f32,
     pub process_count: u32,
@@ -69,6 +71,8 @@ impl SystemInfo {
             hostname,
             wifi_ssid: None,
             wifi_signal: 0,
+            battery_percent: -1,
+            battery_charging: false,
             net_rx_rate: 0.0,
             net_tx_rate: 0.0,
             process_count: 0,
@@ -153,6 +157,7 @@ impl SystemInfo {
         self.poll_top_processes_linux();
         self.poll_disk_linux();
         self.poll_wifi_linux();
+        self.poll_battery_linux();
     }
 
     #[cfg(target_os = "linux")]
@@ -326,6 +331,40 @@ impl SystemInfo {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    fn poll_battery_linux(&mut self) {
+        // Try common power supply paths
+        for name in &["battery", "BAT0", "BAT1", "bat"] {
+            let base = format!("/sys/class/power_supply/{}", name);
+            if let Ok(cap) = std::fs::read_to_string(format!("{}/capacity", base)) {
+                self.battery_percent = cap.trim().parse().unwrap_or(-1);
+                if let Ok(status) = std::fs::read_to_string(format!("{}/status", base)) {
+                    let s = status.trim();
+                    self.battery_charging = s == "Charging" || s == "Full";
+                }
+                return;
+            }
+        }
+        // If no battery found, scan the directory
+        if let Ok(entries) = std::fs::read_dir("/sys/class/power_supply") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Ok(ptype) = std::fs::read_to_string(path.join("type")) {
+                    if ptype.trim() == "Battery" {
+                        if let Ok(cap) = std::fs::read_to_string(path.join("capacity")) {
+                            self.battery_percent = cap.trim().parse().unwrap_or(-1);
+                            if let Ok(status) = std::fs::read_to_string(path.join("status")) {
+                                let s = status.trim();
+                                self.battery_charging = s == "Charging" || s == "Full";
+                            }
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // -----------------------------------------------------------------------
     // macOS / fallback: simulated data with gentle sine-wave variation
     // -----------------------------------------------------------------------
@@ -381,6 +420,10 @@ impl SystemInfo {
 
         // WiFi: try real macOS airport command
         self.poll_wifi_macos();
+
+        // Battery: simulated
+        self.battery_percent = 72;
+        self.battery_charging = false;
     }
 
     #[cfg(not(target_os = "linux"))]
