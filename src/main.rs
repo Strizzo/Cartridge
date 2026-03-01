@@ -42,6 +42,24 @@ fn main() {
                         if let Err(e) = cartridge_lua::run_lua_app(&app_dir, &assets_dir) {
                             log::error!("App error: {e}");
                             eprintln!("App error: {e}");
+                            // Write crash log next to the binary for debugging
+                            if let Ok(exe) = std::env::current_exe() {
+                                if let Some(dir) = exe.parent() {
+                                    let log_path = dir.join("crash.log");
+                                    let msg = format!(
+                                        "App: {}\nError: {e}\n",
+                                        app_dir.display()
+                                    );
+                                    let _ = std::fs::OpenOptions::new()
+                                        .create(true)
+                                        .append(true)
+                                        .open(&log_path)
+                                        .and_then(|mut f| {
+                                            use std::io::Write;
+                                            f.write_all(msg.as_bytes())
+                                        });
+                                }
+                            }
                         }
                         // Loop back to launcher
                     }
