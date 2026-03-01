@@ -47,6 +47,8 @@ pub struct InputManager {
     gamepad_map: HashMap<u8, Button>,
     held: HashMap<Button, Instant>,
     last_repeat: HashMap<Button, Instant>,
+    /// When true, skip Joystick API events (because GameController API handles them).
+    ignore_joystick: bool,
 }
 
 impl InputManager {
@@ -90,7 +92,13 @@ impl InputManager {
             gamepad_map,
             held: HashMap::new(),
             last_repeat: HashMap::new(),
+            ignore_joystick: false,
         }
+    }
+
+    /// Call after opening game controllers to prevent duplicate events.
+    pub fn set_ignore_joystick(&mut self, ignore: bool) {
+        self.ignore_joystick = ignore;
     }
 
     pub fn process_events(&mut self, events: &[Event]) -> Vec<InputEvent> {
@@ -126,7 +134,7 @@ impl InputManager {
                         self.last_repeat.remove(&button);
                     }
                 }
-                Event::JoyButtonDown { button_idx, .. } => {
+                Event::JoyButtonDown { button_idx, .. } if !self.ignore_joystick => {
                     if let Some(&button) = self.gamepad_map.get(button_idx) {
                         result.push(InputEvent {
                             button,
@@ -136,7 +144,7 @@ impl InputManager {
                         self.last_repeat.insert(button, now);
                     }
                 }
-                Event::JoyButtonUp { button_idx, .. } => {
+                Event::JoyButtonUp { button_idx, .. } if !self.ignore_joystick => {
                     if let Some(&button) = self.gamepad_map.get(button_idx) {
                         result.push(InputEvent {
                             button,
@@ -146,7 +154,7 @@ impl InputManager {
                         self.last_repeat.remove(&button);
                     }
                 }
-                Event::JoyAxisMotion { axis_idx, value, .. } => {
+                Event::JoyAxisMotion { axis_idx, value, .. } if !self.ignore_joystick => {
                     self.process_joy_axis(*axis_idx, *value, &mut result, now);
                 }
                 // GameController API (used by ArkOS and modern SDL2 setups)

@@ -1,0 +1,11 @@
+{
+  "id": "ai_papers",
+  "name": "AI Papers",
+  "version": "1.0.0",
+  "description": "Browse top AI research papers from HuggingFace Daily Papers with arxiv reader",
+  "author": "CartridgeOS",
+  "entry": "main.lua",
+  "category": "utility",
+  "permissions": ["network"],
+  "tags": ["ai", "research", "papers", "arxiv"]
+}

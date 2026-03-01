@@ -269,6 +269,9 @@ fn run_boot_selector(assets_dir: &Path) -> Result<BootChoice, String> {
 
     let theme = Theme::default();
     let mut input_manager = InputManager::new();
+    if !_controllers.is_empty() {
+        input_manager.set_ignore_joystick(true);
+    }
     let mut event_pump = sdl_context.event_pump()?;
     let mut atmosphere = Atmosphere::new();
 

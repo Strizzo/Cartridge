@@ -88,6 +88,17 @@
       "tags": ["todo", "tasks", "productivity"],
       "repo_url": "",
       "permissions": ["storage"]
+    },
+    {
+      "id": "dev.cartridge.ai-papers",
+      "name": "AI Papers",
+      "description": "Browse top AI research papers from HuggingFace with arxiv reader",
+      "version": "1.0.0",
+      "author": "CartridgeOS Team",
+      "category": "news",
+      "tags": ["ai", "research", "papers", "arxiv"],
+      "repo_url": "",
+      "permissions": ["network"]
     }
   ]
 }

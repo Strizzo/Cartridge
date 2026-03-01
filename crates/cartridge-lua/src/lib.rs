@@ -62,6 +62,9 @@ pub fn run_lua_app(app_dir: &Path, assets_dir: &Path) -> Result<(), String> {
 
     let theme = Theme::default();
     let mut input_manager = InputManager::new();
+    if !_controllers.is_empty() {
+        input_manager.set_ignore_joystick(true);
+    }
     let mut event_pump = sdl_context.event_pump()?;
 
     let mut app = LuaAppRunner::new(app_dir, &manifest.entry, &manifest.id, &theme)?;

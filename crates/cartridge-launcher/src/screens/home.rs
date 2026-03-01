@@ -489,6 +489,16 @@ fn draw_dock_panel(
             Some(icon_size + 8),
         );
     }
+
+    // Scroll indicators
+    let arrow_y = DOCK_PANEL_Y + DOCK_PANEL_H / 2 - 6;
+    if scroll_offset > 0 {
+        screen.draw_text("<", 9, arrow_y, Some(theme.text_dim), 14, true, None);
+    }
+    if scroll_offset + max_visible < count {
+        let ax = SCREEN_WIDTH as i32 - 17;
+        screen.draw_text(">", ax, arrow_y, Some(theme.text_dim), 14, true, None);
+    }
 }
 
 // ---------------------------------------------------------------------------

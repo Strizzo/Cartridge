@@ -53,6 +53,9 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
 
     let theme = Theme::default();
     let mut input_manager = InputManager::new();
+    if !_controllers.is_empty() {
+        input_manager.set_ignore_joystick(true);
+    }
     let mut event_pump = sdl_context.event_pump()?;
 
     let mut launcher = LauncherApp::new(assets_dir);
