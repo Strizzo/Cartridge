@@ -67,17 +67,22 @@ impl InputManager {
         keyboard_map.insert(Keycode::Return, Button::Start);
         keyboard_map.insert(Keycode::Space, Button::Select);
 
+        // R36S Plus (RK3326 / ODROIDGO3) button mapping
         let mut gamepad_map = HashMap::new();
-        gamepad_map.insert(0, Button::A);
-        gamepad_map.insert(1, Button::B);
-        gamepad_map.insert(2, Button::X);
-        gamepad_map.insert(3, Button::Y);
+        gamepad_map.insert(0, Button::B);
+        gamepad_map.insert(1, Button::A);
+        gamepad_map.insert(2, Button::Y);
+        gamepad_map.insert(3, Button::X);
         gamepad_map.insert(4, Button::L1);
         gamepad_map.insert(5, Button::R1);
         gamepad_map.insert(6, Button::L2);
         gamepad_map.insert(7, Button::R2);
-        gamepad_map.insert(8, Button::Select);
-        gamepad_map.insert(9, Button::Start);
+        gamepad_map.insert(8, Button::DpadUp);
+        gamepad_map.insert(9, Button::DpadDown);
+        gamepad_map.insert(10, Button::DpadLeft);
+        gamepad_map.insert(11, Button::DpadRight);
+        gamepad_map.insert(12, Button::Select);
+        gamepad_map.insert(13, Button::Start);
 
         Self {
             keyboard_map,

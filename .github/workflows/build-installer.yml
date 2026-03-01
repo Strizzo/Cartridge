@@ -62,8 +62,6 @@ jobs:
         run: |
           mkdir -p bundle/Cartridge/assets/fonts
           mkdir -p bundle/Cartridge/assets/overlays
-          mkdir -p bundle/tools
-
           # Binaries
           cp target/aarch64-unknown-linux-gnu/release/cartridge bundle/Cartridge/
           cp target/aarch64-unknown-linux-gnu/release/cartridge-boot bundle/Cartridge/
@@ -85,11 +83,12 @@ jobs:
           # Lua cartridges (bundled apps with icons)
           cp -r lua_cartridges bundle/Cartridge/lua_cartridges 2>/dev/null || true
 
-          # Tools menu scripts
-          cp "deploy/tools/Cartridge.sh" bundle/tools/
-          cp "deploy/tools/Setup Cartridge Boot.sh" bundle/tools/
-          cp "deploy/tools/Undo Cartridge Boot.sh" bundle/tools/
-          chmod +x bundle/tools/*.sh
+          # Tools menu scripts (inside Cartridge/ so they don't overwrite existing tools)
+          mkdir -p bundle/Cartridge/tools
+          cp "deploy/tools/Cartridge.sh" bundle/Cartridge/tools/
+          cp "deploy/tools/Setup Cartridge Boot.sh" bundle/Cartridge/tools/
+          cp "deploy/tools/Undo Cartridge Boot.sh" bundle/Cartridge/tools/
+          chmod +x bundle/Cartridge/tools/*.sh
 
       - name: Upload aarch64 device bundle
         uses: actions/upload-artifact@v4

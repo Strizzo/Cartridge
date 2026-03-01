@@ -342,15 +342,13 @@ install_to_device() {
 
     ok "Installed to $dest"
 
-    # Copy tools menu scripts
-    info "Installing tools menu scripts..."
-    cp "deploy/tools/Cartridge.sh" "$tools_dir/Cartridge.sh"
-    chmod +x "$tools_dir/Cartridge.sh"
-    cp "deploy/tools/Setup Cartridge Boot.sh" "$tools_dir/Setup Cartridge Boot.sh"
-    chmod +x "$tools_dir/Setup Cartridge Boot.sh"
-    cp "deploy/tools/Undo Cartridge Boot.sh" "$tools_dir/Undo Cartridge Boot.sh"
-    chmod +x "$tools_dir/Undo Cartridge Boot.sh"
-    ok "Tools menu scripts installed"
+    # Copy tools menu scripts (add to existing tools dir, don't overwrite)
+    info "Installing tools menu scripts to $tools_dir..."
+    for script in "Cartridge.sh" "Setup Cartridge Boot.sh" "Undo Cartridge Boot.sh"; do
+        cp "deploy/tools/$script" "$tools_dir/$script"
+        chmod +x "$tools_dir/$script"
+    done
+    ok "Tools menu scripts installed (existing tools preserved)"
 
     # Done
     echo ""

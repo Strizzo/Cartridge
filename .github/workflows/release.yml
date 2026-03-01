@@ -30,8 +30,6 @@ jobs:
         run: |
           mkdir -p release/Cartridge/assets/fonts
           mkdir -p release/Cartridge/assets/overlays
-          mkdir -p release/tools
-
           # Binaries
           cp target/aarch64-unknown-linux-gnu/release/cartridge release/Cartridge/
           cp target/aarch64-unknown-linux-gnu/release/cartridge-boot release/Cartridge/
@@ -53,11 +51,12 @@ jobs:
           # Lua cartridges (bundled apps with icons)
           cp -r lua_cartridges release/Cartridge/lua_cartridges
 
-          # Tools menu scripts
-          cp "deploy/tools/Cartridge.sh" release/tools/
-          cp "deploy/tools/Setup Cartridge Boot.sh" release/tools/
-          cp "deploy/tools/Undo Cartridge Boot.sh" release/tools/
-          chmod +x release/tools/*.sh
+          # Tools menu scripts (inside Cartridge/ so extracting doesn't overwrite existing tools)
+          mkdir -p release/Cartridge/tools
+          cp "deploy/tools/Cartridge.sh" release/Cartridge/tools/
+          cp "deploy/tools/Setup Cartridge Boot.sh" release/Cartridge/tools/
+          cp "deploy/tools/Undo Cartridge Boot.sh" release/Cartridge/tools/
+          chmod +x release/Cartridge/tools/*.sh
 
           # Install instructions
           cp INSTALL.md release/INSTALL.txt 2>/dev/null || true
@@ -75,10 +74,10 @@ jobs:
             ## Installation
 
             1. Download `cartridge-r36s-plus.zip`
-            2. Extract the zip contents to the `roms/` folder on your device's SD card
-            3. Boot your device into EmulationStation
-            4. Go to **Tools > Cartridge** to launch
-            5. Go to **Tools > Setup Cartridge Boot** to enable the boot selector
-               (lets you choose Cartridge or EmulationStation at startup)
+            2. Extract the zip to your SD card's `roms/` folder (creates `roms/Cartridge/`)
+            3. Copy the 3 `.sh` files from `roms/Cartridge/tools/` into `roms/tools/`
+            4. Boot your device into EmulationStation
+            5. Go to **Tools > Cartridge** to launch
+            6. Optionally: **Tools > Setup Cartridge Boot** to enable the boot selector
 
             See `INSTALL.txt` in the zip for full instructions.

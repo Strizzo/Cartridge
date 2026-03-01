@@ -5,31 +5,29 @@
 # On next reboot, you'll be able to choose between Cartridge and EmulationStation.
 #
 # This script:
-#   1. Installs SDL2 runtime libraries (if needed)
-#   2. Installs the boot selector as a systemd service
-#   3. Reboots the device
+#   1. Installs the boot selector as a systemd service
+#   2. Reboots the device
 
-# Search known ArkOS mount points for Cartridge
-CARTRIDGE_DIR=""
-for dir in /roms2/Cartridge /roms/Cartridge /opt/system/Cartridge; do
-    if [[ -x "${dir}/cartridge" ]]; then
-        CARTRIDGE_DIR="$dir"
-        break
-    fi
-done
+# Detect active roms directory using ArkOS convention
+if [ -f "/opt/system/Advanced/Switch to main SD for Roms.sh" ]; then
+    ROMS_DIR="/roms2"
+else
+    ROMS_DIR="/roms"
+fi
+CARTRIDGE_DIR="${ROMS_DIR}/Cartridge"
 
 echo ""
 echo "==================================="
 echo "  Cartridge Boot Selector Setup"
 echo "==================================="
 echo ""
-echo "  Cartridge dir: ${CARTRIDGE_DIR:-not found}"
+echo "  Cartridge dir: ${CARTRIDGE_DIR}"
 echo ""
 
 # ── Verify Cartridge is installed ────────────────────────────────────────────
 
-if [[ -z "$CARTRIDGE_DIR" ]]; then
-    echo "ERROR: Cartridge not found."
+if [[ ! -x "${CARTRIDGE_DIR}/cartridge" ]]; then
+    echo "ERROR: Cartridge not found at ${CARTRIDGE_DIR}"
     echo ""
     echo "Extract the Cartridge zip to your SD card's roms/ folder first."
     sleep 5
@@ -44,42 +42,9 @@ if [[ ! -x "${CARTRIDGE_DIR}/cartridge-boot" ]]; then
     exit 1
 fi
 
-# ── Install SDL2 runtime libraries ───────────────────────────────────────────
-
-echo "[1/3] Checking SDL2 libraries..."
-
-sdl2_missing=false
-for lib in libSDL2-2.0 libSDL2_ttf libSDL2_gfx libSDL2_image; do
-    if ! ldconfig -p 2>/dev/null | grep -qi "$lib"; then
-        sdl2_missing=true
-        break
-    fi
-done
-
-if $sdl2_missing; then
-    echo "  Installing SDL2 runtime libraries..."
-    if command -v apt-get &>/dev/null; then
-        apt-get update -qq 2>/dev/null
-        apt-get install -y \
-            libsdl2-2.0-0 \
-            libsdl2-ttf-2.0-0 \
-            libsdl2-gfx-1.0-0 \
-            libsdl2-image-2.0-0 \
-            2>/dev/null || echo "  Warning: Some SDL2 packages may not be available."
-    elif command -v pacman &>/dev/null; then
-        pacman -S --noconfirm sdl2 sdl2_ttf sdl2_gfx sdl2_image 2>/dev/null || true
-    else
-        echo "  Warning: Cannot install SDL2 automatically."
-        echo "  If Cartridge fails to start, install SDL2 manually."
-    fi
-    echo "  Done."
-else
-    echo "  SDL2 already installed."
-fi
-
 # ── Install boot selector service ────────────────────────────────────────────
 
-echo "[2/3] Installing boot selector service..."
+echo "[1/2] Installing boot selector service..."
 
 # Generate service file with the correct path for this device
 cat > /etc/systemd/system/cartridge-boot.service << SVCEOF
@@ -109,7 +74,7 @@ echo "  Boot selector enabled."
 
 # ── Configure boot order ─────────────────────────────────────────────────────
 
-echo "[3/3] Configuring boot order..."
+echo "[2/2] Configuring boot order..."
 
 systemctl disable emulationstation.service 2>/dev/null || true
 echo "  EmulationStation auto-start disabled."
