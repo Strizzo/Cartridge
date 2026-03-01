@@ -6,9 +6,13 @@ use std::path::Path;
 pub struct AppEntry {
     pub id: String,
     pub name: String,
+    #[serde(default)]
     pub description: String,
+    #[serde(default)]
     pub version: String,
+    #[serde(default)]
     pub author: String,
+    #[serde(default)]
     pub category: String,
     #[serde(default)]
     pub tags: Vec<String>,

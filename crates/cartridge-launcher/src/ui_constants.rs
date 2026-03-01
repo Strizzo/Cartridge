@@ -65,25 +65,36 @@ pub fn name_variants(app_id: &str) -> Vec<String> {
     names
 }
 
-/// Resolve the icon.png path for an app, checking standard install and dev locations.
-/// Returns Some(path_string) if the icon exists on disk.
+/// Resolve the icon.png path for an app, checking bundled and install locations.
+/// Bundled icons (next to binary) are preferred over installed copies.
 pub fn resolve_icon_path(app_id: &str) -> Option<String> {
     let home = std::env::var("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."));
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
     let cwd = std::env::current_dir().unwrap_or_default();
 
     for name in name_variants(app_id) {
-        // Standard install path (~/.cartridges/apps/)
-        let installed_icon = home.join(".cartridges/apps").join(&name).join("icon.png");
-        if installed_icon.exists() {
-            return Some(installed_icon.to_string_lossy().to_string());
+        // Bundled path next to binary (preferred)
+        if let Some(ref dir) = exe_dir {
+            let bundled_icon = dir.join("lua_cartridges").join(&name).join("icon.png");
+            if bundled_icon.exists() {
+                return Some(bundled_icon.to_string_lossy().to_string());
+            }
         }
 
-        // Bundled/dev path (lua_cartridges/ relative to cwd)
+        // Dev path (lua_cartridges/ relative to cwd)
         let dev_icon = cwd.join("lua_cartridges").join(&name).join("icon.png");
         if dev_icon.exists() {
             return Some(dev_icon.to_string_lossy().to_string());
+        }
+
+        // User-installed path (~/.cartridges/apps/)
+        let installed_icon = home.join(".cartridges/apps").join(&name).join("icon.png");
+        if installed_icon.exists() {
+            return Some(installed_icon.to_string_lossy().to_string());
         }
     }
 

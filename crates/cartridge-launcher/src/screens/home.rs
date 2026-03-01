@@ -188,7 +188,7 @@ impl LauncherScreen for HomeScreen {
         // Status indicators on right side of header
         let mut hx = SCREEN_WIDTH as i32 - 12;
 
-        // Battery indicator
+        // Battery indicator with icon
         if sysinfo.battery_percent >= 0 {
             let pct = sysinfo.battery_percent;
             let bat_str = if sysinfo.battery_charging {
@@ -205,7 +205,19 @@ impl LauncherScreen for HomeScreen {
             };
             let bw = screen.get_text_width(&bat_str, 11, false);
             screen.draw_text(&bat_str, hx - bw as i32, 10, Some(bat_color), 11, false, None);
-            hx -= bw as i32 + 8;
+            hx -= bw as i32 + 4;
+
+            // Battery icon: body 16x10, tip 2x4
+            let by = 10;
+            let bx = hx - 18;
+            // Body outline
+            screen.draw_rect(Rect::new(bx, by, 16, 10), Some(bat_color), false, 1, None);
+            // Tip
+            screen.draw_rect(Rect::new(bx - 2, by + 3, 2, 4), Some(bat_color), true, 0, None);
+            // Fill level
+            let fill_w = ((pct as u32).min(100) * 12 / 100).max(1);
+            screen.draw_rect(Rect::new(bx + 2, by + 2, fill_w, 6), Some(bat_color), true, 0, None);
+            hx = bx - 6;
         }
 
         // WiFi signal bars (4 ascending bars)

@@ -8,7 +8,9 @@ pub struct CartridgeManifest {
     pub name: String,
     pub version: String,
     pub author: String,
+    #[serde(default)]
     pub description: String,
+    #[serde(default)]
     pub category: String,
     #[serde(default)]
     pub permissions: Vec<String>,

@@ -123,23 +123,36 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
 /// Resolve the directory for an installed app given its id.
 ///
 /// Checks both the full app_id and the short name (last segment of dotted ID):
-/// 1. `~/.cartridges/apps/{name}/` (standard install location)
-/// 2. `lua_cartridges/{name}/` relative to the current working directory (bundled/dev)
+/// 1. `lua_cartridges/{name}/` relative to the binary (bundled — preferred, always up to date)
+/// 2. `~/.cartridges/apps/{name}/` (user-installed from store)
 fn resolve_app_dir(app_id: &str, _assets_dir: &Path) -> PathBuf {
     let home = std::env::var("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."));
+
+    // Bundled path: next to the running binary
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
     let cwd = std::env::current_dir().unwrap_or_default();
 
     for name in crate::ui_constants::name_variants(app_id) {
-        let installed_path = home.join(".cartridges/apps").join(&name);
-        if installed_path.exists() {
-            return installed_path;
+        // Prefer bundled/dev path (always up to date with the binary)
+        if let Some(ref dir) = exe_dir {
+            let bundled = dir.join("lua_cartridges").join(&name);
+            if bundled.exists() {
+                return bundled;
+            }
         }
-
         let dev_path = cwd.join("lua_cartridges").join(&name);
         if dev_path.exists() {
             return dev_path;
+        }
+
+        // Fall back to user-installed path
+        let installed_path = home.join(".cartridges/apps").join(&name);
+        if installed_path.exists() {
+            return installed_path;
         }
     }
 
