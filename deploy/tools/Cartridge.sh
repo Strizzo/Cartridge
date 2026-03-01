@@ -2,13 +2,17 @@
 # Launch Cartridge from EmulationStation Tools menu
 # This script appears as "Cartridge" in the Tools section of ES.
 
-# Resolve Cartridge directory relative to this script's location
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROMS_DIR="$(dirname "$SCRIPT_DIR")"
-CARTRIDGE_DIR="${ROMS_DIR}/Cartridge"
+# Search known ArkOS mount points for Cartridge
+CARTRIDGE_DIR=""
+for dir in /roms2/Cartridge /roms/Cartridge /opt/system/Cartridge; do
+    if [[ -x "${dir}/cartridge" ]]; then
+        CARTRIDGE_DIR="$dir"
+        break
+    fi
+done
 
-if [[ ! -x "${CARTRIDGE_DIR}/cartridge" ]]; then
-    echo "Cartridge not found at ${CARTRIDGE_DIR}"
+if [[ -z "$CARTRIDGE_DIR" ]]; then
+    echo "Cartridge not found."
     echo "Extract the Cartridge zip to your roms/ folder first."
     sleep 5
     exit 1

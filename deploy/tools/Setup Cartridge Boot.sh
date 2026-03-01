@@ -9,23 +9,27 @@
 #   2. Installs the boot selector as a systemd service
 #   3. Reboots the device
 
-# Resolve Cartridge directory relative to this script's location
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROMS_DIR="$(dirname "$SCRIPT_DIR")"
-CARTRIDGE_DIR="${ROMS_DIR}/Cartridge"
+# Search known ArkOS mount points for Cartridge
+CARTRIDGE_DIR=""
+for dir in /roms2/Cartridge /roms/Cartridge /opt/system/Cartridge; do
+    if [[ -x "${dir}/cartridge" ]]; then
+        CARTRIDGE_DIR="$dir"
+        break
+    fi
+done
 
 echo ""
 echo "==================================="
 echo "  Cartridge Boot Selector Setup"
 echo "==================================="
 echo ""
-echo "  Cartridge dir: ${CARTRIDGE_DIR}"
+echo "  Cartridge dir: ${CARTRIDGE_DIR:-not found}"
 echo ""
 
 # ── Verify Cartridge is installed ────────────────────────────────────────────
 
-if [[ ! -x "${CARTRIDGE_DIR}/cartridge" ]]; then
-    echo "ERROR: Cartridge not found at ${CARTRIDGE_DIR}"
+if [[ -z "$CARTRIDGE_DIR" ]]; then
+    echo "ERROR: Cartridge not found."
     echo ""
     echo "Extract the Cartridge zip to your SD card's roms/ folder first."
     sleep 5
