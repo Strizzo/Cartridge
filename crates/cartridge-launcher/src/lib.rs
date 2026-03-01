@@ -28,7 +28,8 @@ pub enum LauncherResult {
 pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;
-    let _joystick_subsystem = sdl_context.joystick()?;
+    let joystick_subsystem = sdl_context.joystick()?;
+    let _joysticks = cartridge_core::input::open_all_joysticks(&joystick_subsystem);
 
     let window = video_subsystem
         .window("Cartridge", WIDTH, HEIGHT)

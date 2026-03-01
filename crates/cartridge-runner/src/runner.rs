@@ -14,7 +14,8 @@ const TARGET_FPS: u32 = 30;
 pub fn run_demo(assets_dir: &Path) -> Result<(), String> {
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;
-    let _joystick_subsystem = sdl_context.joystick()?;
+    let joystick_subsystem = sdl_context.joystick()?;
+    let _joysticks = cartridge_core::input::open_all_joysticks(&joystick_subsystem);
 
     let window = video_subsystem
         .window("Cartridge", WIDTH, HEIGHT)

@@ -231,3 +231,24 @@ impl Default for InputManager {
     }
 }
 
+/// Open all detected joysticks. The returned Vec must be kept alive
+/// for the joysticks to remain open and emit events.
+pub fn open_all_joysticks(
+    subsystem: &sdl2::JoystickSubsystem,
+) -> Vec<sdl2::joystick::Joystick> {
+    let mut joysticks = Vec::new();
+    let n = subsystem.num_joysticks().unwrap_or(0);
+    for i in 0..n {
+        match subsystem.open(i) {
+            Ok(js) => {
+                log::info!("Opened joystick {}: {}", i, js.name());
+                joysticks.push(js);
+            }
+            Err(e) => {
+                log::warn!("Failed to open joystick {}: {}", i, e);
+            }
+        }
+    }
+    joysticks
+}
+
