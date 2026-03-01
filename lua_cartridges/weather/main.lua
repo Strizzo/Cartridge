@@ -186,29 +186,33 @@ local function fetch_current()
         .. "&daily=sunrise,sunset"
         .. "&timezone=auto&forecast_days=1"
 
-    local resp = http.get_cached(url, CACHE_TTL)
-    if resp.ok then
-        local data = json.decode(resp.body)
-        local cur = data.current
-        local hourly = data.hourly and data.hourly.temperature_2m or {}
-        local daily = data.daily or {}
+    local net_ok, resp = pcall(http.get_cached, url, CACHE_TTL)
+    if net_ok and resp.ok then
+        local dok, data = pcall(json.decode, resp.body)
+        if dok and data and data.current then
+            local cur = data.current
+            local hourly = data.hourly and data.hourly.temperature_2m or {}
+            local daily = data.daily or {}
 
-        local sunrise_raw = ""
-        local sunset_raw = ""
-        if daily.sunrise and #daily.sunrise > 0 then sunrise_raw = daily.sunrise[1] end
-        if daily.sunset and #daily.sunset > 0 then sunset_raw = daily.sunset[1] end
+            local sunrise_raw = ""
+            local sunset_raw = ""
+            if daily.sunrise and #daily.sunrise > 0 then sunrise_raw = daily.sunrise[1] end
+            if daily.sunset and #daily.sunset > 0 then sunset_raw = daily.sunset[1] end
 
-        state.current = {
-            temperature = cur.temperature_2m,
-            feels_like = cur.apparent_temperature,
-            humidity = cur.relative_humidity_2m,
-            wind_speed = cur.wind_speed_10m,
-            pressure = cur.surface_pressure,
-            weather_code = cur.weather_code,
-            hourly_temps = hourly,
-            sunrise = format_time(sunrise_raw),
-            sunset = format_time(sunset_raw),
-        }
+            state.current = {
+                temperature = cur.temperature_2m,
+                feels_like = cur.apparent_temperature,
+                humidity = cur.relative_humidity_2m,
+                wind_speed = cur.wind_speed_10m,
+                pressure = cur.surface_pressure,
+                weather_code = cur.weather_code,
+                hourly_temps = hourly,
+                sunrise = format_time(sunrise_raw),
+                sunset = format_time(sunset_raw),
+            }
+        else
+            state.current_error = true
+        end
     else
         state.current_error = true
     end
@@ -225,9 +229,14 @@ local function fetch_forecast()
         .. "&daily=weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,sunrise,sunset,precipitation_sum,wind_speed_10m_max"
         .. "&timezone=auto"
 
-    local resp = http.get_cached(url, CACHE_TTL)
-    if resp.ok then
-        local data = json.decode(resp.body)
+    local net_ok, resp = pcall(http.get_cached, url, CACHE_TTL)
+    if net_ok and resp.ok then
+        local dok, data = pcall(json.decode, resp.body)
+        if not dok or not data or not data.daily then
+            state.forecast_error = true
+            state.forecast_loading = false
+            return
+        end
         local daily = data.daily
         state.forecast_days = {}
 

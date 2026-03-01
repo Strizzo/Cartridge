@@ -21,6 +21,7 @@ local state = {
     detail_lines = {},  -- pre-laid-out lines for scrolling
     detail_scroll = 0,
     detail_loading = false,
+    detail_needs_layout = false,
     -- Reader state
     reader_lines = {},
     reader_scroll = 0,
@@ -184,22 +185,25 @@ local function fetch_story_ids(tab_id, callback)
         new = BASE_URL .. "/newstories.json",
         best = BASE_URL .. "/beststories.json",
     }
-    local resp = http.get_cached(url_map[tab_id], 120)
-    if resp.ok then
-        local ids = json.decode(resp.body)
-        local result = {}
-        for i = 1, math.min(30, #ids) do
-            result[#result + 1] = ids[i]
+    local ok, resp = pcall(http.get_cached, url_map[tab_id], 120)
+    if ok and resp.ok then
+        local dok, ids = pcall(json.decode, resp.body)
+        if dok and ids then
+            local result = {}
+            for i = 1, math.min(30, #ids) do
+                result[#result + 1] = ids[i]
+            end
+            return result
         end
-        return result
     end
     return {}
 end
 
 local function fetch_item(item_id)
-    local resp = http.get_cached(BASE_URL .. "/item/" .. item_id .. ".json", 300)
-    if resp.ok then
-        return json.decode(resp.body)
+    local ok, resp = pcall(http.get_cached, BASE_URL .. "/item/" .. item_id .. ".json", 300)
+    if ok and resp.ok then
+        local dok, item = pcall(json.decode, resp.body)
+        if dok then return item end
     end
     return nil
 end
@@ -479,16 +483,21 @@ local function load_story_detail(story)
     state.detail_scroll = 0
     state.detail_loading = true
     state.detail_lines = {}
+    state.detail_needs_layout = true
 
     if story.kids and #story.kids > 0 then
         state.detail_comments = fetch_comments(story.kids, 0, 2)
     end
 
     state.detail_loading = false
-    layout_detail()
 end
 
 local function draw_story_detail()
+    -- Layout must happen during render (screen.get_text_width needs active screen)
+    if state.detail_needs_layout then
+        layout_detail()
+        state.detail_needs_layout = false
+    end
     draw_header("Story", #state.detail_comments .. " comments", {100, 220, 100})
 
     local content_y = 42
@@ -572,8 +581,8 @@ local function load_reader(url)
     state.reader_loading = true
     state.reader_domain = get_domain(url)
 
-    local resp = http.get(url)
-    if resp.ok then
+    local ok, resp = pcall(http.get, url)
+    if ok and resp.ok then
         -- Simple HTML to text conversion
         local body = resp.body or ""
         -- Remove script and style blocks
