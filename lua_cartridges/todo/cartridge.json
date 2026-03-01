@@ -1,0 +1,1 @@
+{"id":"dev.cartridge.todo","name":"Todo","version":"0.1.0","author":"CartridgeOS Team","description":"Task manager with priorities and persistence","category":"Productivity","tags":["todo","tasks","productivity"],"permissions":["storage"],"entry":"main.lua"}

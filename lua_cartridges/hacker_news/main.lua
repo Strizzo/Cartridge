@@ -29,6 +29,7 @@ local state = {
     reader_domain = "",
     reader_raw_body = nil,
     reader_needs_layout = false,
+    reader_url_to_load = nil,  -- deferred article loading
     -- Deferred initial load (render sets ready_to_load after first frame)
     needs_initial_load = true,
     ready_to_load = false,
@@ -699,6 +700,13 @@ function on_update(dt)
         state.ready_to_load = false
         load_stories()
     end
+
+    -- Deferred article loading (triggered from on_input)
+    if state.reader_url_to_load then
+        local url = state.reader_url_to_load
+        state.reader_url_to_load = nil
+        load_reader(url)
+    end
 end
 
 function on_input(button, action)
@@ -753,7 +761,11 @@ function on_input(button, action)
         elseif button == "x" then
             if state.detail_story and state.detail_story.url ~= "" then
                 state.screen_stack[#state.screen_stack + 1] = "reader"
-                load_reader(state.detail_story.url)
+                state.reader_lines = {}
+                state.reader_scroll = 0
+                state.reader_loading = true
+                state.reader_domain = get_domain(state.detail_story.url)
+                state.reader_url_to_load = state.detail_story.url
             end
         elseif button == "dpad_up" then
             state.detail_scroll = math.max(0, state.detail_scroll - 1)

@@ -32,7 +32,7 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
     let _joysticks = cartridge_core::input::open_all_joysticks(&joystick_subsystem);
 
     let window = video_subsystem
-        .window("Cartridge", WIDTH, HEIGHT)
+        .window("CartridgeOS", WIDTH, HEIGHT)
         .position_centered()
         .build()
         .map_err(|e| e.to_string())?;

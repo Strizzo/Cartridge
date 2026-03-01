@@ -144,7 +144,7 @@ fn find_assets_dir() -> PathBuf {
 
 /// Draw "CARTRIDGE" title with glow effect using the new draw_text_glow method.
 fn draw_title_glow(screen: &mut Screen, cx: i32, y: i32) {
-    let title = "CARTRIDGE";
+    let title = "CARTRIDGEOS";
     let tw = screen.get_text_width(title, 28, true);
     let tx = cx - tw as i32 / 2;
     screen.draw_text_glow(
@@ -248,7 +248,7 @@ fn run_boot_selector(assets_dir: &Path) -> Result<BootChoice, String> {
     let _joysticks = cartridge_core::input::open_all_joysticks(&joystick_subsystem);
 
     let window = video_subsystem
-        .window("Cartridge Boot Selector", WIDTH, HEIGHT)
+        .window("CartridgeOS Boot Selector", WIDTH, HEIGHT)
         .position_centered()
         .build()
         .map_err(|e| e.to_string())?;

@@ -176,7 +176,7 @@ impl LauncherScreen for HomeScreen {
         screen.draw_glow_line(0, 0, SCREEN_WIDTH as i32 - 1, Color::RGBA(100, 180, 255, 80), 3, 1);
         // Title with glow
         screen.draw_text_glow(
-            "Cartridge",
+            "CartridgeOS",
             12,
             6,
             theme.accent,

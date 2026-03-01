@@ -1,0 +1,1 @@
+{"id":"dev.cartridge.network-tool","name":"Net Tool","version":"0.1.0","author":"CartridgeOS Team","description":"Network diagnostics and IP lookup","category":"Tools","tags":["network","ip","dns","cyberdeck"],"permissions":["network"],"entry":"main.lua"}

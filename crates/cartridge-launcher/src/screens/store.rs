@@ -126,7 +126,7 @@ impl LauncherScreen for StoreScreen {
             None,
         );
         screen.draw_glow_line(0, 0, SCREEN_WIDTH as i32 - 1, Color::RGBA(100, 180, 255, 80), 3, 1);
-        screen.draw_text_glow("Cartridge Store", 12, 8, theme.accent, theme.glow_primary, 20, true, None);
+        screen.draw_text_glow("CartridgeOS Store", 12, 8, theme.accent, theme.glow_primary, 20, true, None);
 
         // App count
         let count_str = format!("{} apps", ctx.registry.apps.len());

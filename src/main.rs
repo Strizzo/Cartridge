@@ -92,12 +92,12 @@ fn parse_run_args(args: &[String]) -> PathBuf {
 }
 
 fn print_usage() {
-    eprintln!("Cartridge - App SDK for Linux handheld devices");
+    eprintln!("CartridgeOS - A cyberdeck OS for Linux handheld devices");
     eprintln!();
     eprintln!("Usage: cartridge <command>");
     eprintln!();
     eprintln!("Commands:");
-    eprintln!("  (default)          Launch the Cartridge home screen");
+    eprintln!("  (default)          Launch the CartridgeOS home screen");
     eprintln!("  run --path <dir>   Run a Lua cartridge app");
     eprintln!("  demo               Run the built-in demo screen");
     eprintln!("  help               Show this help message");

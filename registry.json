@@ -61,11 +61,33 @@
       "name": "System Monitor",
       "description": "Real-time CPU, memory, disk, and network monitoring",
       "version": "0.1.0",
-      "author": "Cartridge Team",
+      "author": "CartridgeOS Team",
       "category": "tools",
       "tags": ["system", "monitor", "cpu", "memory"],
       "repo_url": "https://github.com/Strizzo/system-monitor-cartridge",
       "permissions": []
+    },
+    {
+      "id": "dev.cartridge.network-tool",
+      "name": "Net Tool",
+      "description": "Network diagnostics, IP lookup, DNS resolution, and HTTP probes",
+      "version": "0.1.0",
+      "author": "CartridgeOS Team",
+      "category": "tools",
+      "tags": ["network", "ip", "dns", "cyberdeck"],
+      "repo_url": "",
+      "permissions": ["network"]
+    },
+    {
+      "id": "dev.cartridge.todo",
+      "name": "Todo",
+      "description": "Task manager with priorities and persistence",
+      "version": "0.1.0",
+      "author": "CartridgeOS Team",
+      "category": "productivity",
+      "tags": ["todo", "tasks", "productivity"],
+      "repo_url": "",
+      "permissions": ["storage"]
     }
   ]
 }
