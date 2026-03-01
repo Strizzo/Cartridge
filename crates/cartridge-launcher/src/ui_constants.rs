@@ -49,6 +49,22 @@ pub fn app_short_name(app_id: &str) -> &str {
     app_id.rsplit('.').next().unwrap_or(app_id)
 }
 
+/// Build a list of name variants to try (original, hyphen, underscore).
+pub fn name_variants(app_id: &str) -> Vec<String> {
+    let short = app_short_name(app_id);
+    let mut names: Vec<String> = vec![app_id.to_string(), short.to_string()];
+    // Also try with hyphens/underscores swapped
+    let with_underscore = short.replace('-', "_");
+    let with_hyphen = short.replace('_', "-");
+    if with_underscore != short {
+        names.push(with_underscore);
+    }
+    if with_hyphen != short {
+        names.push(with_hyphen);
+    }
+    names
+}
+
 /// Resolve the icon.png path for an app, checking standard install and dev locations.
 /// Returns Some(path_string) if the icon exists on disk.
 pub fn resolve_icon_path(app_id: &str) -> Option<String> {
@@ -56,18 +72,16 @@ pub fn resolve_icon_path(app_id: &str) -> Option<String> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."));
     let cwd = std::env::current_dir().unwrap_or_default();
-    let short = app_short_name(app_id);
 
-    // Check both full app_id and short name in each location
-    for name in &[app_id, short] {
+    for name in name_variants(app_id) {
         // Standard install path (~/.cartridges/apps/)
-        let installed_icon = home.join(".cartridges/apps").join(name).join("icon.png");
+        let installed_icon = home.join(".cartridges/apps").join(&name).join("icon.png");
         if installed_icon.exists() {
             return Some(installed_icon.to_string_lossy().to_string());
         }
 
         // Bundled/dev path (lua_cartridges/ relative to cwd)
-        let dev_icon = cwd.join("lua_cartridges").join(name).join("icon.png");
+        let dev_icon = cwd.join("lua_cartridges").join(&name).join("icon.png");
         if dev_icon.exists() {
             return Some(dev_icon.to_string_lossy().to_string());
         }

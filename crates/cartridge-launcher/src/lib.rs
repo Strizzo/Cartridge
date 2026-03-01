@@ -130,15 +130,14 @@ fn resolve_app_dir(app_id: &str, _assets_dir: &Path) -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."));
     let cwd = std::env::current_dir().unwrap_or_default();
-    let short = crate::ui_constants::app_short_name(app_id);
 
-    for name in &[app_id, short] {
-        let installed_path = home.join(".cartridges/apps").join(name);
+    for name in crate::ui_constants::name_variants(app_id) {
+        let installed_path = home.join(".cartridges/apps").join(&name);
         if installed_path.exists() {
             return installed_path;
         }
 
-        let dev_path = cwd.join("lua_cartridges").join(name);
+        let dev_path = cwd.join("lua_cartridges").join(&name);
         if dev_path.exists() {
             return dev_path;
         }
