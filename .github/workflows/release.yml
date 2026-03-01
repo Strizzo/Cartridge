@@ -49,6 +49,7 @@ jobs:
           # Assets
           cp -r assets/fonts/* release/Cartridge/assets/fonts/
           cp -r assets/overlays/* release/Cartridge/assets/overlays/
+          cp assets/boot_logo.png release/Cartridge/assets/
 
           # Lua cartridges (bundled apps with icons)
           cp -r lua_cartridges release/Cartridge/lua_cartridges

@@ -335,6 +335,9 @@ install_to_device() {
     if [[ -d "assets/overlays" ]]; then
         cp -r assets/overlays/* "$dest/assets/overlays/"
     fi
+    if [[ -f "assets/boot_logo.png" ]]; then
+        cp assets/boot_logo.png "$dest/assets/"
+    fi
 
     # Copy Lua cartridges (bundled apps with icons)
     if [[ -d "lua_cartridges" ]]; then

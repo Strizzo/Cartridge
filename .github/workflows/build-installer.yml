@@ -81,6 +81,7 @@ jobs:
           # Assets
           cp -r assets/fonts/* bundle/Cartridge/assets/fonts/ 2>/dev/null || true
           cp -r assets/overlays/* bundle/Cartridge/assets/overlays/ 2>/dev/null || true
+          cp assets/boot_logo.png bundle/Cartridge/assets/ 2>/dev/null || true
 
           # Lua cartridges (bundled apps with icons)
           cp -r lua_cartridges bundle/Cartridge/lua_cartridges 2>/dev/null || true

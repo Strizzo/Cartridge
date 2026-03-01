@@ -219,7 +219,7 @@ pub fn run_demo(assets_dir: &Path) -> Result<(), String> {
 
                 // Version + author
                 screen.draw_text(
-                    "v0.1.0  Cartridge Team",
+                    "v0.5.1  CartridgeOS",
                     24,
                     y + 46,
                     Some(theme.text_dim),
