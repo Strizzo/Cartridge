@@ -70,10 +70,12 @@ pub fn new_screen_handle() -> SharedScreenHandle {
 }
 
 fn parse_color_table(table: &LuaTable) -> LuaResult<Color> {
-    let r: u8 = table.get("r").or_else(|_| table.get::<u8>(1))?;
-    let g: u8 = table.get("g").or_else(|_| table.get::<u8>(2))?;
-    let b: u8 = table.get("b").or_else(|_| table.get::<u8>(3))?;
-    Ok(Color::RGB(r, g, b))
+    // Accept both named {r=255, g=0, b=0} and indexed {255, 0, 0} color tables.
+    // Use f64 to handle Lua 5.4 float arithmetic results, then clamp to u8.
+    let r: f64 = table.get("r").or_else(|_| table.get::<f64>(1))?;
+    let g: f64 = table.get("g").or_else(|_| table.get::<f64>(2))?;
+    let b: f64 = table.get("b").or_else(|_| table.get::<f64>(3))?;
+    Ok(Color::RGB(num_u8(r), num_u8(g), num_u8(b)))
 }
 
 fn opt_color_from_table(table: &LuaTable, key: &str) -> LuaResult<Option<Color>> {
@@ -94,6 +96,26 @@ fn color_to_table(lua: &Lua, color: Color) -> LuaResult<LuaTable> {
     Ok(table)
 }
 
+// Helper functions to convert Lua numbers (which may be float due to Lua 5.4 division)
+// into integer types. Lua 5.4's `/` operator always produces floats, so `720 / 2` = `360.0`.
+// mlua's strict integer conversion rejects non-integer floats, causing runtime errors.
+// These helpers accept any numeric value and truncate to the target type.
+fn num_i32(v: f64) -> i32 {
+    v as i32
+}
+fn num_u32(v: f64) -> u32 {
+    v.max(0.0) as u32
+}
+fn num_i16(v: f64) -> i16 {
+    v as i16
+}
+fn num_u16(v: f64) -> u16 {
+    v.max(0.0) as u16
+}
+fn num_u8(v: f64) -> u8 {
+    v.clamp(0.0, 255.0) as u8
+}
+
 /// Register all screen.* functions on the Lua VM.
 pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path) -> LuaResult<()> {
     let screen_table = lua.create_table()?;
@@ -103,9 +125,9 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
         let h = handle.clone();
         screen_table.set(
             "clear",
-            lua.create_function(move |_, (r, g, b): (u8, u8, u8)| {
+            lua.create_function(move |_, (r, g, b): (f64, f64, f64)| {
                 h.borrow().with_screen(|s| {
-                    s.clear(Some(Color::RGB(r, g, b)));
+                    s.clear(Some(Color::RGB(num_u8(r), num_u8(g), num_u8(b))));
                 })
             })?,
         )?;
@@ -118,7 +140,9 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
         screen_table.set(
             "draw_text",
             lua.create_function(
-                move |_, (text, x, y, opts): (String, i32, i32, Option<LuaTable>)| {
+                move |_, (text, x, y, opts): (String, f64, f64, Option<LuaTable>)| {
+                    let x = num_i32(x);
+                    let y = num_i32(y);
                     let mut color: Option<Color> = None;
                     let mut size: u16 = 16;
                     let mut bold = false;
@@ -126,14 +150,14 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
 
                     if let Some(ref t) = opts {
                         color = opt_color_from_table(t, "color")?;
-                        if let Ok(s) = t.get::<u16>("size") {
-                            size = s;
+                        if let Ok(s) = t.get::<f64>("size") {
+                            size = num_u16(s);
                         }
                         if let Ok(b) = t.get::<bool>("bold") {
                             bold = b;
                         }
-                        if let Ok(mw) = t.get::<u32>("max_width") {
-                            max_width = Some(mw);
+                        if let Ok(mw) = t.get::<f64>("max_width") {
+                            max_width = Some(num_u32(mw));
                         }
                     }
 
@@ -152,7 +176,11 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
         screen_table.set(
             "draw_rect",
             lua.create_function(
-                move |_, (x, y, w, hh, opts): (i32, i32, u32, u32, Option<LuaTable>)| {
+                move |_, (x, y, w, hh, opts): (f64, f64, f64, f64, Option<LuaTable>)| {
+                    let x = num_i32(x);
+                    let y = num_i32(y);
+                    let w = num_u32(w);
+                    let hh = num_u32(hh);
                     let mut color: Option<Color> = None;
                     let mut filled = true;
                     let mut radius: i16 = 0;
@@ -162,8 +190,8 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
                         if let Ok(f) = t.get::<bool>("filled") {
                             filled = f;
                         }
-                        if let Ok(r) = t.get::<i16>("radius") {
-                            radius = r;
+                        if let Ok(r) = t.get::<f64>("radius") {
+                            radius = num_i16(r);
                         }
                     }
 
@@ -182,14 +210,18 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
         screen_table.set(
             "draw_line",
             lua.create_function(
-                move |_, (x1, y1, x2, y2, opts): (i32, i32, i32, i32, Option<LuaTable>)| {
+                move |_, (x1, y1, x2, y2, opts): (f64, f64, f64, f64, Option<LuaTable>)| {
+                    let x1 = num_i32(x1);
+                    let y1 = num_i32(y1);
+                    let x2 = num_i32(x2);
+                    let y2 = num_i32(y2);
                     let mut color: Option<Color> = None;
                     let mut width: u32 = 1;
 
                     if let Some(ref t) = opts {
                         color = opt_color_from_table(t, "color")?;
-                        if let Ok(w) = t.get::<u32>("width") {
-                            width = w;
+                        if let Ok(w) = t.get::<f64>("width") {
+                            width = num_u32(w);
                         }
                     }
 
@@ -208,7 +240,11 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
         screen_table.set(
             "draw_card",
             lua.create_function(
-                move |_, (x, y, w, hh, opts): (i32, i32, u32, u32, Option<LuaTable>)| {
+                move |_, (x, y, w, hh, opts): (f64, f64, f64, f64, Option<LuaTable>)| {
+                    let x = num_i32(x);
+                    let y = num_i32(y);
+                    let w = num_u32(w);
+                    let hh = num_u32(hh);
                     let mut bg: Option<Color> = None;
                     let mut border: Option<Color> = None;
                     let mut radius: i16 = 8;
@@ -217,8 +253,8 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
                     if let Some(ref t) = opts {
                         bg = opt_color_from_table(t, "bg")?;
                         border = opt_color_from_table(t, "border")?;
-                        if let Ok(r) = t.get::<i16>("radius") {
-                            radius = r;
+                        if let Ok(r) = t.get::<f64>("radius") {
+                            radius = num_i16(r);
                         }
                         if let Ok(s) = t.get::<bool>("shadow") {
                             shadow = s;
@@ -241,22 +277,15 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
             lua.create_function(
                 move |_,
                       (x, y, w, hh, r1, g1, b1, r2, g2, b2): (
-                    i32,
-                    i32,
-                    u32,
-                    u32,
-                    u8,
-                    u8,
-                    u8,
-                    u8,
-                    u8,
-                    u8,
+                    f64, f64, f64, f64,
+                    f64, f64, f64,
+                    f64, f64, f64,
                 )| {
                     h.borrow().with_screen(|s| {
                         s.draw_gradient_rect(
-                            Rect::new(x, y, w, hh),
-                            Color::RGB(r1, g1, b1),
-                            Color::RGB(r2, g2, b2),
+                            Rect::new(num_i32(x), num_i32(y), num_u32(w), num_u32(hh)),
+                            Color::RGB(num_u8(r1), num_u8(g1), num_u8(b1)),
+                            Color::RGB(num_u8(r2), num_u8(g2), num_u8(b2)),
                         );
                     })
                 },
@@ -274,11 +303,11 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
                 move |_,
                       (text, x, y, bg_r, bg_g, bg_b, opts): (
                     String,
-                    i32,
-                    i32,
-                    u8,
-                    u8,
-                    u8,
+                    f64,
+                    f64,
+                    f64,
+                    f64,
+                    f64,
                     Option<LuaTable>,
                 )| {
                     let mut text_color = Color::RGB(20, 20, 30);
@@ -288,13 +317,13 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
                         if let Some(c) = opt_color_from_table(t, "text_color")? {
                             text_color = c;
                         }
-                        if let Ok(s) = t.get::<u16>("size") {
-                            size = s;
+                        if let Ok(s) = t.get::<f64>("size") {
+                            size = num_u16(s);
                         }
                     }
 
                     h.borrow().with_screen(|s| {
-                        s.draw_pill(&text, x, y, Color::RGB(bg_r, bg_g, bg_b), text_color, size)
+                        s.draw_pill(&text, num_i32(x), num_i32(y), Color::RGB(num_u8(bg_r), num_u8(bg_g), num_u8(bg_b)), text_color, size)
                     })
                 },
             )?,
@@ -312,8 +341,8 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
                       (label, action, x, y, opts): (
                     String,
                     String,
-                    i32,
-                    i32,
+                    f64,
+                    f64,
                     Option<LuaTable>,
                 )| {
                     let mut btn_color: Option<Color> = None;
@@ -321,13 +350,13 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
 
                     if let Some(ref t) = opts {
                         btn_color = opt_color_from_table(t, "color")?;
-                        if let Ok(s) = t.get::<u16>("size") {
-                            size = s;
+                        if let Ok(s) = t.get::<f64>("size") {
+                            size = num_u16(s);
                         }
                     }
 
                     h.borrow().with_screen(|s| {
-                        s.draw_button_hint(&label, &action, x, y, btn_color, size)
+                        s.draw_button_hint(&label, &action, num_i32(x), num_i32(y), btn_color, size)
                     })
                 },
             )?,
@@ -343,11 +372,11 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
             lua.create_function(
                 move |_,
                       (x, y, w, hh, progress, opts): (
-                    i32,
-                    i32,
-                    u32,
-                    u32,
-                    f32,
+                    f64,
+                    f64,
+                    f64,
+                    f64,
+                    f64,
                     Option<LuaTable>,
                 )| {
                     let mut fill_color: Option<Color> = None;
@@ -357,15 +386,15 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
                     if let Some(ref t) = opts {
                         fill_color = opt_color_from_table(t, "fill_color")?;
                         bg_color = opt_color_from_table(t, "bg_color")?;
-                        if let Ok(r) = t.get::<i16>("radius") {
-                            radius = r;
+                        if let Ok(r) = t.get::<f64>("radius") {
+                            radius = num_i16(r);
                         }
                     }
 
                     h.borrow().with_screen(|s| {
                         s.draw_progress_bar(
-                            Rect::new(x, y, w, hh),
-                            progress,
+                            Rect::new(num_i32(x), num_i32(y), num_u32(w), num_u32(hh)),
+                            progress as f32,
                             fill_color,
                             bg_color,
                             radius,
@@ -386,10 +415,10 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
                 move |_,
                       (data_table, x, y, w, hh, opts): (
                     LuaTable,
-                    i32,
-                    i32,
-                    u32,
-                    u32,
+                    f64,
+                    f64,
+                    f64,
+                    f64,
                     Option<LuaTable>,
                 )| {
                     let mut data = Vec::new();
@@ -406,7 +435,7 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
                     }
 
                     h.borrow().with_screen(|s| {
-                        s.draw_sparkline(&data, Rect::new(x, y, w, hh), color, baseline_color);
+                        s.draw_sparkline(&data, Rect::new(num_i32(x), num_i32(y), num_u32(w), num_u32(hh)), color, baseline_color);
                     })
                 },
             )?,
@@ -419,9 +448,9 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
         screen_table.set(
             "draw_circle",
             lua.create_function(
-                move |_, (cx, cy, radius, r, g, b): (i32, i32, i16, u8, u8, u8)| {
+                move |_, (cx, cy, radius, r, g, b): (f64, f64, f64, f64, f64, f64)| {
                     h.borrow().with_screen(|s| {
-                        s.draw_circle(cx, cy, radius, Color::RGB(r, g, b));
+                        s.draw_circle(num_i32(cx), num_i32(cy), num_i16(radius), Color::RGB(num_u8(r), num_u8(g), num_u8(b)));
                     })
                 },
             )?,
@@ -436,21 +465,16 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
             lua.create_function(
                 move |_,
                       (x, y, w, hh, r, g, b, radius, shadow): (
-                    i32,
-                    i32,
-                    u32,
-                    u32,
-                    u8,
-                    u8,
-                    u8,
-                    i16,
+                    f64, f64, f64, f64,
+                    f64, f64, f64,
+                    f64,
                     bool,
                 )| {
                     h.borrow().with_screen(|s| {
                         s.draw_rounded_rect(
-                            Rect::new(x, y, w, hh),
-                            Color::RGB(r, g, b),
-                            radius,
+                            Rect::new(num_i32(x), num_i32(y), num_u32(w), num_u32(hh)),
+                            Color::RGB(num_u8(r), num_u8(g), num_u8(b)),
+                            num_i16(radius),
                             shadow,
                         );
                     })
@@ -464,7 +488,8 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
         let h = handle.clone();
         screen_table.set(
             "get_text_width",
-            lua.create_function(move |_, (text, size, bold): (String, u16, bool)| {
+            lua.create_function(move |_, (text, size, bold): (String, f64, bool)| {
+                let size = num_u16(size);
                 h.borrow().with_screen(|s| s.get_text_width(&text, size, bold))
             })?,
         )?;
@@ -475,7 +500,8 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
         let h = handle.clone();
         screen_table.set(
             "get_line_height",
-            lua.create_function(move |_, (size, bold): (u16, bool)| {
+            lua.create_function(move |_, (size, bold): (f64, bool)| {
+                let size = num_u16(size);
                 h.borrow()
                     .with_screen(|s| s.get_line_height(size, bold))
             })?,
@@ -491,7 +517,9 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
         screen_table.set(
             "draw_image",
             lua.create_function(
-                move |_, (path, x, y, opts): (String, i32, i32, Option<LuaTable>)| {
+                move |_, (path, x, y, opts): (String, f64, f64, Option<LuaTable>)| {
+                    let x = num_i32(x);
+                    let y = num_i32(y);
                     // Resolve path relative to app_dir
                     let full_path = app_dir.join(&path);
 
@@ -518,20 +546,20 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
                     let mut src_rect: Option<sdl2::rect::Rect> = None;
 
                     if let Some(ref t) = opts {
-                        let w = t.get::<Option<u32>>("w").ok().flatten();
-                        let hh = t.get::<Option<u32>>("h").ok().flatten();
+                        let w = t.get::<Option<f64>>("w").ok().flatten();
+                        let hh = t.get::<Option<f64>>("h").ok().flatten();
                         if let (Some(w), Some(hh)) = (w, hh) {
-                            dst_size = Some((w, hh));
+                            dst_size = Some((num_u32(w), num_u32(hh)));
                         }
 
-                        let src_x = t.get::<Option<i32>>("src_x").ok().flatten();
-                        let src_y = t.get::<Option<i32>>("src_y").ok().flatten();
-                        let src_w = t.get::<Option<u32>>("src_w").ok().flatten();
-                        let src_h = t.get::<Option<u32>>("src_h").ok().flatten();
+                        let src_x = t.get::<Option<f64>>("src_x").ok().flatten();
+                        let src_y = t.get::<Option<f64>>("src_y").ok().flatten();
+                        let src_w = t.get::<Option<f64>>("src_w").ok().flatten();
+                        let src_h = t.get::<Option<f64>>("src_h").ok().flatten();
                         if let (Some(sx), Some(sy), Some(sw), Some(sh)) =
                             (src_x, src_y, src_w, src_h)
                         {
-                            src_rect = Some(sdl2::rect::Rect::new(sx, sy, sw, sh));
+                            src_rect = Some(sdl2::rect::Rect::new(num_i32(sx), num_i32(sy), num_u32(sw), num_u32(sh)));
                         }
                     }
 

@@ -358,26 +358,64 @@ impl SystemInfo {
 
     #[cfg(target_os = "linux")]
     fn poll_battery_linux(&mut self) {
-        // Try common power supply paths
-        for name in &["battery", "BAT0", "BAT1", "bat"] {
+        // Try common power supply paths first (fast path)
+        for name in &[
+            "battery", "BAT0", "BAT1", "bat",
+            "axp20x-battery", "axp_battery",
+            "rk818-battery", "rk817-battery",
+        ] {
             let base = format!("/sys/class/power_supply/{}", name);
             if let Ok(cap) = std::fs::read_to_string(format!("{}/capacity", base)) {
-                self.battery_percent = cap.trim().parse().unwrap_or(-1);
-                if let Ok(status) = std::fs::read_to_string(format!("{}/status", base)) {
-                    let s = status.trim();
-                    self.battery_charging = s == "Charging" || s == "Full";
+                if let Ok(pct) = cap.trim().parse::<i32>() {
+                    if (0..=100).contains(&pct) {
+                        self.battery_percent = pct;
+                        if let Ok(status) = std::fs::read_to_string(format!("{}/status", base)) {
+                            let s = status.trim();
+                            self.battery_charging = s == "Charging" || s == "Full";
+                        }
+                        return;
+                    }
                 }
-                return;
             }
         }
-        // If no battery found, scan the directory
+        // Scan all power_supply entries — first look for type=Battery, then any with capacity
         if let Ok(entries) = std::fs::read_dir("/sys/class/power_supply") {
+            let mut fallback_path: Option<std::path::PathBuf> = None;
             for entry in entries.flatten() {
                 let path = entry.path();
+                // Check if this entry has a capacity file at all
+                let cap_path = path.join("capacity");
+                if !cap_path.exists() {
+                    continue;
+                }
+                // Prefer entries with type=Battery
                 if let Ok(ptype) = std::fs::read_to_string(path.join("type")) {
                     if ptype.trim() == "Battery" {
-                        if let Ok(cap) = std::fs::read_to_string(path.join("capacity")) {
-                            self.battery_percent = cap.trim().parse().unwrap_or(-1);
+                        if let Ok(cap) = std::fs::read_to_string(&cap_path) {
+                            if let Ok(pct) = cap.trim().parse::<i32>() {
+                                if (0..=100).contains(&pct) {
+                                    self.battery_percent = pct;
+                                    if let Ok(status) = std::fs::read_to_string(path.join("status")) {
+                                        let s = status.trim();
+                                        self.battery_charging = s == "Charging" || s == "Full";
+                                    }
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+                // Remember any entry with a capacity file as fallback
+                if fallback_path.is_none() {
+                    fallback_path = Some(path);
+                }
+            }
+            // If no type=Battery found, try the fallback (any entry with capacity)
+            if let Some(path) = fallback_path {
+                if let Ok(cap) = std::fs::read_to_string(path.join("capacity")) {
+                    if let Ok(pct) = cap.trim().parse::<i32>() {
+                        if (0..=100).contains(&pct) {
+                            self.battery_percent = pct;
                             if let Ok(status) = std::fs::read_to_string(path.join("status")) {
                                 let s = status.trim();
                                 self.battery_charging = s == "Charging" || s == "Full";

@@ -1,12 +1,10 @@
 [Unit]
 Description=Cartridge Boot Selector
 After=multi-user.target
-Before=emulationstation.service cartridge.service
 DefaultDependencies=no
 
 [Service]
-Type=oneshot
-RemainAfterExit=no
+Type=simple
 # This path is set by the installer -- adjust if installed elsewhere
 ExecStart=/roms/Cartridge/cartridge-boot.sh
 StandardInput=tty
