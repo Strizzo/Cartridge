@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use cartridge_core::font::FontCache;
 use cartridge_core::image_cache::ImageCache;
-use cartridge_core::input::{Button, InputAction, InputManager};
+use cartridge_core::input::{Button, InputManager};
 use cartridge_core::screen::{Screen, HEIGHT, WIDTH};
 use cartridge_core::theme::Theme;
 
@@ -82,7 +82,10 @@ pub fn run_lua_app(app_dir: &Path, assets_dir: &Path) -> Result<(), String> {
         // Collect events
         let events: Vec<sdl2::event::Event> = event_pump.poll_iter().collect();
 
-        // Check for quit
+        // Check for quit via raw SDL events (bypasses input manager).
+        // This catches Select/Start regardless of GameController mapping.
+        let mut raw_select = false;
+        let mut raw_start = false;
         for event in &events {
             match event {
                 sdl2::event::Event::Quit { .. } => break 'running,
@@ -90,33 +93,36 @@ pub fn run_lua_app(app_dir: &Path, assets_dir: &Path) -> Result<(), String> {
                     keycode: Some(sdl2::keyboard::Keycode::Escape),
                     ..
                 } => break 'running,
+                // Joystick API: button 12=Select, 13=Start on R36S Plus
+                sdl2::event::Event::JoyButtonDown { button_idx: 12, .. } => {
+                    raw_select = true;
+                }
+                sdl2::event::Event::JoyButtonDown { button_idx: 13, .. } => {
+                    raw_start = true;
+                }
+                // GameController API: Back=Select, Start=Start
+                sdl2::event::Event::ControllerButtonDown { button, .. } => {
+                    match button {
+                        sdl2::controller::Button::Back
+                        | sdl2::controller::Button::Guide => {
+                            raw_select = true;
+                        }
+                        sdl2::controller::Button::Start => {
+                            raw_start = true;
+                        }
+                        _ => {}
+                    }
+                }
                 _ => {}
             }
+        }
+        // Exit on Select alone or Start+Select combo
+        if raw_select || (raw_start && raw_select) {
+            break 'running;
         }
 
         // Process input
         let input_events = input_manager.process_events(&events);
-
-        // System-level exit: Select alone OR Start+Select combo
-        let mut has_select_press = false;
-        let mut has_start_held = false;
-        for ie in &input_events {
-            if ie.button == Button::Select && ie.action == InputAction::Press {
-                has_select_press = true;
-            }
-            if ie.button == Button::Start {
-                has_start_held = true;
-            }
-        }
-        // Exit on Select press (regardless of Start state)
-        if has_select_press {
-            break 'running;
-        }
-        // Also exit on Start+Select combo (Start held + Select press already handled above)
-        // For Start+Select where Start arrives in same frame as combo:
-        if has_start_held && has_select_press {
-            break 'running;
-        }
 
         // Deliver input to Lua (filter out Select so apps don't see it)
         let lua_events: Vec<_> = input_events

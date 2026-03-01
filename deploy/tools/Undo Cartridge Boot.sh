@@ -39,18 +39,25 @@ fi
 
 echo "[2/2] Re-enabling EmulationStation auto-start..."
 
-# Try to restore the services that Setup originally disabled
+# Unmask and re-enable the services that Setup originally disabled
 RESTORED=false
 if [[ -f "${CARTRIDGE_DIR}/.disabled_es_services" ]]; then
-    while IFS= read -r svc; do
-        if [[ -n "$svc" ]]; then
-            systemctl enable "$svc" 2>/dev/null && RESTORED=true && echo "  Re-enabled $svc"
-        fi
+    while IFS=' ' read -ra svcs; do
+        for svc in "${svcs[@]}"; do
+            if [[ -n "$svc" ]]; then
+                systemctl unmask "$svc" 2>/dev/null || true
+                systemctl enable "$svc" 2>/dev/null && RESTORED=true && echo "  Re-enabled $svc"
+            fi
+        done
     done < "${CARTRIDGE_DIR}/.disabled_es_services"
     rm -f "${CARTRIDGE_DIR}/.disabled_es_services"
 fi
 
-# Also try the common name as fallback
+# Also unmask and try common names as fallback
+for svc in emulationstation.service emulationstation-es.service start_es.service; do
+    systemctl unmask "$svc" 2>/dev/null || true
+done
+
 if ! $RESTORED; then
     systemctl enable emulationstation.service 2>/dev/null || true
     echo "  Attempted to re-enable emulationstation.service"

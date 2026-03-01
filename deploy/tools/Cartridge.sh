@@ -12,7 +12,13 @@ else
 fi
 CARTRIDGE_DIR="${ROMS_DIR}/Cartridge"
 
-if [[ ! -x "${CARTRIDGE_DIR}/cartridge" ]]; then
+# Fix execute permissions (exFAT doesn't preserve Unix bits)
+chmod +x "${CARTRIDGE_DIR}/cartridge" 2>/dev/null
+chmod +x "${CARTRIDGE_DIR}/cartridge-boot" 2>/dev/null
+chmod +x "${CARTRIDGE_DIR}/cartridge-boot.sh" 2>/dev/null
+chmod +x "${CARTRIDGE_DIR}/autosetup.sh" 2>/dev/null
+
+if [[ ! -f "${CARTRIDGE_DIR}/cartridge" ]]; then
     echo "CartridgeOS not found at ${CARTRIDGE_DIR}"
     echo "Extract the CartridgeOS zip to your roms/ folder first."
     sleep 5
@@ -26,8 +32,7 @@ if ! systemctl is-enabled cartridge-boot.service &>/dev/null; then
     echo "First run detected - setting up CartridgeOS boot selector..."
     echo ""
 
-    # Install the autosetup script if present
-    if [[ -x "${CARTRIDGE_DIR}/autosetup.sh" ]]; then
+    if [[ -f "${CARTRIDGE_DIR}/autosetup.sh" ]]; then
         bash "${CARTRIDGE_DIR}/autosetup.sh" --no-reboot
     fi
 fi
