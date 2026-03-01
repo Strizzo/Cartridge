@@ -243,6 +243,86 @@ detect_device() {
     fi
 }
 
+# ── Install Boot Logo ───────────────────────────────────────────────────────
+
+find_boot_partition() {
+    # The BOOT partition is a FAT32 partition on the same SD card as EASYROMS.
+    # It usually mounts as "BOOT" or contains a kernel Image file.
+    local system
+    system="$(uname -s)"
+
+    case "$system" in
+        Darwin)
+            # Check for a volume named BOOT or boot
+            for name in BOOT boot Boot; do
+                if [[ -d "/Volumes/$name" ]]; then
+                    echo "/Volumes/$name"
+                    return
+                fi
+            done
+            # Heuristic: look for a volume with a kernel Image file
+            for vol in /Volumes/*; do
+                if [[ -f "$vol/Image" ]] || [[ -f "$vol/rk3566-rk817-rgb30.dtb" ]] || [[ -d "$vol/BMPs" ]]; then
+                    echo "$vol"
+                    return
+                fi
+            done
+            ;;
+        Linux)
+            for base in /media /run/media /mnt; do
+                for vol in "$base"/*/ "$base"/*/*/; do
+                    vol="${vol%/}"
+                    [[ ! -d "$vol" ]] && continue
+                    local vol_name
+                    vol_name="$(basename "$vol")"
+                    if [[ "${vol_name,,}" == "boot" ]]; then
+                        echo "$vol"
+                        return
+                    fi
+                    if [[ -f "$vol/Image" ]] || [[ -d "$vol/BMPs" ]]; then
+                        echo "$vol"
+                        return
+                    fi
+                done
+            done
+            ;;
+    esac
+}
+
+install_boot_logo() {
+    if [[ ! -f "assets/logo.bmp" ]]; then
+        info "No logo.bmp found in assets/, skipping boot logo installation."
+        return
+    fi
+
+    local boot_part
+    boot_part="$(find_boot_partition)"
+
+    if [[ -z "$boot_part" ]]; then
+        warn "BOOT partition not found. To install the boot logo manually:"
+        warn "  Copy assets/logo.bmp to the root of the BOOT partition on the SD card."
+        return
+    fi
+
+    info "Found BOOT partition at: $boot_part"
+
+    if $DRY_RUN; then
+        echo "  Would copy: assets/logo.bmp -> $boot_part/logo.bmp"
+        return
+    fi
+
+    # Backup existing logo if present
+    if [[ -f "$boot_part/logo.bmp" ]]; then
+        if [[ ! -f "$boot_part/logo.bmp.bak" ]]; then
+            cp "$boot_part/logo.bmp" "$boot_part/logo.bmp.bak"
+            info "Backed up original boot logo to logo.bmp.bak"
+        fi
+    fi
+
+    cp "assets/logo.bmp" "$boot_part/logo.bmp"
+    ok "Boot logo installed to $boot_part/logo.bmp"
+}
+
 # ── Install to Device ────────────────────────────────────────────────────────
 
 install_to_device() {
@@ -355,6 +435,9 @@ install_to_device() {
     done
     ok "Tools menu scripts installed (existing tools preserved)"
 
+    # Install boot logo to BOOT partition if found
+    install_boot_logo
+
     # Done
     echo ""
     echo -e "${BOLD}Done!${NC}"
@@ -371,8 +454,8 @@ install_to_device() {
 
 main() {
     echo ""
-    echo -e "${BOLD}  Cartridge Device Installer${NC}"
-    echo "  =========================="
+    echo -e "${BOLD}  CartridgeOS Device Installer${NC}"
+    echo "  ============================"
     echo ""
 
     cross_compile

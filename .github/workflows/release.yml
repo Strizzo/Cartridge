@@ -50,6 +50,7 @@ jobs:
           cp -r assets/fonts/* release/Cartridge/assets/fonts/
           cp -r assets/overlays/* release/Cartridge/assets/overlays/
           cp assets/boot_logo.png release/Cartridge/assets/
+          cp assets/logo.bmp release/Cartridge/assets/
 
           # Lua cartridges (bundled apps with icons)
           cp -r lua_cartridges release/Cartridge/lua_cartridges
@@ -60,6 +61,9 @@ jobs:
           cp "deploy/tools/Setup Cartridge Boot.sh" release/Cartridge/tools/
           cp "deploy/tools/Undo Cartridge Boot.sh" release/Cartridge/tools/
           chmod +x release/Cartridge/tools/*.sh
+
+          # Boot logo (for BOOT partition)
+          cp assets/logo.bmp release/logo.bmp
 
           # Install instructions
           cp INSTALL.md release/INSTALL.txt 2>/dev/null || true
@@ -82,5 +86,9 @@ jobs:
             4. Boot your device into EmulationStation
             5. Go to **Tools > Cartridge** to launch (auto-sets up boot selector on first run)
             6. On next reboot, you'll see the CartridgeOS/EmulationStation boot chooser
+
+            ## Custom Boot Logo (optional)
+
+            Copy `logo.bmp` from the zip root to the root of your SD card's **BOOT** partition to replace the default ArkOS boot screen with the CartridgeOS splash.
 
             See `INSTALL.txt` in the zip for full instructions.
