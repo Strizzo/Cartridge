@@ -312,17 +312,42 @@ impl SystemInfo {
 
     #[cfg(target_os = "linux")]
     fn poll_wifi_linux(&mut self) {
-        // Try iwgetid -r for SSID
-        if let Ok(output) = std::process::Command::new("iwgetid").arg("-r").output() {
-            let ssid = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            self.wifi_ssid = if ssid.is_empty() { None } else { Some(ssid) };
+        self.wifi_ssid = None;
+
+        // Primary: use nmcli to check active WiFi connection
+        if let Ok(output) = std::process::Command::new("nmcli")
+            .args(["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "dev", "status"])
+            .output()
+        {
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                let parts: Vec<&str> = line.splitn(4, ':').collect();
+                if parts.len() >= 4
+                    && parts[1] == "wifi"
+                    && parts[2] == "connected"
+                    && !parts[3].is_empty()
+                {
+                    self.wifi_ssid = Some(parts[3].to_string());
+                    break;
+                }
+            }
         }
-        // Try reading signal from /proc/net/wireless
+
+        // Fallback: try iwgetid if nmcli didn't find anything
+        if self.wifi_ssid.is_none() {
+            if let Ok(output) = std::process::Command::new("iwgetid").arg("-r").output() {
+                let ssid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !ssid.is_empty() {
+                    self.wifi_ssid = Some(ssid);
+                }
+            }
+        }
+
+        // Signal strength from /proc/net/wireless
         if let Ok(content) = std::fs::read_to_string("/proc/net/wireless") {
             for line in content.lines().skip(2) {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 4 {
-                    // Column 3 is signal level (dBm)
                     let sig = parts[3].trim_end_matches('.');
                     self.wifi_signal = sig.parse().unwrap_or(0);
                     break;

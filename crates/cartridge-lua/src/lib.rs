@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use cartridge_core::font::FontCache;
 use cartridge_core::image_cache::ImageCache;
-use cartridge_core::input::InputManager;
+use cartridge_core::input::{Button, InputAction, InputManager};
 use cartridge_core::screen::{Screen, HEIGHT, WIDTH};
 use cartridge_core::theme::Theme;
 
@@ -89,9 +89,22 @@ pub fn run_lua_app(app_dir: &Path, assets_dir: &Path) -> Result<(), String> {
             }
         }
 
-        // Process input and deliver to Lua
+        // Process input
         let input_events = input_manager.process_events(&events);
-        app.call_input(&input_events);
+
+        // Select button always exits back to the launcher (system-level)
+        for ie in &input_events {
+            if ie.button == Button::Select && ie.action == InputAction::Press {
+                break 'running;
+            }
+        }
+
+        // Deliver input to Lua (filter out Select so apps don't see it)
+        let lua_events: Vec<_> = input_events
+            .into_iter()
+            .filter(|ie| ie.button != Button::Select)
+            .collect();
+        app.call_input(&lua_events);
 
         // Update
         app.call_update(dt);

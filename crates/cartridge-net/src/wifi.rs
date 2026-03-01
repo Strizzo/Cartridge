@@ -27,19 +27,37 @@ impl WifiManager {
         #[cfg(target_os = "linux")]
         {
             use std::process::Command;
-            let ssid_output = Command::new("iwgetid").arg("-r").output();
-            match ssid_output {
-                Ok(output) if output.status.success() => {
-                    let ssid = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    if ssid.is_empty() {
-                        WifiStatus::Disconnected
-                    } else {
+
+            // Primary: use nmcli to check active WiFi connection
+            if let Ok(output) = Command::new("nmcli")
+                .args(["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "dev", "status"])
+                .output()
+            {
+                let text = String::from_utf8_lossy(&output.stdout);
+                for line in text.lines() {
+                    let parts: Vec<&str> = line.splitn(4, ':').collect();
+                    if parts.len() >= 4
+                        && parts[1] == "wifi"
+                        && parts[2] == "connected"
+                        && !parts[3].is_empty()
+                    {
+                        let ssid = parts[3].to_string();
                         let signal = read_signal_strength();
-                        WifiStatus::Connected { ssid, signal }
+                        return WifiStatus::Connected { ssid, signal };
                     }
                 }
-                _ => WifiStatus::Disconnected,
             }
+
+            // Fallback: try iwgetid
+            if let Ok(output) = Command::new("iwgetid").arg("-r").output() {
+                let ssid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !ssid.is_empty() {
+                    let signal = read_signal_strength();
+                    return WifiStatus::Connected { ssid, signal };
+                }
+            }
+
+            WifiStatus::Disconnected
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -143,19 +161,21 @@ impl WifiManager {
         }
     }
 
+    /// Connect to a saved WiFi network.
+    /// Waits up to 10 seconds for the connection to establish, then verifies.
     pub fn connect(&self, ssid: &str) -> Result<(), String> {
         #[cfg(target_os = "linux")]
         {
             use std::process::Command;
             let output = Command::new("nmcli")
-                .args(["con", "up", ssid])
+                .args(["--wait", "10", "con", "up", ssid])
                 .output()
-                .map_err(|e| format!("nmcli connect failed: {e}"))?;
+                .map_err(|e| format!("nmcli failed: {e}"))?;
             if output.status.success() {
-                Ok(())
+                self.verify_connection(ssid)
             } else {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                Err(format!("Failed to connect to {ssid}: {stderr}"))
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                Err(format!("Failed to connect: {stderr}"))
             }
         }
         #[cfg(not(target_os = "linux"))]
@@ -165,27 +185,64 @@ impl WifiManager {
         }
     }
 
+    /// Connect to a WiFi network with a password.
+    /// Waits up to 10 seconds for the connection to establish, then verifies.
     pub fn connect_with_password(&self, ssid: &str, password: &str) -> Result<(), String> {
         #[cfg(target_os = "linux")]
         {
             use std::process::Command;
             let output = Command::new("nmcli")
-                .args(["dev", "wifi", "connect", ssid, "password", password])
+                .args(["--wait", "10", "dev", "wifi", "connect", ssid, "password", password])
                 .output()
-                .map_err(|e| format!("nmcli connect failed: {e}"))?;
+                .map_err(|e| format!("nmcli failed: {e}"))?;
             if output.status.success() {
-                Ok(())
+                self.verify_connection(ssid)
             } else {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                Err(format!("Failed to connect to {ssid}: {stderr}"))
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                Err(format!("Failed to connect: {stderr}"))
             }
         }
         #[cfg(not(target_os = "linux"))]
         {
             let _ = (ssid, password);
-            log::info!("Mock: connected to {ssid} with password");
             Ok(())
         }
+    }
+
+    /// Verify that we're actually connected after nmcli reports success.
+    #[cfg(target_os = "linux")]
+    fn verify_connection(&self, expected_ssid: &str) -> Result<(), String> {
+        use std::process::Command;
+        // Brief pause to let the connection fully establish
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // Check with nmcli (more reliable than iwgetid)
+        let output = Command::new("nmcli")
+            .args(["-t", "-f", "DEVICE,STATE,CONNECTION", "dev", "status"])
+            .output()
+            .ok();
+
+        if let Some(output) = output {
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                let parts: Vec<&str> = line.splitn(3, ':').collect();
+                // Look for a wireless device in connected state
+                if parts.len() >= 3 && parts[1] == "connected" && !parts[2].is_empty() {
+                    return Ok(());
+                }
+            }
+        }
+
+        // Fallback: try iwgetid
+        let output = Command::new("iwgetid").arg("-r").output();
+        if let Ok(output) = output {
+            let ssid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !ssid.is_empty() {
+                return Ok(());
+            }
+        }
+
+        Err(format!("Connection to {expected_ssid} did not establish"))
     }
 
     pub fn disconnect(&self) -> Result<(), String> {
