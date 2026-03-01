@@ -3,6 +3,14 @@
 
 -- ── Expression Evaluator (Recursive Descent Parser) ──────────────────────────
 
+local FUNCTIONS = {
+    sin = math.sin, cos = math.cos, tan = math.tan,
+    sqrt = math.sqrt, ln = function(x) return math.log(x) end,
+}
+local CONSTANTS = {
+    pi = math.pi, e = math.exp(1),
+}
+
 local function tokenize(text)
     local tokens = {}
     local i = 1
@@ -27,10 +35,24 @@ local function tokenize(text)
             end
             local num_str = text:sub(start, i - 1)
             tokens[#tokens + 1] = {kind="NUMBER", value=tonumber(num_str) or 0}
+        elseif ch:match("%a") then
+            local start = i
+            while i <= #text and text:sub(i, i):match("%a") do
+                i = i + 1
+            end
+            local word = text:sub(start, i - 1)
+            if FUNCTIONS[word] then
+                tokens[#tokens + 1] = {kind="FUNC", value=word}
+            elseif CONSTANTS[word] then
+                tokens[#tokens + 1] = {kind="NUMBER", value=CONSTANTS[word]}
+            else
+                return nil, "Unknown: " .. word
+            end
         elseif ch == "+" then tokens[#tokens + 1] = {kind="PLUS"}; i = i + 1
         elseif ch == "-" then tokens[#tokens + 1] = {kind="MINUS"}; i = i + 1
         elseif ch == "*" then tokens[#tokens + 1] = {kind="MUL"}; i = i + 1
         elseif ch == "/" then tokens[#tokens + 1] = {kind="DIV"}; i = i + 1
+        elseif ch == "^" then tokens[#tokens + 1] = {kind="POWER"}; i = i + 1
         elseif ch == "%" then tokens[#tokens + 1] = {kind="PERCENT"}; i = i + 1
         elseif ch == "(" then tokens[#tokens + 1] = {kind="LPAREN"}; i = i + 1
         elseif ch == ")" then tokens[#tokens + 1] = {kind="RPAREN"}; i = i + 1
@@ -70,11 +92,21 @@ local function create_parser(tokens)
         return nil
     end
 
-    local expr, term, unary, postfix, primary
+    local expr, term, power, unary, postfix, primary
 
     primary = function()
         local tok = current()
-        if tok.kind == "NUMBER" then
+        if tok.kind == "FUNC" then
+            local fn = FUNCTIONS[tok.value]
+            pos = pos + 1
+            local _, err = consume("LPAREN")
+            if err then return nil end
+            local val = expr()
+            if val == nil then return nil end
+            _, err = consume("RPAREN")
+            if err then return nil end
+            return fn(val)
+        elseif tok.kind == "NUMBER" then
             pos = pos + 1
             return tok.value
         elseif tok.kind == "LPAREN" then
@@ -106,13 +138,25 @@ local function create_parser(tokens)
         return postfix()
     end
 
+    -- Right-associative: 2^3^2 = 2^(3^2) = 512
+    power = function()
+        local base = unary()
+        if base == nil then return nil end
+        if match("POWER") then
+            local exp_val = power()
+            if exp_val == nil then return nil end
+            return base ^ exp_val
+        end
+        return base
+    end
+
     term = function()
-        local left = unary()
+        local left = power()
         if left == nil then return nil end
         while true do
             local tok = match("MUL", "DIV")
             if not tok then break end
-            local right = unary()
+            local right = power()
             if right == nil then return nil end
             if tok.kind == "MUL" then
                 left = left * right
@@ -207,17 +251,22 @@ local GRID = {
      {label="5", action="5", type=TYPE_DIGIT},
      {label="6", action="6", type=TYPE_DIGIT},
      {label="\195\151", action="*", type=TYPE_OP},
-     {label="", action="", type=TYPE_EMPTY}},
+     {label="^", action="^", type=TYPE_OP}},
     {{label="1", action="1", type=TYPE_DIGIT},
      {label="2", action="2", type=TYPE_DIGIT},
      {label="3", action="3", type=TYPE_DIGIT},
      {label="\226\136\146", action="-", type=TYPE_OP},
-     {label="", action="", type=TYPE_EMPTY}},
+     {label="\226\136\154", action="sqrt(", type=TYPE_FUNC}},
     {{label="0", action="0", type=TYPE_DIGIT},
      {label=".", action=".", type=TYPE_DIGIT},
      {label="+/\226\136\146", action="negate", type=TYPE_FUNC},
      {label="+", action="+", type=TYPE_OP},
      {label="=", action="equals", type=TYPE_EQUAL}},
+    {{label="sin", action="sin(", type=TYPE_FUNC},
+     {label="cos", action="cos(", type=TYPE_FUNC},
+     {label="tan", action="tan(", type=TYPE_FUNC},
+     {label="ln", action="ln(", type=TYPE_FUNC},
+     {label="\207\128", action="pi", type=TYPE_FUNC}},
 }
 
 local GRID_ROWS = #GRID
@@ -340,13 +389,21 @@ end
 
 local function clear_last_entry()
     if state.expression == "" then return end
-    local ops = {["+"] = true, ["-"] = true, ["*"] = true, ["/"] = true, ["("] = true}
+    local ops = {["+"] = true, ["-"] = true, ["*"] = true, ["/"] = true, ["("] = true, ["^"] = true}
     local i = #state.expression
     while i >= 1 and ops[state.expression:sub(i, i)] do
         i = i - 1
     end
     while i >= 1 and not ops[state.expression:sub(i, i)] do
         i = i - 1
+    end
+    -- Also consume a preceding function name (e.g. "sin(")
+    if i >= 1 and state.expression:sub(i, i) == "(" then
+        local before = i - 1
+        while before >= 1 and state.expression:sub(before, before):match("%a") do
+            before = before - 1
+        end
+        if before < i - 1 then i = before end
     end
     if i >= 1 then
         state.expression = state.expression:sub(1, i)
@@ -371,7 +428,7 @@ local function toggle_negate()
             return
         end
     end
-    if i >= 1 and ({["+"] = true, ["-"] = true, ["*"] = true, ["/"] = true, ["%"] = true, ["("] = true})[expr:sub(i, i)] then
+    if i >= 1 and ({["+"] = true, ["-"] = true, ["*"] = true, ["/"] = true, ["%"] = true, ["("] = true, ["^"] = true})[expr:sub(i, i)] then
         state.expression = expr:sub(1, i) .. "-" .. expr:sub(i + 1)
     elseif i < 1 then
         if expr:sub(1, 1) == "-" then
@@ -446,24 +503,22 @@ local function draw_calc_screen()
     local display_h = 116
     screen.draw_card(12, display_y, 696, display_h, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
 
-    -- Format expression
-    local display_expr = state.expression
-    display_expr = display_expr:gsub("/", " \195\183 ")
-    display_expr = display_expr:gsub("%*", " \195\151 ")
-    -- Add spaces around + and -
+    -- Format expression for display
     local formatted = ""
     local raw = state.expression
     local i = 1
     while i <= #raw do
         local ch = raw:sub(i, i)
-        if (ch == "+" or ch == "-") and i > 1 and not ({["+"] = true, ["-"] = true, ["*"] = true, ["/"] = true, ["("] = true})[raw:sub(i - 1, i - 1)] then
+        if (ch == "+" or ch == "-") and i > 1 and not ({["+"] = true, ["-"] = true, ["*"] = true, ["/"] = true, ["("] = true, ["^"] = true})[raw:sub(i - 1, i - 1)] then
             formatted = formatted .. " " .. ch .. " "
         else
             formatted = formatted .. ch
         end
         i = i + 1
     end
-    display_expr = formatted:gsub("/", " \195\183 "):gsub("%*", " \195\151 ")
+    local display_expr = formatted:gsub("/", " \195\183 "):gsub("%*", " \195\151 ")
+    display_expr = display_expr:gsub("pi", "\207\128")
+    display_expr = display_expr:gsub("sqrt%(", "\226\136\154(")
 
     if display_expr == "" then
         display_expr = "0"
@@ -500,9 +555,9 @@ local function draw_calc_screen()
     local grid_y_start = 168
     local grid_x_start = 10
     local btn_w = 136
-    local btn_h = 52
+    local btn_h = 48
     local gap_x = 5
-    local gap_y = 5
+    local gap_y = 4
 
     for row = 1, GRID_ROWS do
         for col = 1, GRID_COLS do
@@ -526,7 +581,8 @@ local function draw_calc_screen()
 
                 -- Label
                 local font_size = 20
-                if btn.label == "DEL" or btn.label == "AC" or btn.label == "+/\226\136\146" then
+                if btn.label == "DEL" or btn.label == "AC" or btn.label == "+/\226\136\146"
+                   or btn.label == "sin" or btn.label == "cos" or btn.label == "tan" or btn.label == "ln" then
                     font_size = 16
                 end
                 local lw = screen.get_text_width(btn.label, font_size, true)
@@ -538,7 +594,7 @@ local function draw_calc_screen()
 
     draw_footer({
         {"A", "Press", theme.btn_a},
-        {"B", "Delete", theme.btn_b},
+        {"B", "Del", theme.btn_b},
         {"Y", "History", theme.btn_y},
     })
 end
@@ -590,7 +646,7 @@ local function draw_history_screen()
         end
 
         -- Expression
-        local expr_display = entry.expr:gsub("/", " \195\183 "):gsub("%*", " \195\151 ")
+        local expr_display = entry.expr:gsub("/", " \195\183 "):gsub("%*", " \195\151 "):gsub("pi", "\207\128"):gsub("sqrt%(", "\226\136\154(")
         screen.draw_text(expr_display, x_pad + 14, y + 10, {color=theme.text, size=16, max_width=400})
 
         -- Result (right-aligned)

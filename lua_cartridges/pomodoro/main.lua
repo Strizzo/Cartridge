@@ -194,7 +194,7 @@ local function draw_timer_screen()
     local content_top = 40
     local content_bottom = 684
     local cx = 360
-    local cy = (content_top + content_bottom) / 2 - 30
+    local cy = (content_top + content_bottom) / 2 - 35
 
     local phase_color = PHASE_COLORS[state.phase]
     local phase_color_dim = PHASE_COLORS_DIM[state.phase]
@@ -202,8 +202,8 @@ local function draw_timer_screen()
     local progress = get_progress()
 
     -- Draw circular ring
-    local radius = 130
-    local ring_width = 12
+    local radius = 155
+    local ring_width = 14
 
     -- Track circle
     screen.draw_circle(cx, cy, radius, track_color[1], track_color[2], track_color[3])
@@ -228,30 +228,30 @@ local function draw_timer_screen()
 
     -- Time display inside ring
     local time_str = format_time()
-    local tw = screen.get_text_width(time_str, 52, true)
-    screen.draw_text(time_str, cx - tw / 2, cy - 18, {color=theme.text, size=52, bold=true})
+    local tw = screen.get_text_width(time_str, 58, true)
+    screen.draw_text(time_str, cx - tw / 2, cy - 20, {color=theme.text, size=58, bold=true})
 
     -- Phase label
     local label = PHASE_LABELS[state.phase]
-    local lw = screen.get_text_width(label, 18, false)
-    screen.draw_text(label, cx - lw / 2, cy + 32, {color=phase_color, size=18})
+    local lw = screen.get_text_width(label, 20, false)
+    screen.draw_text(label, cx - lw / 2, cy + 36, {color=phase_color, size=20})
 
     -- Running indicator
     if state.running then
         local pulse = (math.sin(state.pulse_t * 4) + 1) / 2
         local dot_radius = math.floor(4 + 2 * pulse)
-        screen.draw_circle(cx, cy + 56, dot_radius, phase_color[1], phase_color[2], phase_color[3])
+        screen.draw_circle(cx, cy + 62, dot_radius, phase_color[1], phase_color[2], phase_color[3])
     else
         if state.remaining < get_duration() then
-            local pw = screen.get_text_width("PAUSED", 13, false)
-            screen.draw_text("PAUSED", cx - pw / 2, cy + 50, {color=theme.text_dim, size=13})
+            local pw = screen.get_text_width("PAUSED", 14, false)
+            screen.draw_text("PAUSED", cx - pw / 2, cy + 56, {color=theme.text_dim, size=14})
         end
     end
 
     -- Session dots (4 circles)
-    local dot_y = cy + radius + 40
-    local dot_radius_s = 8
-    local spacing = 30
+    local dot_y = cy + radius + 45
+    local dot_radius_s = 9
+    local spacing = 34
     local total_width = 3 * spacing
     local start_x = cx - total_width / 2
     for i = 0, 3 do
@@ -266,8 +266,8 @@ local function draw_timer_screen()
 
     -- Completed count
     local count_text = state.total_completed .. " pomodoro" .. (state.total_completed ~= 1 and "s" or "") .. " today"
-    local cw = screen.get_text_width(count_text, 14, false)
-    screen.draw_text(count_text, cx - cw / 2, dot_y + 24, {color=theme.text_dim, size=14})
+    local cw = screen.get_text_width(count_text, 15, false)
+    screen.draw_text(count_text, cx - cw / 2, dot_y + 26, {color=theme.text_dim, size=15})
 
     -- Footer
     local hints = {}
