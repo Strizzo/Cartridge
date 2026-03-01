@@ -14,6 +14,7 @@ pub mod progress_bar;
 pub mod status_bar;
 pub mod tab_bar;
 pub mod table;
+pub mod text_input;
 pub mod toast;
 
 pub use chart::{LineChart, SparkLine};
@@ -27,5 +28,6 @@ pub use progress_bar::ProgressBar;
 pub use status_bar::StatusBar;
 pub use tab_bar::{Tab, TabBar};
 pub use table::{Column, Table};
+pub use text_input::{TextInput, TextInputResult};
 pub use toast::{Toast, ToastManager};
 

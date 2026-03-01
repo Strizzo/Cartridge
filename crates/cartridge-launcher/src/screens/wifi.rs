@@ -1,5 +1,6 @@
 use cartridge_core::input::{Button, InputAction, InputEvent};
 use cartridge_core::screen::Screen;
+use cartridge_core::ui::text_input::{TextInput, TextInputResult};
 use cartridge_net::wifi::{WifiNetwork, WifiStatus};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
@@ -15,6 +16,10 @@ pub struct WifiScreen {
     message_time: Option<std::time::Instant>,
     scanned: bool,
     scroll_offset: usize,
+    /// On-screen keyboard for WiFi password entry.
+    password_input: TextInput,
+    /// SSID we're currently trying to connect to (while password dialog is open).
+    connecting_ssid: Option<String>,
 }
 
 const NET_ROW_H: i32 = 48;
@@ -30,6 +35,8 @@ impl WifiScreen {
             message_time: None,
             scanned: false,
             scroll_offset: 0,
+            password_input: TextInput::new(""),
+            connecting_ssid: None,
         }
     }
 
@@ -53,6 +60,37 @@ impl LauncherScreen for WifiScreen {
         if !self.scanned {
             self.scanned = true;
             self.refresh(ctx);
+        }
+
+        // If password keyboard is active, route all input there
+        if self.password_input.visible {
+            for ie in events {
+                let result = self.password_input.handle_input(ie);
+                match result {
+                    TextInputResult::Submitted(password) => {
+                        if let Some(ssid) = self.connecting_ssid.take() {
+                            if password.is_empty() {
+                                self.set_message("Password cannot be empty".to_string());
+                            } else {
+                                match ctx.wifi_manager.connect_with_password(&ssid, &password) {
+                                    Ok(()) => {
+                                        self.set_message(format!("Connected to {ssid}"));
+                                    }
+                                    Err(e) => {
+                                        self.set_message(format!("Error: {e}"));
+                                    }
+                                }
+                                self.refresh(ctx);
+                            }
+                        }
+                    }
+                    TextInputResult::Cancelled => {
+                        self.connecting_ssid = None;
+                    }
+                    TextInputResult::Pending => {}
+                }
+            }
+            return ScreenAction::None;
         }
 
         let total = self.total_rows();
@@ -94,8 +132,20 @@ impl LauncherScreen for WifiScreen {
                                     Err(e) => self.set_message(format!("Error: {e}")),
                                 }
                                 self.refresh(ctx);
+                            } else if network.security == "--" || network.security.is_empty() {
+                                // Open network, no password needed
+                                let ssid = network.ssid.clone();
+                                match ctx.wifi_manager.connect_with_password(&ssid, "") {
+                                    Ok(()) => self.set_message(format!("Connected to {ssid}")),
+                                    Err(e) => self.set_message(format!("Error: {e}")),
+                                }
+                                self.refresh(ctx);
                             } else {
-                                self.set_message("Password required (not yet supported)".to_string());
+                                // Password required — show on-screen keyboard
+                                let ssid = network.ssid.clone();
+                                let label = format!("Password for {}", ssid);
+                                self.password_input.show(&label);
+                                self.connecting_ssid = Some(ssid);
                             }
                         }
                     }
@@ -418,5 +468,8 @@ impl LauncherScreen for WifiScreen {
         let w = screen.draw_button_hint("B", "Back", fx, footer_y + 8, Some(theme.btn_b), 12);
         fx += w as i32 + 12;
         screen.draw_button_hint("Y", "Rescan", fx, footer_y + 8, Some(theme.btn_y), 12);
+
+        // -- Password input overlay (drawn on top of everything) --
+        self.password_input.draw(screen);
     }
 }

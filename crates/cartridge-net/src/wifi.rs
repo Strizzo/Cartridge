@@ -165,6 +165,29 @@ impl WifiManager {
         }
     }
 
+    pub fn connect_with_password(&self, ssid: &str, password: &str) -> Result<(), String> {
+        #[cfg(target_os = "linux")]
+        {
+            use std::process::Command;
+            let output = Command::new("nmcli")
+                .args(["dev", "wifi", "connect", ssid, "password", password])
+                .output()
+                .map_err(|e| format!("nmcli connect failed: {e}"))?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                Err(format!("Failed to connect to {ssid}: {stderr}"))
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = (ssid, password);
+            log::info!("Mock: connected to {ssid} with password");
+            Ok(())
+        }
+    }
+
     pub fn disconnect(&self) -> Result<(), String> {
         #[cfg(target_os = "linux")]
         {
