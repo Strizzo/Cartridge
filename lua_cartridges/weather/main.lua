@@ -562,10 +562,17 @@ function on_init()
             end
         end
     end
-    -- Init settings cursor to current city
     state.settings_cursor = state.city_idx
+    state.current_loading = true
+    state.forecast_loading = true
+    state._needs_initial_load = true
+end
 
-    load_all()
+function on_update(dt)
+    if state._ready_to_load then
+        state._ready_to_load = false
+        load_all()
+    end
 end
 
 function on_input(button, action)
@@ -616,6 +623,11 @@ end
 
 function on_render()
     screen.clear(theme.bg.r, theme.bg.g, theme.bg.b)
+
+    if state._needs_initial_load then
+        state._needs_initial_load = false
+        state._ready_to_load = true
+    end
 
     if state.tab_index == 1 then
         draw_current_screen()

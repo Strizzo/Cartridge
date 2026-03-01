@@ -14,7 +14,7 @@ use std::time::Instant;
 
 use app::LauncherApp;
 
-const TARGET_FPS: u32 = 30;
+const TARGET_FPS: u32 = 15;
 
 /// The result of running the launcher -- either the user quit, or they want to launch an app.
 pub enum LauncherResult {

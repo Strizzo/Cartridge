@@ -85,7 +85,8 @@ local SECTOR_LABELS = {
 local TIER_COLORS = {
     mega={255, 200, 60}, large={100, 180, 255}, mid={140, 140, 160},
 }
-local PERIODS = {{"1W","5d"}, {"1M","1mo"}, {"3M","3mo"}, {"6M","6mo"}}
+local PERIODS = {{"1D","1d"}, {"1W","5d"}, {"1M","1mo"}, {"3M","3mo"}, {"1Y","1y"}}
+local PERIOD_INTERVALS = {["1d"]="5m", ["5d"]="15m", ["1mo"]="1d", ["3mo"]="1d", ["1y"]="1wk"}
 
 -- ── State ────────────────────────────────────────────────────────────────────
 
@@ -99,9 +100,10 @@ local state = {
     quotes = {},         -- tab_id -> list of quotes
     sparklines = {},     -- symbol -> list of prices
     cursor = 1,
+    list_period_idx = 2, -- default to 1W
     loading = false,
     refresh_timer = 0,
-    refresh_interval = 60.0,
+    refresh_interval = 120.0,
     -- Detail screen
     detail_quote = nil,
     detail_history = nil,
@@ -111,6 +113,8 @@ local state = {
     browse_sector_idx = 1,
     browse_cursor = 1,
     browse_stocks = {},
+    needs_initial_load = false,
+    ready_to_load = false,
 }
 
 local CARD_RADIUS = 6
@@ -227,48 +231,59 @@ local function load_watchlist()
     return items
 end
 
--- ── API: Simulated quote data (since yfinance isn't available in Lua) ────────
--- In production, this would use an HTTP API. For now, generate demo data.
+-- ── Yahoo Finance API ──────────────────────────────────────────────────────
 
-local function generate_demo_quotes(symbols)
-    local quotes = {}
-    for _, sym in ipairs(symbols) do
-        -- Generate a pseudo-random but consistent price based on symbol
-        local hash = 0
-        for i = 1, #sym do
-            hash = hash + sym:byte(i) * (i * 17)
-        end
-        local base_price = (hash % 50000) / 100 + 10
-        local change = ((hash * 7) % 1000 - 500) / 100
-        local change_pct = (change / base_price) * 100
+local YAHOO_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/"
 
-        quotes[#quotes + 1] = {
-            symbol = sym,
-            name = get_name_for_symbol(sym),
-            price = math.floor(base_price * 100) / 100,
-            change = math.floor(change * 100) / 100,
-            change_pct = math.floor(change_pct * 100) / 100,
-            high = math.floor((base_price + math.abs(change) * 1.2) * 100) / 100,
-            low = math.floor((base_price - math.abs(change) * 1.2) * 100) / 100,
-            week52_high = math.floor((base_price * 1.3) * 100) / 100,
-            week52_low = math.floor((base_price * 0.7) * 100) / 100,
-        }
-    end
-    return quotes
+local function fetch_chart(symbol, range)
+    local interval = PERIOD_INTERVALS[range] or "1d"
+    local url = YAHOO_BASE .. symbol .. "?range=" .. range .. "&interval=" .. interval .. "&events="
+    local ok, resp = pcall(http.get_cached, url, 120)
+    if not ok or not resp.ok then return nil end
+    local dok, data = pcall(json.decode, resp.body)
+    if not dok or not data then return nil end
+    local result = data.chart and data.chart.result
+    if not result or #result == 0 then return nil end
+    return result[1]
 end
 
-local function generate_demo_sparkline(symbol)
-    local data = {}
-    local hash = 0
-    for i = 1, #symbol do
-        hash = hash + symbol:byte(i) * (i * 13)
+local function fetch_quote_from_chart(symbol, range)
+    local chart = fetch_chart(symbol, range)
+    if not chart then return nil, {} end
+
+    local meta = chart.meta or {}
+    local price = meta.regularMarketPrice or 0
+    local prev_close = meta.chartPreviousClose or meta.previousClose or price
+    local change = price - prev_close
+    local change_pct = prev_close > 0 and (change / prev_close * 100) or 0
+
+    local closes = {}
+    local indicators = chart.indicators
+    if indicators and indicators.quote and #indicators.quote > 0 then
+        local raw = indicators.quote[1].close or {}
+        for _, v in ipairs(raw) do
+            if v then closes[#closes + 1] = v end
+        end
     end
-    local base = (hash % 500) + 50
-    for i = 1, 20 do
-        local noise = ((hash * i * 7) % 100 - 50) / 10
-        data[#data + 1] = base + noise
+
+    local high, low = price, price
+    for _, c in ipairs(closes) do
+        if c > high then high = c end
+        if c < low then low = c end
     end
-    return data
+
+    local quote = {
+        symbol = symbol,
+        name = get_name_for_symbol(symbol),
+        price = math.floor(price * 100) / 100,
+        change = math.floor(change * 100) / 100,
+        change_pct = math.floor(change_pct * 100) / 100,
+        high = math.floor(high * 100) / 100,
+        low = math.floor(low * 100) / 100,
+        week52_high = math.floor((meta.fiftyTwoWeekHigh or high) * 100) / 100,
+        week52_low = math.floor((meta.fiftyTwoWeekLow or low) * 100) / 100,
+    }
+    return quote, closes
 end
 
 -- ── Load Data ────────────────────────────────────────────────────────────────
@@ -292,15 +307,16 @@ local function load_quotes()
         end
     end
 
-    state.quotes[tab_id] = generate_demo_quotes(symbols)
-
-    -- Generate sparklines
-    for _, q in ipairs(state.quotes[tab_id]) do
-        if not state.sparklines[q.symbol] then
-            state.sparklines[q.symbol] = generate_demo_sparkline(q.symbol)
+    local range = PERIODS[state.list_period_idx][2]
+    local quotes = {}
+    for _, sym in ipairs(symbols) do
+        local q, closes = fetch_quote_from_chart(sym, range)
+        if q then
+            quotes[#quotes + 1] = q
+            state.sparklines[sym] = closes
         end
     end
-
+    state.quotes[tab_id] = quotes
     state.loading = false
 end
 
@@ -401,6 +417,29 @@ local function draw_watchlist_screen()
 
         draw_scroll_indicator(content_y, content_h, state.cursor, n, visible)
     end
+
+    -- Period pills at bottom of list area
+    local period_y = footer_y - 28
+    screen.draw_rect(0, period_y, 720, 28, {color=theme.bg_header, filled=true})
+    screen.draw_line(0, period_y, 720, period_y, {color=theme.border})
+    local px = 10
+    for i, p in ipairs(PERIODS) do
+        local label = p[1]
+        local is_active = (i == state.list_period_idx)
+        local tw = screen.get_text_width(label, 11, is_active)
+        local tab_w = tw + 12
+        if is_active then
+            screen.draw_rect(px, period_y + 3, tab_w, 20, {color=theme.accent, filled=true, radius=4})
+            screen.draw_text(label, px + 6, period_y + 5, {color={20, 20, 30}, size=11, bold=true})
+        else
+            screen.draw_rect(px, period_y + 3, tab_w, 20, {color=theme.card_bg, filled=true, radius=4})
+            screen.draw_text(label, px + 6, period_y + 5, {color=theme.text_dim, size=11})
+        end
+        px = px + tab_w + 4
+    end
+    local hint_str = "L2/R2 period"
+    local hw = screen.get_text_width(hint_str, 10, false)
+    screen.draw_text(hint_str, 710 - hw, period_y + 8, {color=theme.text_dim, size=10})
 
     draw_footer({
         {"L1/R1", "Tab", theme.btn_l},
@@ -630,7 +669,15 @@ end
 function on_init()
     state.watchlist = load_watchlist()
     update_browse_stocks()
-    load_quotes()
+    state.loading = true
+    state.needs_initial_load = true
+end
+
+function on_update(dt)
+    if state.ready_to_load then
+        state.ready_to_load = false
+        load_quotes()
+    end
 end
 
 function on_input(button, action)
@@ -669,10 +716,21 @@ function on_input(button, action)
             state.detail_period_idx = 2
             state.screen_stack[#state.screen_stack + 1] = "detail"
         elseif button == "x" then
-            state.quotes[tab_id] = nil
+            state.quotes = {}
+            state.sparklines = {}
             load_quotes()
         elseif button == "y" then
             state.screen_stack[#state.screen_stack + 1] = "browse"
+        elseif button == "l2" and action == "press" then
+            state.list_period_idx = math.max(1, state.list_period_idx - 1)
+            state.quotes = {}
+            state.sparklines = {}
+            load_quotes()
+        elseif button == "r2" and action == "press" then
+            state.list_period_idx = math.min(#PERIODS, state.list_period_idx + 1)
+            state.quotes = {}
+            state.sparklines = {}
+            load_quotes()
         end
 
     elseif current == "detail" then
@@ -680,8 +738,21 @@ function on_input(button, action)
             state.screen_stack[#state.screen_stack] = nil
         elseif button == "l1" then
             state.detail_period_idx = math.max(1, state.detail_period_idx - 1)
+            -- Refresh chart for new period
+            local range = PERIODS[state.detail_period_idx][2]
+            local q, closes = fetch_quote_from_chart(state.detail_quote.symbol, range)
+            if q then
+                state.detail_quote = q
+                state.sparklines[q.symbol] = closes
+            end
         elseif button == "r1" then
             state.detail_period_idx = math.min(#PERIODS, state.detail_period_idx + 1)
+            local range = PERIODS[state.detail_period_idx][2]
+            local q, closes = fetch_quote_from_chart(state.detail_quote.symbol, range)
+            if q then
+                state.detail_quote = q
+                state.sparklines[q.symbol] = closes
+            end
         end
 
     elseif current == "browse" then
@@ -738,6 +809,12 @@ end
 
 function on_render()
     screen.clear(theme.bg.r, theme.bg.g, theme.bg.b)
+
+    -- After first frame renders, allow on_update to fetch data
+    if state.needs_initial_load then
+        state.needs_initial_load = false
+        state.ready_to_load = true
+    end
 
     local current = state.screen_stack[#state.screen_stack]
     if current == "watchlist" then

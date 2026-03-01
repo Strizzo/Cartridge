@@ -29,8 +29,9 @@ local state = {
     reader_domain = "",
     reader_raw_body = nil,
     reader_needs_layout = false,
-    -- Deferred initial load
+    -- Deferred initial load (render sets ready_to_load after first frame)
     needs_initial_load = true,
+    ready_to_load = false,
 }
 
 local ROW_HEIGHT = 64
@@ -689,13 +690,13 @@ end
 -- ── Lifecycle Callbacks ──────────────────────────────────────────────────────
 
 function on_init()
-    -- Don't block here; let the first frame render "Loading..." first
     state.loading = true
 end
 
 function on_update(dt)
-    if state.needs_initial_load then
-        state.needs_initial_load = false
+    -- Wait until at least one frame has rendered before blocking on HTTP
+    if state.ready_to_load then
+        state.ready_to_load = false
         load_stories()
     end
 end
@@ -781,6 +782,12 @@ end
 
 function on_render()
     screen.clear(theme.bg.r, theme.bg.g, theme.bg.b)
+
+    -- After first frame renders "Loading...", allow on_update to fetch data
+    if state.needs_initial_load then
+        state.needs_initial_load = false
+        state.ready_to_load = true
+    end
 
     local current = state.screen_stack[#state.screen_stack]
     if current == "list" then
