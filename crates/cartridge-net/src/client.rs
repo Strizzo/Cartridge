@@ -34,6 +34,7 @@ impl HttpClient {
         let config = ureq::Agent::config_builder()
             .user_agent("Cartridge/0.1.0")
             .http_status_as_error(false)
+            .timeout_global(Some(std::time::Duration::from_secs(10)))
             .build();
         let agent = ureq::Agent::new_with_config(config);
         Self {

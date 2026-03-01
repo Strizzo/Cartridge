@@ -27,6 +27,10 @@ local state = {
     reader_scroll = 0,
     reader_loading = false,
     reader_domain = "",
+    reader_raw_body = nil,
+    reader_needs_layout = false,
+    -- Deferred initial load
+    needs_initial_load = true,
 }
 
 local ROW_HEIGHT = 64
@@ -575,6 +579,47 @@ end
 
 -- ── Reader Screen ────────────────────────────────────────────────────────────
 
+local function strip_html_body(body)
+    -- Remove script and style blocks
+    body = body:gsub("<script[^>]*>.-</script>", "")
+    body = body:gsub("<style[^>]*>.-</style>", "")
+    -- Convert common elements
+    body = body:gsub("<br%s*/?>", "\n")
+    body = body:gsub("<p[^>]*>", "\n\n")
+    body = body:gsub("<h[1-6][^>]*>(.-)</h[1-6]>", "\n\n%1\n")
+    body = body:gsub("<li[^>]*>", "\n  - ")
+    -- Strip remaining tags
+    body = body:gsub("<[^>]+>", "")
+    -- Decode entities
+    body = body:gsub("&amp;", "&")
+    body = body:gsub("&lt;", "<")
+    body = body:gsub("&gt;", ">")
+    body = body:gsub("&quot;", '"')
+    body = body:gsub("&#39;", "'")
+    body = body:gsub("&nbsp;", " ")
+    -- Clean up whitespace
+    body = body:gsub("\r\n", "\n")
+    body = body:gsub("\n%s*\n%s*\n+", "\n\n")
+    return body:match("^%s*(.-)%s*$") or ""
+end
+
+local function layout_reader()
+    state.reader_lines = {}
+    local body = state.reader_raw_body or ""
+    state.reader_raw_body = nil
+    local max_w = 680
+    for paragraph in body:gmatch("[^\n]+") do
+        local trimmed = paragraph:match("^%s*(.-)%s*$") or ""
+        if trimmed ~= "" then
+            local wrapped = word_wrap(trimmed, max_w, 14, false)
+            for _, wl in ipairs(wrapped) do
+                state.reader_lines[#state.reader_lines + 1] = wl
+            end
+        end
+        state.reader_lines[#state.reader_lines + 1] = ""
+    end
+end
+
 local function load_reader(url)
     state.reader_lines = {}
     state.reader_scroll = 0
@@ -583,42 +628,8 @@ local function load_reader(url)
 
     local ok, resp = pcall(http.get, url)
     if ok and resp.ok then
-        -- Simple HTML to text conversion
-        local body = resp.body or ""
-        -- Remove script and style blocks
-        body = body:gsub("<script[^>]*>.-</script>", "")
-        body = body:gsub("<style[^>]*>.-</style>", "")
-        -- Convert common elements
-        body = body:gsub("<br%s*/?>", "\n")
-        body = body:gsub("<p[^>]*>", "\n\n")
-        body = body:gsub("<h[1-6][^>]*>(.-)</h[1-6]>", "\n\n%1\n")
-        body = body:gsub("<li[^>]*>", "\n  - ")
-        -- Strip remaining tags
-        body = body:gsub("<[^>]+>", "")
-        -- Decode entities
-        body = body:gsub("&amp;", "&")
-        body = body:gsub("&lt;", "<")
-        body = body:gsub("&gt;", ">")
-        body = body:gsub("&quot;", '"')
-        body = body:gsub("&#39;", "'")
-        body = body:gsub("&nbsp;", " ")
-        -- Clean up whitespace
-        body = body:gsub("\r\n", "\n")
-        body = body:gsub("\n%s*\n%s*\n+", "\n\n")
-        body = body:match("^%s*(.-)%s*$") or ""
-
-        -- Word wrap into lines
-        local max_w = 680
-        for paragraph in body:gmatch("[^\n]+") do
-            local trimmed = paragraph:match("^%s*(.-)%s*$") or ""
-            if trimmed ~= "" then
-                local wrapped = word_wrap(trimmed, max_w, 14, false)
-                for _, wl in ipairs(wrapped) do
-                    state.reader_lines[#state.reader_lines + 1] = wl
-                end
-            end
-            state.reader_lines[#state.reader_lines + 1] = ""
-        end
+        state.reader_raw_body = strip_html_body(resp.body or "")
+        state.reader_needs_layout = true
     else
         state.reader_lines = {"Failed to load article."}
     end
@@ -626,6 +637,12 @@ local function load_reader(url)
 end
 
 local function draw_reader()
+    -- Layout must happen during render (word_wrap needs screen.get_text_width)
+    if state.reader_needs_layout then
+        layout_reader()
+        state.reader_needs_layout = false
+    end
+
     draw_header(state.reader_domain ~= "" and state.reader_domain or "Article")
 
     local content_y = 42
@@ -672,7 +689,15 @@ end
 -- ── Lifecycle Callbacks ──────────────────────────────────────────────────────
 
 function on_init()
-    load_stories()
+    -- Don't block here; let the first frame render "Loading..." first
+    state.loading = true
+end
+
+function on_update(dt)
+    if state.needs_initial_load then
+        state.needs_initial_load = false
+        load_stories()
+    end
 end
 
 function on_input(button, action)
