@@ -44,27 +44,33 @@ pub const STORE_CARD_HEIGHT: i32 = 76;
 pub const STORE_CARD_GAP: i32 = 6;
 pub const STORE_LEFT_STRIP_WIDTH: u32 = 3;
 
+/// Extract the short name from a dotted app_id (e.g. "dev.cartridge.calculator" → "calculator").
+pub fn app_short_name(app_id: &str) -> &str {
+    app_id.rsplit('.').next().unwrap_or(app_id)
+}
+
 /// Resolve the icon.png path for an app, checking standard install and dev locations.
 /// Returns Some(path_string) if the icon exists on disk.
 pub fn resolve_icon_path(app_id: &str) -> Option<String> {
     let home = std::env::var("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."));
-
-    // Standard install path
-    let installed_icon = home
-        .join(".cartridges/apps")
-        .join(app_id)
-        .join("icon.png");
-    if installed_icon.exists() {
-        return Some(installed_icon.to_string_lossy().to_string());
-    }
-
-    // Development path
     let cwd = std::env::current_dir().unwrap_or_default();
-    let dev_icon = cwd.join("lua_cartridges").join(app_id).join("icon.png");
-    if dev_icon.exists() {
-        return Some(dev_icon.to_string_lossy().to_string());
+    let short = app_short_name(app_id);
+
+    // Check both full app_id and short name in each location
+    for name in &[app_id, short] {
+        // Standard install path (~/.cartridges/apps/)
+        let installed_icon = home.join(".cartridges/apps").join(name).join("icon.png");
+        if installed_icon.exists() {
+            return Some(installed_icon.to_string_lossy().to_string());
+        }
+
+        // Bundled/dev path (lua_cartridges/ relative to cwd)
+        let dev_icon = cwd.join("lua_cartridges").join(name).join("icon.png");
+        if dev_icon.exists() {
+            return Some(dev_icon.to_string_lossy().to_string());
+        }
     }
 
     None

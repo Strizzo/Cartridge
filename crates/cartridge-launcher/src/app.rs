@@ -67,6 +67,9 @@ impl LauncherApp {
             }
         }
 
+        // Auto-discover bundled cartridges in lua_cartridges/
+        discover_bundled_cartridges(&mut installed, &registry);
+
         // Load recents
         let recents = storage
             .load("recents")
@@ -248,4 +251,36 @@ fn home_dir() -> PathBuf {
     std::env::var("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."))
+}
+
+/// Scan lua_cartridges/ for bundled apps and mark them as installed.
+fn discover_bundled_cartridges(installed: &mut InstalledApps, registry: &Registry) {
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let lua_dir = cwd.join("lua_cartridges");
+    let entries = match std::fs::read_dir(&lua_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let json_path = path.join("cartridge.json");
+        if !json_path.exists() {
+            continue;
+        }
+        // Read the cartridge.json to get the app_id
+        if let Ok(content) = std::fs::read_to_string(&json_path) {
+            if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(id) = meta.get("id").and_then(|v| v.as_str()) {
+                    if registry.apps.iter().any(|a| a.id == id) && !installed.is_installed(id) {
+                        log::info!("Auto-discovered bundled cartridge: {}", id);
+                        installed.install(id);
+                    }
+                }
+            }
+        }
+    }
 }

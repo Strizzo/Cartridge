@@ -121,26 +121,28 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
 
 /// Resolve the directory for an installed app given its id.
 ///
-/// Checks, in order:
-/// 1. `~/.cartridges/apps/{app_id}/` (standard install location)
-/// 2. `lua_cartridges/{app_id}/` relative to the current working directory (development)
+/// Checks both the full app_id and the short name (last segment of dotted ID):
+/// 1. `~/.cartridges/apps/{name}/` (standard install location)
+/// 2. `lua_cartridges/{name}/` relative to the current working directory (bundled/dev)
 fn resolve_app_dir(app_id: &str, _assets_dir: &Path) -> PathBuf {
-    // Standard install path
     let home = std::env::var("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."));
-    let installed_path = home.join(".cartridges/apps").join(app_id);
-    if installed_path.exists() {
-        return installed_path;
-    }
-
-    // Development path: lua_cartridges/<app_id> relative to cwd
     let cwd = std::env::current_dir().unwrap_or_default();
-    let dev_path = cwd.join("lua_cartridges").join(app_id);
-    if dev_path.exists() {
-        return dev_path;
+    let short = crate::ui_constants::app_short_name(app_id);
+
+    for name in &[app_id, short] {
+        let installed_path = home.join(".cartridges/apps").join(name);
+        if installed_path.exists() {
+            return installed_path;
+        }
+
+        let dev_path = cwd.join("lua_cartridges").join(name);
+        if dev_path.exists() {
+            return dev_path;
+        }
     }
 
-    // Fall back to the installed path even if it doesn't exist yet
-    installed_path
+    // Fall back to the installed path
+    home.join(".cartridges/apps").join(app_id)
 }

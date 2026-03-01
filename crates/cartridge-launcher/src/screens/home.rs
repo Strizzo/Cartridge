@@ -247,13 +247,13 @@ impl LauncherScreen for HomeScreen {
         draw_system_panels(screen, sysinfo);
 
         if installed_apps.is_empty() {
-            // Empty state
+            // Empty state: show message in dock area
             let msg = "No cartridges installed.";
             let w = screen.get_text_width(msg, 16, false);
             screen.draw_text(
                 msg,
                 (SCREEN_WIDTH as i32 - w as i32) / 2,
-                200,
+                DOCK_PANEL_Y + DOCK_PANEL_H / 2 - 16,
                 Some(theme.text_dim),
                 16,
                 false,
@@ -264,7 +264,7 @@ impl LauncherScreen for HomeScreen {
             screen.draw_text(
                 hint,
                 (SCREEN_WIDTH as i32 - hw as i32) / 2,
-                226,
+                DOCK_PANEL_Y + DOCK_PANEL_H / 2 + 8,
                 Some(theme.text_accent),
                 13,
                 false,
@@ -274,12 +274,12 @@ impl LauncherScreen for HomeScreen {
             // ===== APP DOCK PANEL =====
             draw_dock_panel(screen, &installed_apps, self.dock_index, self.zone);
 
-            // ===== SPLIT DETAIL ROW =====
-            draw_detail_row(screen, ctx, &installed_apps, self.dock_index, sysinfo);
-
             // ===== RECENT STRIP =====
             draw_recent_strip(screen, ctx, self.zone, self.recent_index);
         }
+
+        // ===== SPLIT DETAIL ROW (always visible) =====
+        draw_detail_row(screen, ctx, &installed_apps, self.dock_index, sysinfo);
 
         // ===== PROCESS PANEL =====
         draw_process_panel(screen, sysinfo);
