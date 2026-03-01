@@ -76,23 +76,25 @@ pub fn resolve_icon_path(app_id: &str) -> Option<String> {
         .and_then(|p| p.parent().map(|d| d.to_path_buf()));
     let cwd = std::env::current_dir().unwrap_or_default();
 
-    for name in name_variants(app_id) {
-        // Bundled path next to binary (preferred)
+    let variants = name_variants(app_id);
+
+    // First pass: check ALL bundled paths (next to binary + cwd) for ALL variants
+    for name in &variants {
         if let Some(ref dir) = exe_dir {
-            let bundled_icon = dir.join("lua_cartridges").join(&name).join("icon.png");
+            let bundled_icon = dir.join("lua_cartridges").join(name).join("icon.png");
             if bundled_icon.exists() {
                 return Some(bundled_icon.to_string_lossy().to_string());
             }
         }
-
-        // Dev path (lua_cartridges/ relative to cwd)
-        let dev_icon = cwd.join("lua_cartridges").join(&name).join("icon.png");
+        let dev_icon = cwd.join("lua_cartridges").join(name).join("icon.png");
         if dev_icon.exists() {
             return Some(dev_icon.to_string_lossy().to_string());
         }
+    }
 
-        // User-installed path (~/.cartridges/apps/)
-        let installed_icon = home.join(".cartridges/apps").join(&name).join("icon.png");
+    // Second pass: fall back to user-installed paths
+    for name in &variants {
+        let installed_icon = home.join(".cartridges/apps").join(name).join("icon.png");
         if installed_icon.exists() {
             return Some(installed_icon.to_string_lossy().to_string());
         }
