@@ -482,7 +482,7 @@ fn run_boot_selector(assets_dir: &Path) -> Result<BootChoice, String> {
             screen.draw_button_hint("D-Pad", "Navigate", hx, hint_y, Some(theme.btn_l), 12);
 
             // Version info in bottom-right
-            let version_text = "v0.5.1";
+            let version_text = "v0.5.3";
             let vw = screen.get_text_width(version_text, 11, false);
             screen.draw_text(
                 version_text,

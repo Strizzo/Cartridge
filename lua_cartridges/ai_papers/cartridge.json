@@ -1,5 +1,5 @@
 {
-  "id": "ai_papers",
+  "id": "dev.cartridge.ai-papers",
   "name": "AI Papers",
   "version": "1.0.0",
   "description": "Browse top AI research papers from HuggingFace Daily Papers with arxiv reader",

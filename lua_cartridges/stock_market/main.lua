@@ -678,6 +678,14 @@ function on_update(dt)
         state.ready_to_load = false
         load_quotes()
     end
+
+    if state.screen_stack[#state.screen_stack] == "watchlist" then
+        state.refresh_timer = state.refresh_timer + dt
+        if state.refresh_timer >= state.refresh_interval then
+            state.refresh_timer = 0
+            load_quotes()
+        end
+    end
 end
 
 function on_input(button, action)
@@ -793,16 +801,6 @@ function on_input(button, action)
                 save_watchlist()
                 state.quotes["watchlist"] = nil
             end
-        end
-    end
-end
-
-function on_update(dt)
-    if state.screen_stack[#state.screen_stack] == "watchlist" then
-        state.refresh_timer = state.refresh_timer + dt
-        if state.refresh_timer >= state.refresh_interval then
-            state.refresh_timer = 0
-            load_quotes()
         end
     end
 end

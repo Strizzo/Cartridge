@@ -97,11 +97,25 @@ pub fn run_lua_app(app_dir: &Path, assets_dir: &Path) -> Result<(), String> {
         // Process input
         let input_events = input_manager.process_events(&events);
 
-        // Select button always exits back to the launcher (system-level)
+        // System-level exit: Select alone OR Start+Select combo
+        let mut has_select_press = false;
+        let mut has_start_held = false;
         for ie in &input_events {
             if ie.button == Button::Select && ie.action == InputAction::Press {
-                break 'running;
+                has_select_press = true;
             }
+            if ie.button == Button::Start {
+                has_start_held = true;
+            }
+        }
+        // Exit on Select press (regardless of Start state)
+        if has_select_press {
+            break 'running;
+        }
+        // Also exit on Start+Select combo (Start held + Select press already handled above)
+        // For Start+Select where Start arrives in same frame as combo:
+        if has_start_held && has_select_press {
+            break 'running;
         }
 
         // Deliver input to Lua (filter out Select so apps don't see it)

@@ -296,15 +296,18 @@ impl Default for InputManager {
 }
 
 /// Map SDL2 GameController buttons to our abstract Button type.
+/// NOTE: SDL GameController uses Xbox layout (A=bottom, B=right).
+/// R36S Plus uses Nintendo layout (A=right, B=bottom), so we swap A↔B and X↔Y.
 fn map_controller_button(button: SdlControllerButton) -> Option<Button> {
     match button {
-        SdlControllerButton::A => Some(Button::A),
-        SdlControllerButton::B => Some(Button::B),
-        SdlControllerButton::X => Some(Button::X),
-        SdlControllerButton::Y => Some(Button::Y),
+        SdlControllerButton::A => Some(Button::B), // Xbox bottom = Nintendo B
+        SdlControllerButton::B => Some(Button::A), // Xbox right = Nintendo A
+        SdlControllerButton::X => Some(Button::Y), // Xbox left = Nintendo Y
+        SdlControllerButton::Y => Some(Button::X), // Xbox top = Nintendo X
         SdlControllerButton::LeftShoulder => Some(Button::L1),
         SdlControllerButton::RightShoulder => Some(Button::R1),
         SdlControllerButton::Back => Some(Button::Select),
+        SdlControllerButton::Guide => Some(Button::Select), // Some controllers map Select to Guide
         SdlControllerButton::Start => Some(Button::Start),
         SdlControllerButton::DPadUp => Some(Button::DpadUp),
         SdlControllerButton::DPadDown => Some(Button::DpadDown),
