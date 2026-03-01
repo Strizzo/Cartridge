@@ -3,6 +3,7 @@ pub mod store;
 pub mod detail;
 pub mod settings;
 pub mod overlay;
+pub mod wifi;
 
 use cartridge_core::input::InputEvent;
 use cartridge_core::screen::Screen;
@@ -30,6 +31,7 @@ pub enum ScreenId {
     Store,
     Detail(usize), // index into registry apps
     Settings,
+    WiFi,
 }
 
 /// Common trait for all launcher screens.
@@ -48,6 +50,7 @@ pub struct ScreenContext {
     pub registry_client: Option<cartridge_net::RegistryClient>,
     pub installer: Option<cartridge_net::AppInstaller>,
     pub sysinfo: SystemInfo,
+    pub wifi_manager: cartridge_net::WifiManager,
 }
 
 impl ScreenContext {

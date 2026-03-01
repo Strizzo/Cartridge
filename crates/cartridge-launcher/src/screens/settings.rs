@@ -3,10 +3,10 @@ use cartridge_core::screen::Screen;
 use sdl2::rect::Rect;
 
 use crate::ui_constants::*;
-use super::{LauncherScreen, ScreenAction, ScreenContext};
+use super::{LauncherScreen, ScreenAction, ScreenContext, ScreenId};
 
 const CACHE_OPTIONS: &[u32] = &[15, 30, 60, 120, 360];
-const SETTINGS_ROWS: usize = 4;
+const SETTINGS_ROWS: usize = 5;
 
 pub struct SettingsScreen {
     selected_row: usize,
@@ -62,6 +62,9 @@ impl LauncherScreen for SettingsScreen {
                             let next = (idx + 1) % CACHE_OPTIONS.len();
                             ctx.settings.cache_duration_mins = CACHE_OPTIONS[next];
                             ctx.save_settings();
+                        }
+                        3 => {
+                            return ScreenAction::Push(ScreenId::WiFi);
                         }
                         _ => {}
                     }
@@ -236,10 +239,54 @@ impl LauncherScreen for SettingsScreen {
             }
         }
 
-        // Row 3: About
+        // Row 3: WiFi
         {
             let y = start_y + 3 * (row_h + MARGIN);
             let is_sel = self.selected_row == 3;
+            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
+            let border = if is_sel { theme.accent } else { theme.card_border };
+
+            screen.draw_card(
+                Rect::new(12, y, card_w, row_h as u32),
+                Some(bg),
+                Some(border),
+                CARD_RADIUS,
+                false,
+            );
+
+            screen.draw_text("WiFi", 24, y + 8, Some(theme.text), 14, true, None);
+
+            let wifi_status = match &ctx.sysinfo.wifi_ssid {
+                Some(ssid) => format!("Connected to {ssid}"),
+                None => "Not connected".to_string(),
+            };
+            screen.draw_text(
+                &wifi_status,
+                24,
+                y + 30,
+                Some(theme.text_dim),
+                12,
+                false,
+                Some(card_w - 100),
+            );
+
+            if is_sel {
+                screen.draw_text(
+                    ">",
+                    card_w as i32 - 4,
+                    y + 18,
+                    Some(theme.text_accent),
+                    16,
+                    true,
+                    None,
+                );
+            }
+        }
+
+        // Row 4: About
+        {
+            let y = start_y + 4 * (row_h + MARGIN);
+            let is_sel = self.selected_row == 4;
             let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
             let border = if is_sel { theme.accent } else { theme.card_border };
 

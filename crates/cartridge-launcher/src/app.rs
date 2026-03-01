@@ -12,6 +12,7 @@ use crate::screens::{
     home::HomeScreen,
     settings::SettingsScreen,
     store::StoreScreen,
+    wifi::WifiScreen,
 };
 
 use std::path::{Path, PathBuf};
@@ -75,6 +76,8 @@ impl LauncherApp {
         let mut sysinfo = SystemInfo::new();
         sysinfo.poll();
 
+        let wifi_manager = cartridge_net::WifiManager::new();
+
         let ctx = ScreenContext {
             registry,
             installed,
@@ -84,6 +87,7 @@ impl LauncherApp {
             registry_client: Some(registry_client),
             installer: Some(installer),
             sysinfo,
+            wifi_manager,
         };
 
         let home = Box::new(HomeScreen::new()) as Box<dyn LauncherScreen>;
@@ -181,6 +185,7 @@ fn create_screen(id: ScreenId) -> Box<dyn LauncherScreen> {
         ScreenId::Store => Box::new(StoreScreen::new()),
         ScreenId::Detail(idx) => Box::new(DetailScreen::new(idx)),
         ScreenId::Settings => Box::new(SettingsScreen::new()),
+        ScreenId::WiFi => Box::new(WifiScreen::new()),
     }
 }
 

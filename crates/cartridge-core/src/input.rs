@@ -1,3 +1,4 @@
+use sdl2::controller::Button as SdlControllerButton;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use std::collections::HashMap;
@@ -142,6 +143,29 @@ impl InputManager {
                 Event::JoyHatMotion { state, .. } => {
                     self.process_hat(*state, &mut result, now);
                 }
+                Event::ControllerButtonDown { button, .. } => {
+                    if let Some(mapped) = map_controller_button(*button) {
+                        result.push(InputEvent {
+                            button: mapped,
+                            action: InputAction::Press,
+                        });
+                        self.held.insert(mapped, now);
+                        self.last_repeat.insert(mapped, now);
+                    }
+                }
+                Event::ControllerButtonUp { button, .. } => {
+                    if let Some(mapped) = map_controller_button(*button) {
+                        result.push(InputEvent {
+                            button: mapped,
+                            action: InputAction::Release,
+                        });
+                        self.held.remove(&mapped);
+                        self.last_repeat.remove(&mapped);
+                    }
+                }
+                Event::ControllerAxisMotion { axis, value, .. } => {
+                    self.process_controller_axis(*axis, *value, &mut result, now);
+                }
                 _ => {}
             }
         }
@@ -203,21 +227,60 @@ impl InputManager {
         ];
 
         for (button, active) in dpad_buttons {
-            if active && !self.held.contains_key(&button) {
-                result.push(InputEvent {
-                    button,
-                    action: InputAction::Press,
-                });
-                self.held.insert(button, now);
-                self.last_repeat.insert(button, now);
-            } else if !active && self.held.contains_key(&button) {
-                result.push(InputEvent {
-                    button,
-                    action: InputAction::Release,
-                });
-                self.held.remove(&button);
-                self.last_repeat.remove(&button);
+            self.update_axis_button(button, active, result, now);
+        }
+    }
+
+    fn process_controller_axis(
+        &mut self,
+        axis: sdl2::controller::Axis,
+        value: i16,
+        result: &mut Vec<InputEvent>,
+        now: Instant,
+    ) {
+        const TRIGGER_THRESHOLD: i16 = 8000;
+        const AXIS_THRESHOLD: i16 = 16000;
+
+        match axis {
+            sdl2::controller::Axis::TriggerLeft => {
+                self.update_axis_button(Button::L2, value > TRIGGER_THRESHOLD, result, now);
             }
+            sdl2::controller::Axis::TriggerRight => {
+                self.update_axis_button(Button::R2, value > TRIGGER_THRESHOLD, result, now);
+            }
+            sdl2::controller::Axis::LeftX => {
+                self.update_axis_button(Button::DpadLeft, value < -AXIS_THRESHOLD, result, now);
+                self.update_axis_button(Button::DpadRight, value > AXIS_THRESHOLD, result, now);
+            }
+            sdl2::controller::Axis::LeftY => {
+                self.update_axis_button(Button::DpadUp, value < -AXIS_THRESHOLD, result, now);
+                self.update_axis_button(Button::DpadDown, value > AXIS_THRESHOLD, result, now);
+            }
+            _ => {}
+        }
+    }
+
+    fn update_axis_button(
+        &mut self,
+        button: Button,
+        active: bool,
+        result: &mut Vec<InputEvent>,
+        now: Instant,
+    ) {
+        if active && !self.held.contains_key(&button) {
+            result.push(InputEvent {
+                button,
+                action: InputAction::Press,
+            });
+            self.held.insert(button, now);
+            self.last_repeat.insert(button, now);
+        } else if !active && self.held.contains_key(&button) {
+            result.push(InputEvent {
+                button,
+                action: InputAction::Release,
+            });
+            self.held.remove(&button);
+            self.last_repeat.remove(&button);
         }
     }
 }
@@ -226,4 +289,43 @@ impl Default for InputManager {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Map an SDL GameController button to our abstract Button.
+fn map_controller_button(button: SdlControllerButton) -> Option<Button> {
+    match button {
+        SdlControllerButton::A => Some(Button::A),
+        SdlControllerButton::B => Some(Button::B),
+        SdlControllerButton::X => Some(Button::X),
+        SdlControllerButton::Y => Some(Button::Y),
+        SdlControllerButton::LeftShoulder => Some(Button::L1),
+        SdlControllerButton::RightShoulder => Some(Button::R1),
+        SdlControllerButton::Back => Some(Button::Select),
+        SdlControllerButton::Start => Some(Button::Start),
+        SdlControllerButton::DPadUp => Some(Button::DpadUp),
+        SdlControllerButton::DPadDown => Some(Button::DpadDown),
+        SdlControllerButton::DPadLeft => Some(Button::DpadLeft),
+        SdlControllerButton::DPadRight => Some(Button::DpadRight),
+        _ => None,
+    }
+}
+
+/// Open all detected game controllers. The returned Vec must be kept alive
+/// for the controllers to remain open and emit events.
+pub fn open_all_controllers(
+    subsystem: &sdl2::GameControllerSubsystem,
+) -> Vec<sdl2::controller::GameController> {
+    let mut controllers = Vec::new();
+    let n = subsystem.num_joysticks().unwrap_or(0);
+    for i in 0..n {
+        if subsystem.is_game_controller(i) {
+            match subsystem.open(i) {
+                Ok(gc) => {
+                    controllers.push(gc);
+                }
+                Err(_e) => {}
+            }
+        }
+    }
+    controllers
 }
