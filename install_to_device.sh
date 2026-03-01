@@ -319,6 +319,8 @@ install_to_device() {
     cp "deploy/cartridge-boot.sh" "$dest/cartridge-boot.sh"
     chmod +x "$dest/cartridge-boot.sh"
     cp "deploy/cartridge-boot.service" "$dest/cartridge-boot.service"
+    cp "deploy/autosetup.sh" "$dest/autosetup.sh"
+    chmod +x "$dest/autosetup.sh"
 
     # Copy registry
     if [[ -f "registry.json" ]]; then

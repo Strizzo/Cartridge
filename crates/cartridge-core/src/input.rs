@@ -1,3 +1,4 @@
+use sdl2::controller::Button as SdlControllerButton;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use std::collections::HashMap;
@@ -148,6 +149,30 @@ impl InputManager {
                 Event::JoyAxisMotion { axis_idx, value, .. } => {
                     self.process_joy_axis(*axis_idx, *value, &mut result, now);
                 }
+                // GameController API (used by ArkOS and modern SDL2 setups)
+                Event::ControllerButtonDown { button, .. } => {
+                    if let Some(btn) = map_controller_button(*button) {
+                        result.push(InputEvent {
+                            button: btn,
+                            action: InputAction::Press,
+                        });
+                        self.held.insert(btn, now);
+                        self.last_repeat.insert(btn, now);
+                    }
+                }
+                Event::ControllerButtonUp { button, .. } => {
+                    if let Some(btn) = map_controller_button(*button) {
+                        result.push(InputEvent {
+                            button: btn,
+                            action: InputAction::Release,
+                        });
+                        self.held.remove(&btn);
+                        self.last_repeat.remove(&btn);
+                    }
+                }
+                Event::ControllerAxisMotion { axis, value, .. } => {
+                    self.process_controller_axis(*axis, *value, &mut result, now);
+                }
                 _ => {}
             }
         }
@@ -201,6 +226,36 @@ impl InputManager {
         }
     }
 
+    /// Handle GameController analog axes (triggers + left stick as D-pad).
+    fn process_controller_axis(
+        &mut self,
+        axis: sdl2::controller::Axis,
+        value: i16,
+        result: &mut Vec<InputEvent>,
+        now: Instant,
+    ) {
+        const AXIS_THRESHOLD: i16 = 16000;
+        const TRIGGER_THRESHOLD: i16 = 8000;
+
+        match axis {
+            sdl2::controller::Axis::LeftX => {
+                self.update_axis_button(Button::DpadLeft, value < -AXIS_THRESHOLD, result, now);
+                self.update_axis_button(Button::DpadRight, value > AXIS_THRESHOLD, result, now);
+            }
+            sdl2::controller::Axis::LeftY => {
+                self.update_axis_button(Button::DpadUp, value < -AXIS_THRESHOLD, result, now);
+                self.update_axis_button(Button::DpadDown, value > AXIS_THRESHOLD, result, now);
+            }
+            sdl2::controller::Axis::TriggerLeft => {
+                self.update_axis_button(Button::L2, value > TRIGGER_THRESHOLD, result, now);
+            }
+            sdl2::controller::Axis::TriggerRight => {
+                self.update_axis_button(Button::R2, value > TRIGGER_THRESHOLD, result, now);
+            }
+            _ => {}
+        }
+    }
+
     fn update_axis_button(
         &mut self,
         button: Button,
@@ -232,6 +287,25 @@ impl Default for InputManager {
     }
 }
 
+/// Map SDL2 GameController buttons to our abstract Button type.
+fn map_controller_button(button: SdlControllerButton) -> Option<Button> {
+    match button {
+        SdlControllerButton::A => Some(Button::A),
+        SdlControllerButton::B => Some(Button::B),
+        SdlControllerButton::X => Some(Button::X),
+        SdlControllerButton::Y => Some(Button::Y),
+        SdlControllerButton::LeftShoulder => Some(Button::L1),
+        SdlControllerButton::RightShoulder => Some(Button::R1),
+        SdlControllerButton::Back => Some(Button::Select),
+        SdlControllerButton::Start => Some(Button::Start),
+        SdlControllerButton::DPadUp => Some(Button::DpadUp),
+        SdlControllerButton::DPadDown => Some(Button::DpadDown),
+        SdlControllerButton::DPadLeft => Some(Button::DpadLeft),
+        SdlControllerButton::DPadRight => Some(Button::DpadRight),
+        _ => None,
+    }
+}
+
 /// Open all detected joysticks. The returned Vec must be kept alive
 /// for the joysticks to remain open and emit events.
 pub fn open_all_joysticks(
@@ -251,5 +325,28 @@ pub fn open_all_joysticks(
         }
     }
     joysticks
+}
+
+/// Open all detected game controllers. The returned Vec must be kept alive
+/// for the controllers to remain open and emit events.
+pub fn open_all_controllers(
+    subsystem: &sdl2::GameControllerSubsystem,
+) -> Vec<sdl2::controller::GameController> {
+    let mut controllers = Vec::new();
+    let n = subsystem.num_joysticks().unwrap_or(0);
+    for i in 0..n {
+        if subsystem.is_game_controller(i) {
+            match subsystem.open(i) {
+                Ok(gc) => {
+                    log::info!("Opened game controller {}: {}", i, gc.name());
+                    controllers.push(gc);
+                }
+                Err(e) => {
+                    log::warn!("Failed to open game controller {}: {}", i, e);
+                }
+            }
+        }
+    }
+    controllers
 }
 

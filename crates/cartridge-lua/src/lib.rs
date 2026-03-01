@@ -38,8 +38,10 @@ pub fn run_lua_app(app_dir: &Path, assets_dir: &Path) -> Result<(), String> {
     let video_subsystem = sdl_context.video()?;
     let joystick_subsystem = sdl_context.joystick()?;
     let _joysticks = cartridge_core::input::open_all_joysticks(&joystick_subsystem);
+    let game_controller_subsystem = sdl_context.game_controller()?;
+    let _controllers = cartridge_core::input::open_all_controllers(&game_controller_subsystem);
 
-    let window_title = format!("Cartridge - {}", manifest.name);
+    let window_title = format!("CartridgeOS - {}", manifest.name);
     let window = video_subsystem
         .window(&window_title, WIDTH, HEIGHT)
         .position_centered()

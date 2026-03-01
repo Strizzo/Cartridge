@@ -39,7 +39,9 @@ jobs:
           # Boot scripts
           cp deploy/cartridge-boot.sh release/Cartridge/
           cp deploy/cartridge-boot.service release/Cartridge/
+          cp deploy/autosetup.sh release/Cartridge/
           chmod +x release/Cartridge/cartridge-boot.sh
+          chmod +x release/Cartridge/autosetup.sh
 
           # Registry
           cp registry.json release/Cartridge/ 2>/dev/null || true
@@ -77,7 +79,7 @@ jobs:
             2. Extract the zip to your SD card's `roms/` folder (creates `roms/Cartridge/`)
             3. Copy the 3 `.sh` files from `roms/Cartridge/tools/` into `roms/tools/`
             4. Boot your device into EmulationStation
-            5. Go to **Tools > Cartridge** to launch
-            6. Optionally: **Tools > Setup Cartridge Boot** to enable the boot selector
+            5. Go to **Tools > Cartridge** to launch (auto-sets up boot selector on first run)
+            6. On next reboot, you'll see the CartridgeOS/EmulationStation boot chooser
 
             See `INSTALL.txt` in the zip for full instructions.

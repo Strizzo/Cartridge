@@ -16,9 +16,11 @@ pub fn run_demo(assets_dir: &Path) -> Result<(), String> {
     let video_subsystem = sdl_context.video()?;
     let joystick_subsystem = sdl_context.joystick()?;
     let _joysticks = cartridge_core::input::open_all_joysticks(&joystick_subsystem);
+    let game_controller_subsystem = sdl_context.game_controller()?;
+    let _controllers = cartridge_core::input::open_all_controllers(&game_controller_subsystem);
 
     let window = video_subsystem
-        .window("Cartridge", WIDTH, HEIGHT)
+        .window("CartridgeOS", WIDTH, HEIGHT)
         .position_centered()
         .build()
         .map_err(|e| e.to_string())?;
