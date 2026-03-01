@@ -276,10 +276,10 @@ end
 -- ── Drawing Helpers ──────────────────────────────────────────────────────────
 
 local function draw_header(title, right_text, right_color)
-    screen.draw_gradient_rect(0, 0, 640, 40,
+    screen.draw_gradient_rect(0, 0, 720, 40,
         theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
         theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 640, 0, {color=theme.accent})
+    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
 
     -- Title with monospace feel
     screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
@@ -288,22 +288,22 @@ local function draw_header(title, right_text, right_color)
     if right_text then
         local rc = right_color or theme.text_dim
         local rw = screen.get_text_width(right_text, 12, false)
-        screen.draw_text(right_text, 624 - rw, 14, {color=rc, size=12})
+        screen.draw_text(right_text, 704 - rw, 14, {color=rc, size=12})
     end
 end
 
 local function draw_footer(hints)
-    screen.draw_rect(0, 444, 640, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 444, 640, 444, {color=theme.border})
+    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
+    screen.draw_line(0, 684, 720, 684, {color=theme.border})
     local x = 10
     for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 452, {color=h[3], size=12})
+        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
         x = x + w + 14
     end
 end
 
 local function draw_tab_bar(labels, active_idx, y)
-    screen.draw_rect(0, y, 640, 28, {color=theme.bg_header, filled=true})
+    screen.draw_rect(0, y, 720, 28, {color=theme.bg_header, filled=true})
     local tx = 10
     for i, label in ipairs(labels) do
         local is_active = (i == active_idx)
@@ -318,14 +318,14 @@ local function draw_tab_bar(labels, active_idx, y)
         end
         tx = tx + tab_w + 6
     end
-    screen.draw_line(0, y + 28, 640, y + 28, {color=theme.border})
+    screen.draw_line(0, y + 28, 720, y + 28, {color=theme.border})
 end
 
 local function draw_scanline_overlay(y_start, height, alpha_step)
     -- Subtle scanline effect for cyberdeck aesthetic
     local step = alpha_step or 4
     for sy = y_start, y_start + height, step do
-        screen.draw_line(0, sy, 640, sy, {color={0, 0, 0}, width=1})
+        screen.draw_line(0, sy, 720, sy, {color={0, 0, 0}, width=1})
     end
 end
 
@@ -415,26 +415,26 @@ local function draw_dashboard_screen()
     local content_y = 72
 
     -- Status bar with system summary
-    screen.draw_rect(0, content_y, 640, 22, {color=theme.bg_lighter, filled=true})
+    screen.draw_rect(0, content_y, 720, 22, {color=theme.bg_lighter, filled=true})
     screen.draw_text(status_str, 10, content_y + 4, {color={80, 220, 120}, size=11, bold=true})
 
     local time_str = os.date("%H:%M:%S")
     local tw = screen.get_text_width(time_str, 11, false)
-    screen.draw_text(time_str, 624 - tw, content_y + 4, {color=theme.text_dim, size=11})
+    screen.draw_text(time_str, 704 - tw, content_y + 4, {color=theme.text_dim, size=11})
 
     -- Lua VM memory in status bar
     local lua_str = string.format("LUA %.0fKB", sim.lua_mem_kb)
     local lw = screen.get_text_width(lua_str, 11, false)
-    screen.draw_text(lua_str, 320 - lw / 2, content_y + 4, {color=theme.text_dim, size=11})
+    screen.draw_text(lua_str, 360 - lw / 2, content_y + 4, {color=theme.text_dim, size=11})
 
-    screen.draw_line(0, content_y + 22, 640, content_y + 22, {color=theme.border})
+    screen.draw_line(0, content_y + 22, 720, content_y + 22, {color=theme.border})
     content_y = content_y + 26
 
     -- Four metric cards in a 2x2 grid
     local card_w = 304
     local card_h = 90
     local gap = 8
-    local grid_x = (640 - (card_w * 2 + gap)) / 2
+    local grid_x = (720 - (card_w * 2 + gap)) / 2
 
     for i, metric_id in ipairs(METRICS_ORDER) do
         local col = (i - 1) % 2
@@ -449,7 +449,7 @@ local function draw_dashboard_screen()
     local info_y = content_y + 2 * (card_h + gap) + 8
 
     -- System info card
-    screen.draw_card(10, info_y, 620, 78, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    screen.draw_card(10, info_y, 700, 78, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
 
     -- Column 1: Memory details
     local used_mb = math.floor(sim.mem_current / 100 * sim.mem_total_mb)
@@ -464,18 +464,18 @@ local function draw_dashboard_screen()
     -- Column 2: Disk details
     local disk_used_gb = sim.disk_current / 100 * sim.disk_total_gb
     local disk_free_gb = sim.disk_total_gb - disk_used_gb
-    screen.draw_text("DISK", 220, info_y + 8, {color=METRIC_COLORS[METRIC_DISK], size=11, bold=true})
-    screen.draw_text(string.format("%.1f / %d GB", disk_used_gb, sim.disk_total_gb), 220, info_y + 24, {color=theme.text, size=13})
-    screen.draw_text(string.format("Free: %.1f GB", disk_free_gb), 220, info_y + 44, {color=theme.text_dim, size=11})
-    screen.draw_progress_bar(220, info_y + 62, 160, 4, sim.disk_current / 100, {
+    screen.draw_text("DISK", 248, info_y + 8, {color=METRIC_COLORS[METRIC_DISK], size=11, bold=true})
+    screen.draw_text(string.format("%.1f / %d GB", disk_used_gb, sim.disk_total_gb), 248, info_y + 24, {color=theme.text, size=13})
+    screen.draw_text(string.format("Free: %.1f GB", disk_free_gb), 248, info_y + 44, {color=theme.text_dim, size=11})
+    screen.draw_progress_bar(248, info_y + 62, 180, 4, sim.disk_current / 100, {
         fill_color=METRIC_COLORS[METRIC_DISK], bg_color=theme.bg_lighter, radius=2,
     })
 
     -- Column 3: Network totals
-    screen.draw_text("NET I/O", 420, info_y + 8, {color=METRIC_COLORS[METRIC_NET], size=11, bold=true})
-    screen.draw_text("RX: " .. format_bytes(sim.net_rx_total_kb), 420, info_y + 24, {color=theme.text, size=13})
-    screen.draw_text("TX: " .. format_bytes(sim.net_tx_total_kb), 420, info_y + 44, {color=theme.text, size=13})
-    screen.draw_text(string.format("%.0f / %.0f KB/s", sim.net_rx_rate, sim.net_tx_rate), 420, info_y + 60, {color=theme.text_dim, size=11})
+    screen.draw_text("NET I/O", 488, info_y + 8, {color=METRIC_COLORS[METRIC_NET], size=11, bold=true})
+    screen.draw_text("RX: " .. format_bytes(sim.net_rx_total_kb), 488, info_y + 24, {color=theme.text, size=13})
+    screen.draw_text("TX: " .. format_bytes(sim.net_tx_total_kb), 488, info_y + 44, {color=theme.text, size=13})
+    screen.draw_text(string.format("%.0f / %.0f KB/s", sim.net_rx_rate, sim.net_tx_rate), 488, info_y + 60, {color=theme.text_dim, size=11})
 
     draw_footer({
         {"A", "Detail", theme.btn_a},
@@ -493,7 +493,7 @@ local function draw_cpu_detail_screen()
     local content_y = 72
 
     -- Overall CPU usage bar
-    screen.draw_card(10, content_y, 620, 60, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    screen.draw_card(10, content_y, 700, 60, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
 
     local cpu_color = METRIC_COLORS[METRIC_CPU]
     local sc = status_color(sim.cpu_current)
@@ -503,10 +503,10 @@ local function draw_cpu_detail_screen()
 
     local pct_str = string.format("%.1f%%", sim.cpu_current)
     local pct_w = screen.get_text_width(pct_str, 20, true)
-    screen.draw_text(pct_str, 616 - pct_w, content_y + 4, {color=theme.text, size=20, bold=true})
+    screen.draw_text(pct_str, 696 - pct_w, content_y + 4, {color=theme.text, size=20, bold=true})
 
     -- Large progress bar
-    screen.draw_progress_bar(24, content_y + 28, 592, 10, sim.cpu_current / 100, {
+    screen.draw_progress_bar(24, content_y + 28, 672, 10, sim.cpu_current / 100, {
         fill_color=cpu_color, bg_color=theme.bg_lighter, radius=4,
     })
 
@@ -522,7 +522,7 @@ local function draw_cpu_detail_screen()
     content_y = content_y + 68
 
     -- Overall sparkline card
-    screen.draw_card(10, content_y, 620, 80, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    screen.draw_card(10, content_y, 700, 80, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
     screen.draw_text("CPU HISTORY", 24, content_y + 6, {color=theme.text_dim, size=10})
 
     -- Min/max labels
@@ -532,12 +532,12 @@ local function draw_cpu_detail_screen()
             if v < lo then lo = v end
             if v > hi then hi = v end
         end
-        screen.draw_text(string.format("%.0f%%", hi), 576, content_y + 4, {color={255, 180, 80}, size=10})
-        screen.draw_text(string.format("%.0f%%", lo), 576, content_y + 64, {color={120, 190, 255}, size=10})
+        screen.draw_text(string.format("%.0f%%", hi), 656, content_y + 4, {color={255, 180, 80}, size=10})
+        screen.draw_text(string.format("%.0f%%", lo), 656, content_y + 64, {color={120, 190, 255}, size=10})
     end
 
     if #sim.cpu_history >= 2 then
-        screen.draw_sparkline(sim.cpu_history, 24, content_y + 20, 548, 54, {color=cpu_color, baseline_color=theme.bg_lighter})
+        screen.draw_sparkline(sim.cpu_history, 24, content_y + 20, 628, 54, {color=cpu_color, baseline_color=theme.bg_lighter})
     end
 
     content_y = content_y + 88
@@ -546,7 +546,7 @@ local function draw_cpu_detail_screen()
     local core_card_w = 148
     local core_card_h = 100
     local core_gap = 8
-    local cores_x = (640 - (core_card_w * CPU_CORES + core_gap * (CPU_CORES - 1))) / 2
+    local cores_x = (720 - (core_card_w * CPU_CORES + core_gap * (CPU_CORES - 1))) / 2
 
     for c = 1, CPU_CORES do
         local cx = cores_x + (c - 1) * (core_card_w + core_gap)
@@ -598,15 +598,15 @@ local function draw_memory_detail_screen()
     local sc = status_color(sim.mem_current)
 
     -- Overall memory usage card
-    screen.draw_card(10, content_y, 620, 60, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    screen.draw_card(10, content_y, 700, 60, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
     screen.draw_text("RAM USAGE", 24, content_y + 6, {color=mem_color, size=11, bold=true})
     screen.draw_circle(24 + screen.get_text_width("RAM USAGE", 11, true) + 8, content_y + 12, 3, sc[1], sc[2], sc[3])
 
     local pct_str = string.format("%.1f%%", sim.mem_current)
     local pct_w = screen.get_text_width(pct_str, 20, true)
-    screen.draw_text(pct_str, 616 - pct_w, content_y + 4, {color=theme.text, size=20, bold=true})
+    screen.draw_text(pct_str, 696 - pct_w, content_y + 4, {color=theme.text, size=20, bold=true})
 
-    screen.draw_progress_bar(24, content_y + 28, 592, 10, sim.mem_current / 100, {
+    screen.draw_progress_bar(24, content_y + 28, 672, 10, sim.mem_current / 100, {
         fill_color=mem_color, bg_color=theme.bg_lighter, radius=4,
     })
 
@@ -615,7 +615,7 @@ local function draw_memory_detail_screen()
     content_y = content_y + 68
 
     -- Memory history sparkline
-    screen.draw_card(10, content_y, 620, 80, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    screen.draw_card(10, content_y, 700, 80, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
     screen.draw_text("MEMORY HISTORY", 24, content_y + 6, {color=theme.text_dim, size=10})
 
     if #sim.mem_history > 0 then
@@ -624,12 +624,12 @@ local function draw_memory_detail_screen()
             if v < lo then lo = v end
             if v > hi then hi = v end
         end
-        screen.draw_text(string.format("%.0f%%", hi), 576, content_y + 4, {color={255, 180, 80}, size=10})
-        screen.draw_text(string.format("%.0f%%", lo), 576, content_y + 64, {color={120, 190, 255}, size=10})
+        screen.draw_text(string.format("%.0f%%", hi), 656, content_y + 4, {color={255, 180, 80}, size=10})
+        screen.draw_text(string.format("%.0f%%", lo), 656, content_y + 64, {color={120, 190, 255}, size=10})
     end
 
     if #sim.mem_history >= 2 then
-        screen.draw_sparkline(sim.mem_history, 24, content_y + 20, 548, 54, {color=mem_color, baseline_color=theme.bg_lighter})
+        screen.draw_sparkline(sim.mem_history, 24, content_y + 20, 628, 54, {color=mem_color, baseline_color=theme.bg_lighter})
     end
 
     content_y = content_y + 88
@@ -648,7 +648,7 @@ local function draw_memory_detail_screen()
         {label="Shared", pct=shared_pct, mb=math.floor(shared_pct / 100 * sim.mem_total_mb), color={255, 200, 80}},
     }
 
-    screen.draw_card(10, content_y, 620, 130, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    screen.draw_card(10, content_y, 700, 130, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
     screen.draw_text("BREAKDOWN", 24, content_y + 8, {color=theme.text_dim, size=10})
 
     local row_y = content_y + 26
@@ -664,7 +664,7 @@ local function draw_memory_detail_screen()
         screen.draw_text(mb_str, 220, sy, {color=theme.text_dim, size=12})
 
         -- Progress bar
-        screen.draw_progress_bar(310, sy + 2, 300, 8, seg.pct / 100, {
+        screen.draw_progress_bar(310, sy + 2, 380, 8, seg.pct / 100, {
             fill_color=seg.color, bg_color=theme.bg_lighter, radius=3,
         })
     end
@@ -672,14 +672,14 @@ local function draw_memory_detail_screen()
     content_y = content_y + 138
 
     -- Lua VM memory card
-    screen.draw_card(10, content_y, 304, 50, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
+    screen.draw_card(10, content_y, 344, 50, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
     screen.draw_text("LUA VM HEAP", 24, content_y + 6, {color={180, 220, 100}, size=10, bold=true})
     screen.draw_text(string.format("%.1f KB", sim.lua_mem_kb), 24, content_y + 24, {color=theme.text, size=16, bold=true})
 
     -- Free memory card
-    screen.draw_card(326, content_y, 304, 50, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
-    screen.draw_text("FREE RAM", 340, content_y + 6, {color={80, 220, 160}, size=10, bold=true})
-    screen.draw_text(string.format("%d MB", free_mb), 340, content_y + 24, {color=theme.text, size=16, bold=true})
+    screen.draw_card(366, content_y, 344, 50, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
+    screen.draw_text("FREE RAM", 380, content_y + 6, {color={80, 220, 160}, size=10, bold=true})
+    screen.draw_text(string.format("%d MB", free_mb), 380, content_y + 24, {color=theme.text, size=16, bold=true})
 
     draw_footer({
         {"B", "Back", theme.btn_b},
@@ -702,15 +702,15 @@ local function draw_system_info_screen()
     local disk_free_gb = sim.disk_total_gb - disk_used_gb
     local disk_sc = status_color(sim.disk_current)
 
-    screen.draw_card(10, content_y, 620, 60, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    screen.draw_card(10, content_y, 700, 60, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
     screen.draw_text("DISK USAGE", 24, content_y + 6, {color=disk_color, size=11, bold=true})
     screen.draw_circle(24 + screen.get_text_width("DISK USAGE", 11, true) + 8, content_y + 12, 3, disk_sc[1], disk_sc[2], disk_sc[3])
 
     local disk_pct_str = string.format("%.1f%%", sim.disk_current)
     local dpw = screen.get_text_width(disk_pct_str, 20, true)
-    screen.draw_text(disk_pct_str, 616 - dpw, content_y + 4, {color=theme.text, size=20, bold=true})
+    screen.draw_text(disk_pct_str, 696 - dpw, content_y + 4, {color=theme.text, size=20, bold=true})
 
-    screen.draw_progress_bar(24, content_y + 28, 592, 10, sim.disk_current / 100, {
+    screen.draw_progress_bar(24, content_y + 28, 672, 10, sim.disk_current / 100, {
         fill_color=disk_color, bg_color=theme.bg_lighter, radius=4,
     })
     screen.draw_text(string.format("%.1f GB / %d GB  (%.1f GB free)", disk_used_gb, sim.disk_total_gb, disk_free_gb), 24, content_y + 44, {color=theme.text_dim, size=11})
@@ -719,22 +719,22 @@ local function draw_system_info_screen()
 
     -- Network card
     local net_color = METRIC_COLORS[METRIC_NET]
-    screen.draw_card(10, content_y, 620, 80, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    screen.draw_card(10, content_y, 700, 80, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
     screen.draw_text("NETWORK ACTIVITY", 24, content_y + 6, {color=net_color, size=11, bold=true})
 
     if #sim.net_history >= 2 then
-        screen.draw_sparkline(sim.net_history, 24, content_y + 22, 400, 50, {color=net_color, baseline_color=theme.bg_lighter})
+        screen.draw_sparkline(sim.net_history, 24, content_y + 22, 480, 50, {color=net_color, baseline_color=theme.bg_lighter})
     end
 
     -- Network stats (right side)
-    screen.draw_text(string.format("%.0f KB/s", sim.net_current), 450, content_y + 22, {color=theme.text, size=16, bold=true})
-    screen.draw_text(string.format("RX: %.0f KB/s", sim.net_rx_rate), 450, content_y + 44, {color={80, 200, 255}, size=12})
-    screen.draw_text(string.format("TX: %.0f KB/s", sim.net_tx_rate), 450, content_y + 60, {color={255, 160, 80}, size=12})
+    screen.draw_text(string.format("%.0f KB/s", sim.net_current), 530, content_y + 22, {color=theme.text, size=16, bold=true})
+    screen.draw_text(string.format("RX: %.0f KB/s", sim.net_rx_rate), 530, content_y + 44, {color={80, 200, 255}, size=12})
+    screen.draw_text(string.format("TX: %.0f KB/s", sim.net_tx_rate), 530, content_y + 60, {color={255, 160, 80}, size=12})
 
     content_y = content_y + 88
 
     -- System information table
-    screen.draw_card(10, content_y, 620, 170, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    screen.draw_card(10, content_y, 700, 170, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
     screen.draw_text("SYSTEM", 24, content_y + 8, {color=theme.text_dim, size=10, bold=true})
 
     local info_rows = {
@@ -742,7 +742,7 @@ local function draw_system_info_screen()
         {"Platform", "Linux ARM64"},
         {"Kernel", "6.1.43-sun50iw9"},
         {"CPU", "Allwinner H700 (4 cores)"},
-        {"Display", "640x480 IPS"},
+        {"Display", "720x720 IPS"},
         {"Uptime", format_uptime(uptime_secs)},
         {"Lua VM", string.format("%.1f KB allocated", sim.lua_mem_kb)},
         {"Tick", string.format("#%d (%.0f samples)", sim.tick, sim.tick * UPDATE_INTERVAL)},
@@ -754,7 +754,7 @@ local function draw_system_info_screen()
 
         -- Alternating row background
         if i % 2 == 0 then
-            screen.draw_rect(16, ry - 1, 608, 18, {color=theme.bg_lighter, filled=true, radius=2})
+            screen.draw_rect(16, ry - 1, 688, 18, {color=theme.bg_lighter, filled=true, radius=2})
         end
 
         -- Key
@@ -766,13 +766,13 @@ local function draw_system_info_screen()
     -- Network totals at bottom
     content_y = content_y + 178
 
-    screen.draw_card(10, content_y, 304, 42, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
+    screen.draw_card(10, content_y, 344, 42, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
     screen.draw_text("TOTAL RX", 24, content_y + 4, {color={80, 200, 255}, size=10, bold=true})
     screen.draw_text(format_bytes(sim.net_rx_total_kb), 24, content_y + 20, {color=theme.text, size=14, bold=true})
 
-    screen.draw_card(326, content_y, 304, 42, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
-    screen.draw_text("TOTAL TX", 340, content_y + 4, {color={255, 160, 80}, size=10, bold=true})
-    screen.draw_text(format_bytes(sim.net_tx_total_kb), 340, content_y + 20, {color=theme.text, size=14, bold=true})
+    screen.draw_card(366, content_y, 344, 42, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
+    screen.draw_text("TOTAL TX", 380, content_y + 4, {color={255, 160, 80}, size=10, bold=true})
+    screen.draw_text(format_bytes(sim.net_tx_total_kb), 380, content_y + 20, {color=theme.text, size=14, bold=true})
 
     draw_footer({
         {"B", "Back", theme.btn_b},

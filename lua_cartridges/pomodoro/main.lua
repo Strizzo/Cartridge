@@ -67,19 +67,19 @@ local state = {
 -- ── Drawing Helpers ──────────────────────────────────────────────────────────
 
 local function draw_header(title)
-    screen.draw_gradient_rect(0, 0, 640, 40,
+    screen.draw_gradient_rect(0, 0, 720, 40,
         theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
         theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 640, 0, {color=theme.accent})
+    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
     screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
 end
 
 local function draw_footer(hints)
-    screen.draw_rect(0, 444, 640, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 444, 640, 444, {color=theme.border})
+    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
+    screen.draw_line(0, 684, 720, 684, {color=theme.border})
     local x = 10
     for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 452, {color=h[3], size=12})
+        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
         x = x + w + 14
     end
 end
@@ -192,8 +192,8 @@ local function draw_timer_screen()
     draw_header("Pomodoro")
 
     local content_top = 40
-    local content_bottom = 444
-    local cx = 320
+    local content_bottom = 684
+    local cx = 360
     local cy = (content_top + content_bottom) / 2 - 30
 
     local phase_color = PHASE_COLORS[state.phase]
@@ -281,8 +281,8 @@ local function draw_timer_screen()
     draw_footer(hints)
 
     -- Right-side nav hints
-    screen.draw_text("R1:Stats", 560, 454, {color=theme.text_dim, size=11})
-    screen.draw_text("L1:Set", 500, 454, {color=theme.text_dim, size=11})
+    screen.draw_text("R1:Stats", 640, 694, {color=theme.text_dim, size=11})
+    screen.draw_text("L1:Set", 580, 694, {color=theme.text_dim, size=11})
 end
 
 -- ── Stats Screen ─────────────────────────────────────────────────────────────
@@ -296,7 +296,7 @@ local function draw_stats_screen()
     local card_h = 80
     local card_gap = 12
     local card_w = 194
-    local cards_x = 16
+    local cards_x = 57
 
     -- Card 1: Completed
     screen.draw_card(cards_x, y, card_w, card_h, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
@@ -345,7 +345,7 @@ local function draw_stats_screen()
         y = y + 30
     else
         for i = #state.sessions, 1, -1 do
-            if y > 440 then break end
+            if y > 680 then break end
             if y + 44 > 40 then
                 local session = state.sessions[i]
                 local idx = #state.sessions - i
@@ -353,7 +353,7 @@ local function draw_stats_screen()
 
                 -- Row background
                 local bg = idx % 2 == 0 and theme.card_bg or theme.bg_lighter
-                screen.draw_rounded_rect(16, y, 608, h, bg.r, bg.g, bg.b, 6, false)
+                screen.draw_rounded_rect(16, y, 688, h, bg.r, bg.g, bg.b, 6, false)
 
                 -- Status dot
                 local completed = session.completed
@@ -372,7 +372,7 @@ local function draw_stats_screen()
                 local status = completed and "Completed" or "Skipped"
                 local status_color = completed and {80, 200, 120} or theme.text_dim
                 local sw = screen.get_text_width(status, 13, false)
-                screen.draw_text(status, 608 - sw, y + 14, {color=status_color, size=13})
+                screen.draw_text(status, 688 - sw, y + 14, {color=status_color, size=13})
             end
             y = y + 50
         end
@@ -380,7 +380,7 @@ local function draw_stats_screen()
 
     -- Calculate max scroll
     local total_content_height = (y + state.stats_scroll) - 52
-    local visible_height = 444 - 52
+    local visible_height = 684 - 52
     state.stats_max_scroll = math.max(0, total_content_height - visible_height)
 
     draw_footer({
@@ -389,7 +389,7 @@ local function draw_stats_screen()
     })
 
     if state.stats_max_scroll > 0 then
-        screen.draw_text("D-Pad: Scroll", 540, 454, {color=theme.text_dim, size=12})
+        screen.draw_text("D-Pad: Scroll", 600, 694, {color=theme.text_dim, size=12})
     end
 end
 
@@ -430,7 +430,7 @@ local function draw_settings_screen()
         -- Row card
         local border_color = selected and theme.accent or theme.border
         local bg = selected and theme.card_highlight or theme.card_bg
-        screen.draw_card(20, y, 600, h, {bg=bg, border=border_color, radius=10, shadow=true})
+        screen.draw_card(20, y, 680, h, {bg=bg, border=border_color, radius=10, shadow=true})
 
         -- Selection indicator
         if selected then
@@ -466,8 +466,8 @@ local function draw_settings_screen()
 
         -- Left/right arrows for selected row
         if selected then
-            screen.draw_text("<", 570, y + 20, {color=theme.accent, size=20, bold=true})
-            screen.draw_text(">", 598, y + 20, {color=theme.accent, size=20, bold=true})
+            screen.draw_text("<", 650, y + 20, {color=theme.accent, size=20, bold=true})
+            screen.draw_text(">", 678, y + 20, {color=theme.accent, size=20, bold=true})
         end
 
         y = y + 80
@@ -498,14 +498,14 @@ local function draw_settings_screen()
         local pw = screen.draw_pill(item[1], px, y,
             item[2][1], item[2][2], item[2][3], {text_color={18, 18, 24}, size=12})
         px = px + pw + 4
-        if px > 600 then break end
+        if px > 680 then break end
     end
 
     draw_footer({
         {"B", "Back", theme.btn_b},
         {"A", "Select", theme.btn_a},
     })
-    screen.draw_text("L1/R1 or LEFT/RIGHT: Change", 430, 454, {color=theme.text_dim, size=12})
+    screen.draw_text("L1/R1 or LEFT/RIGHT: Change", 490, 694, {color=theme.text_dim, size=12})
 end
 
 -- ── Lifecycle ────────────────────────────────────────────────────────────────

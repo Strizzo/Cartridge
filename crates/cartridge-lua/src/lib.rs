@@ -20,7 +20,7 @@ const TARGET_FPS: u32 = 30;
 ///
 /// This function:
 /// 1. Reads `cartridge.json` from `app_dir`
-/// 2. Initializes SDL2, creates a 640x480 window
+/// 2. Initializes SDL2, creates a 720x720 window
 /// 3. Creates the Lua VM and registers all APIs
 /// 4. Loads the entry Lua file
 /// 5. Enters a 30fps game loop calling Lua lifecycle functions
@@ -36,7 +36,8 @@ pub fn run_lua_app(app_dir: &Path, assets_dir: &Path) -> Result<(), String> {
 
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;
-    let _joystick_subsystem = sdl_context.joystick()?;
+    let joystick_subsystem = sdl_context.joystick()?;
+    let _joysticks = cartridge_core::input::open_all_joysticks(&joystick_subsystem);
 
     let window_title = format!("Cartridge - {}", manifest.name);
     let window = video_subsystem

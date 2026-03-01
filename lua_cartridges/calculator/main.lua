@@ -239,25 +239,25 @@ local state = {
     history = {},
     history_selected = 1,
     history_scroll = 0,
-    history_visible = 5,
+    history_visible = 9,
 }
 
 -- ── Drawing Helpers ──────────────────────────────────────────────────────────
 
 local function draw_header(title)
-    screen.draw_gradient_rect(0, 0, 640, 40,
+    screen.draw_gradient_rect(0, 0, 720, 40,
         theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
         theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 640, 0, {color=theme.accent})
+    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
     screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
 end
 
 local function draw_footer(hints)
-    screen.draw_rect(0, 444, 640, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 444, 640, 444, {color=theme.border})
+    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
+    screen.draw_line(0, 684, 720, 684, {color=theme.border})
     local x = 10
     for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 452, {color=h[3], size=12})
+        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
         x = x + w + 14
     end
 end
@@ -444,7 +444,7 @@ local function draw_calc_screen()
     -- Display area
     local display_y = 44
     local display_h = 116
-    screen.draw_card(10, display_y, 620, display_h, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
+    screen.draw_card(12, display_y, 696, display_h, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
 
     -- Format expression
     local display_expr = state.expression
@@ -471,35 +471,35 @@ local function draw_calc_screen()
 
     -- Draw expression (right-aligned)
     local expr_color = state.expression == "" and theme.text_dim or theme.text
-    local max_expr_w = 596
+    local max_expr_w = 672
     local tw = screen.get_text_width(display_expr, 28, true)
     if tw > max_expr_w then
         -- Show rightmost portion
-        local expr_x = 22
+        local expr_x = 24
         screen.draw_text(display_expr, expr_x, display_y + 16, {color=expr_color, size=28, bold=true, max_width=max_expr_w})
     else
-        local expr_x = 10 + 620 - 12 - tw
+        local expr_x = 12 + 696 - 12 - tw
         screen.draw_text(display_expr, expr_x, display_y + 16, {color=expr_color, size=28, bold=true})
     end
 
     -- Divider
-    screen.draw_line(22, display_y + 55, 618, display_y + 55, {color={50, 50, 70}})
+    screen.draw_line(24, display_y + 55, 698, display_y + 55, {color={50, 50, 70}})
 
     -- Result preview or error
     local preview_y = display_y + 60
     if state.error_text ~= "" then
         local ew = screen.get_text_width(state.error_text, 20, false)
-        screen.draw_text(state.error_text, 618 - ew, preview_y, {color=theme.negative, size=20})
+        screen.draw_text(state.error_text, 698 - ew, preview_y, {color=theme.negative, size=20})
     elseif state.result_text ~= "" and state.expression ~= "" then
         local preview_str = "= " .. state.result_text
         local pw = screen.get_text_width(preview_str, 20, false)
-        screen.draw_text(preview_str, 618 - pw, preview_y, {color=theme.text_dim, size=20})
+        screen.draw_text(preview_str, 698 - pw, preview_y, {color=theme.text_dim, size=20})
     end
 
     -- Button grid
     local grid_y_start = 168
-    local grid_x_start = 12
-    local btn_w = 120
+    local grid_x_start = 10
+    local btn_w = 136
     local btn_h = 52
     local gap_x = 5
     local gap_y = 5
@@ -551,9 +551,9 @@ local function draw_history_screen()
     local history = state.history
     if #history == 0 then
         local tw = screen.get_text_width("No calculations yet", 18, false)
-        screen.draw_text("No calculations yet", (640 - tw) / 2, 200, {color=theme.text_dim, size=18})
+        screen.draw_text("No calculations yet", (720 - tw) / 2, 200, {color=theme.text_dim, size=18})
         local hw = screen.get_text_width("Press B to go back", 14, false)
-        screen.draw_text("Press B to go back", (640 - hw) / 2, 236, {color=theme.text_dim, size=14})
+        screen.draw_text("Press B to go back", (720 - hw) / 2, 236, {color=theme.text_dim, size=14})
         draw_footer({{"B", "Back", theme.btn_b}})
         return
     end
@@ -572,14 +572,14 @@ local function draw_history_screen()
     local item_h = 62
     local item_gap = 6
     local x_pad = 12
-    local card_w = 616
+    local card_w = 696
 
     for i = state.history_scroll + 1, math.min(#history, state.history_scroll + state.history_visible + 1) do
         local entry = history[i]
         local local_idx = i - state.history_scroll - 1
         local y = content_y + local_idx * (item_h + item_gap)
 
-        if y + item_h > 444 then break end
+        if y + item_h > 684 then break end
 
         local is_selected = (i == state.history_selected)
 
@@ -606,11 +606,11 @@ local function draw_history_screen()
     -- Scroll indicators
     if state.history_scroll > 0 then
         local tw = screen.get_text_width("\226\150\178 more", 14, false)
-        screen.draw_text("\226\150\178 more", (640 - tw) / 2, 42, {color=theme.text_dim, size=14})
+        screen.draw_text("\226\150\178 more", (720 - tw) / 2, 42, {color=theme.text_dim, size=14})
     end
     if state.history_scroll + state.history_visible < #history then
         local tw = screen.get_text_width("\226\150\188 more", 14, false)
-        screen.draw_text("\226\150\188 more", (640 - tw) / 2, 430, {color=theme.text_dim, size=14})
+        screen.draw_text("\226\150\188 more", (720 - tw) / 2, 670, {color=theme.text_dim, size=14})
     end
 
     draw_footer({

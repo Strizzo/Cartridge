@@ -117,30 +117,30 @@ end
 -- ── Drawing Helpers ──────────────────────────────────────────────────────────
 
 local function draw_header(title, right_text, right_color)
-    screen.draw_gradient_rect(0, 0, 640, 40,
+    screen.draw_gradient_rect(0, 0, 720, 40,
         theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
         theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 640, 0, {color=theme.accent})
+    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
     screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
     if right_text then
         local rc = right_color or theme.text_dim
         local rw = screen.get_text_width(right_text, 12, false)
-        screen.draw_text(right_text, 624 - rw, 14, {color=rc, size=12})
+        screen.draw_text(right_text, 704 - rw, 14, {color=rc, size=12})
     end
 end
 
 local function draw_footer(hints)
-    screen.draw_rect(0, 444, 640, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 444, 640, 444, {color=theme.border})
+    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
+    screen.draw_line(0, 684, 720, 684, {color=theme.border})
     local x = 10
     for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 452, {color=h[3], size=12})
+        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
         x = x + w + 14
     end
 end
 
 local function draw_tab_bar(tabs, active_idx, y)
-    screen.draw_rect(0, y, 640, 30, {color=theme.bg_header, filled=true})
+    screen.draw_rect(0, y, 720, 30, {color=theme.bg_header, filled=true})
     local tx = 10
     for i, label in ipairs(tabs) do
         local is_active = (i == active_idx)
@@ -155,18 +155,18 @@ local function draw_tab_bar(tabs, active_idx, y)
         end
         tx = tx + tab_w + 6
     end
-    screen.draw_line(0, y + 30, 640, y + 30, {color=theme.border})
+    screen.draw_line(0, y + 30, 720, y + 30, {color=theme.border})
 end
 
 local function draw_loading(msg, y, h)
     local text = msg or "Loading..."
     local tw = screen.get_text_width(text, 16, false)
-    screen.draw_text(text, (640 - tw) / 2, y + h / 2 - 8, {color=theme.text_dim, size=16})
+    screen.draw_text(text, (720 - tw) / 2, y + h / 2 - 8, {color=theme.text_dim, size=16})
 end
 
 local function draw_scroll_indicator(y_start, height, cursor, total, visible)
     if total <= visible then return end
-    local ind_x = 635
+    local ind_x = 715
     local bar_top = y_start + 4
     local bar_h = height - 8
     screen.draw_line(ind_x, bar_top, ind_x, bar_top + bar_h, {color=theme.border})
@@ -278,7 +278,7 @@ end
 
 local function draw_story_card(story, y, is_selected)
     local card_x = 6
-    local card_w = 628
+    local card_w = 708
     local card_h = ROW_HEIGHT - 4
 
     -- Card background
@@ -363,7 +363,7 @@ local function draw_story_list()
     draw_tab_bar(state.tabs, state.active_tab, 40)
 
     local content_y = 72
-    local footer_y = 444
+    local footer_y = 684
     local content_h = footer_y - content_y
 
     if state.loading then
@@ -389,7 +389,7 @@ local function draw_story_list()
         draw_scroll_indicator(content_y, content_h, state.cursor, n, visible)
     elseif state.error_msg ~= "" then
         local ew = screen.get_text_width(state.error_msg, 14, false)
-        screen.draw_text(state.error_msg, (640 - ew) / 2, content_y + content_h / 2 - 8, {color=theme.negative, size=14})
+        screen.draw_text(state.error_msg, (720 - ew) / 2, content_y + content_h / 2 - 8, {color=theme.negative, size=14})
     end
 
     draw_footer({
@@ -407,7 +407,7 @@ local function layout_detail()
     local story = state.detail_story
     if not story then return end
 
-    local max_w = 600
+    local max_w = 680
 
     -- Story title
     local title_lines = word_wrap(story.title, max_w, 15, true)
@@ -492,7 +492,7 @@ local function draw_story_detail()
     draw_header("Story", #state.detail_comments .. " comments", {100, 220, 100})
 
     local content_y = 42
-    local content_h = 402
+    local content_h = 642
     local lh = screen.get_line_height(14, false)
 
     if state.detail_loading then
@@ -524,7 +524,7 @@ local function draw_story_detail()
         end
 
         -- Text
-        local max_w = 620 - line.indent
+        local max_w = 700 - line.indent
         local display = line.text
         if display ~= "" and screen.get_text_width(display, 14, line.is_header) > max_w then
             while #display > 1 and screen.get_text_width(display .. "..", 14, line.is_header) > max_w do
@@ -543,7 +543,7 @@ local function draw_story_detail()
 
     -- Scroll indicator
     if total > visible_lines then
-        local ind_x = 635
+        local ind_x = 715
         local bar_top = content_y + 6
         local bar_h = content_h - 12
         screen.draw_line(ind_x, bar_top, ind_x, bar_top + bar_h, {color=theme.border})
@@ -599,7 +599,7 @@ local function load_reader(url)
         body = body:match("^%s*(.-)%s*$") or ""
 
         -- Word wrap into lines
-        local max_w = 600
+        local max_w = 680
         for paragraph in body:gmatch("[^\n]+") do
             local trimmed = paragraph:match("^%s*(.-)%s*$") or ""
             if trimmed ~= "" then
@@ -620,7 +620,7 @@ local function draw_reader()
     draw_header(state.reader_domain ~= "" and state.reader_domain or "Article")
 
     local content_y = 42
-    local content_h = 402
+    local content_h = 642
     local lh = screen.get_line_height(14, false)
 
     if state.reader_loading then
@@ -643,7 +643,7 @@ local function draw_reader()
 
     -- Scroll indicator
     if total > visible_lines then
-        local ind_x = 635
+        local ind_x = 715
         local bar_top = content_y + 6
         local bar_h = content_h - 12
         screen.draw_line(ind_x, bar_top, ind_x, bar_top + bar_h, {color=theme.border})
@@ -705,10 +705,10 @@ function on_input(button, action)
         elseif button == "x" then
             load_stories()
         elseif button == "l2" then
-            local visible = math.max(1, math.floor(370 / ROW_HEIGHT))
+            local visible = math.max(1, math.floor(610 / ROW_HEIGHT))
             state.cursor = math.max(1, state.cursor - visible)
         elseif button == "r2" then
-            local visible = math.max(1, math.floor(370 / ROW_HEIGHT))
+            local visible = math.max(1, math.floor(610 / ROW_HEIGHT))
             state.cursor = math.min(math.max(1, n), state.cursor + visible)
         end
 

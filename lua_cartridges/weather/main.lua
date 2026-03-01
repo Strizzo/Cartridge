@@ -132,31 +132,31 @@ local state = {
 -- ── Drawing Helpers ──────────────────────────────────────────────────────────
 
 local function draw_header(title, right_text, right_color)
-    screen.draw_gradient_rect(0, 0, 640, 40,
+    screen.draw_gradient_rect(0, 0, 720, 40,
         theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
         theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 640, 0, {color=theme.accent})
+    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
     screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
     if right_text then
         local rc = right_color or theme.text_dim
         local rw = screen.get_text_width(right_text, 12, false)
-        screen.draw_text(right_text, 624 - rw, 14, {color=rc, size=12})
+        screen.draw_text(right_text, 704 - rw, 14, {color=rc, size=12})
     end
 end
 
 local function draw_footer(hints)
-    screen.draw_rect(0, 444, 640, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 444, 640, 444, {color=theme.border})
+    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
+    screen.draw_line(0, 684, 720, 684, {color=theme.border})
     local x = 10
     for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 452, {color=h[3], size=12})
+        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
         x = x + w + 14
     end
 end
 
 local function draw_tab_indicator(active)
     local tab_y = 42
-    local tab_w = 213
+    local tab_w = 240
     local labels = {"Current", "Forecast", "Settings"}
     for i, label in ipairs(labels) do
         local tx = (i - 1) * tab_w
@@ -169,7 +169,7 @@ local function draw_tab_indicator(active)
             screen.draw_rect(tx + 20, tab_y + 24, tab_w - 40, 2, {color=theme.accent, filled=true, radius=1})
         end
     end
-    screen.draw_line(0, tab_y + 28, 640, tab_y + 28, {color=theme.border})
+    screen.draw_line(0, tab_y + 28, 720, tab_y + 28, {color=theme.border})
 end
 
 -- ── API Functions ────────────────────────────────────────────────────────────
@@ -283,14 +283,14 @@ local function draw_current_screen()
 
     if state.current_loading and not state.current then
         local tw = screen.get_text_width("Fetching weather...", 16, false)
-        screen.draw_text("Fetching weather...", (640 - tw) / 2, 220, {color=theme.text_dim, size=16})
+        screen.draw_text("Fetching weather...", (720 - tw) / 2, 220, {color=theme.text_dim, size=16})
         draw_footer({{"L1/R1", "Tab", theme.btn_l}})
         return
     end
 
     if not state.current then
         local tw = screen.get_text_width("No data", 16, false)
-        screen.draw_text("No data", (640 - tw) / 2, 220, {color=theme.text_dim, size=16})
+        screen.draw_text("No data", (720 - tw) / 2, 220, {color=theme.text_dim, size=16})
         draw_footer({{"L1/R1", "Tab", theme.btn_l}})
         return
     end
@@ -304,7 +304,7 @@ local function draw_current_screen()
     content_y = content_y + 22
 
     -- Main temperature + condition card
-    screen.draw_card(6, content_y, 628, 150, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
+    screen.draw_card(6, content_y, 708, 150, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
 
     -- Large temperature
     local tc = temp_color(w.temperature)
@@ -324,7 +324,7 @@ local function draw_current_screen()
     screen.draw_text("Sunrise " .. w.sunrise .. "   Sunset " .. w.sunset, 30, content_y + 98, {color=theme.text_dim, size=11})
 
     -- ASCII weather art (right side)
-    local art_x = 380
+    local art_x = 440
     local art_y = content_y + 16
     for i, line in ipairs(cond.icon) do
         if line and line ~= "" then
@@ -340,9 +340,9 @@ local function draw_current_screen()
         {"Wind", string.format("%.0f km/h", w.wind_speed), {120, 220, 180}},
         {"Pressure", string.format("%.0f hPa", w.pressure), {200, 180, 255}},
     }
-    local card_w = 200
+    local card_w = 220
     local gap = 14
-    local start_x = (640 - (card_w * 3 + gap * 2)) / 2
+    local start_x = (720 - (card_w * 3 + gap * 2)) / 2
     for i, stat in ipairs(stats) do
         local cx = start_x + (i - 1) * (card_w + gap)
         screen.draw_card(cx, content_y, card_w, 62, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
@@ -353,9 +353,9 @@ local function draw_current_screen()
 
     -- 24h Sparkline card
     if w.hourly_temps and #w.hourly_temps > 0 then
-        screen.draw_card(6, content_y, 628, 80, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+        screen.draw_card(6, content_y, 708, 80, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
         screen.draw_text("24h Temperature Trend", 18, content_y + 6, {color=theme.text_dim, size=11})
-        screen.draw_sparkline(w.hourly_temps, 18, content_y + 24, 604, 46, {color=theme.accent})
+        screen.draw_sparkline(w.hourly_temps, 18, content_y + 24, 684, 46, {color=theme.accent})
 
         if #w.hourly_temps > 1 then
             local lo = w.hourly_temps[1]
@@ -364,8 +364,8 @@ local function draw_current_screen()
                 if t < lo then lo = t end
                 if t > hi then hi = t end
             end
-            screen.draw_text(string.format("%+.0f\194\176", lo), 552, content_y + 6, {color={120, 190, 255}, size=11})
-            screen.draw_text(string.format("%+.0f\194\176", hi), 592, content_y + 6, {color={255, 180, 80}, size=11})
+            screen.draw_text(string.format("%+.0f\194\176", lo), 632, content_y + 6, {color={120, 190, 255}, size=11})
+            screen.draw_text(string.format("%+.0f\194\176", hi), 672, content_y + 6, {color={255, 180, 80}, size=11})
         end
     end
 
@@ -382,20 +382,20 @@ local function draw_forecast_screen()
     draw_tab_indicator(2)
 
     local content_top = 76
-    local content_bottom = 444
+    local content_bottom = 684
     local row_height = 74
     local visible_rows = math.floor((content_bottom - content_top) / row_height)
 
     if state.forecast_loading and #state.forecast_days == 0 then
         local tw = screen.get_text_width("Fetching forecast...", 16, false)
-        screen.draw_text("Fetching forecast...", (640 - tw) / 2, 220, {color=theme.text_dim, size=16})
+        screen.draw_text("Fetching forecast...", (720 - tw) / 2, 220, {color=theme.text_dim, size=16})
         draw_footer({{"L1/R1", "Tab", theme.btn_l}})
         return
     end
 
     if #state.forecast_days == 0 then
         local tw = screen.get_text_width("No forecast data", 16, false)
-        screen.draw_text("No forecast data", (640 - tw) / 2, 220, {color=theme.text_dim, size=16})
+        screen.draw_text("No forecast data", (720 - tw) / 2, 220, {color=theme.text_dim, size=16})
         draw_footer({{"L1/R1", "Tab", theme.btn_l}})
         return
     end
@@ -419,7 +419,7 @@ local function draw_forecast_screen()
         local day = days[idx]
         local selected = (idx == state.forecast_cursor)
         local card_x = 6
-        local card_w = 628
+        local card_w = 708
         local card_h = row_height - 4
 
         if selected then
@@ -448,21 +448,21 @@ local function draw_forecast_screen()
         -- High / Low temps
         local hi_color = temp_color(day.temp_max)
         local lo_color = temp_color(day.temp_min)
-        screen.draw_text(string.format("%+.0f\194\176", day.temp_max), card_x + 380, y + 10, {color=hi_color, size=16, bold=true})
-        screen.draw_text("Hi", card_x + 380, y + 34, {color=theme.text_dim, size=10})
-        screen.draw_text(string.format("%+.0f\194\176", day.temp_min), card_x + 450, y + 10, {color=lo_color, size=16, bold=true})
-        screen.draw_text("Lo", card_x + 450, y + 34, {color=theme.text_dim, size=10})
+        screen.draw_text(string.format("%+.0f\194\176", day.temp_max), card_x + 430, y + 10, {color=hi_color, size=16, bold=true})
+        screen.draw_text("Hi", card_x + 430, y + 34, {color=theme.text_dim, size=10})
+        screen.draw_text(string.format("%+.0f\194\176", day.temp_min), card_x + 510, y + 10, {color=lo_color, size=16, bold=true})
+        screen.draw_text("Lo", card_x + 510, y + 34, {color=theme.text_dim, size=10})
 
         -- Precipitation + wind
         if day.precipitation > 0 then
-            screen.draw_text(string.format("%.1fmm", day.precipitation), card_x + 530, y + 10, {color={100, 180, 255}, size=12})
+            screen.draw_text(string.format("%.1fmm", day.precipitation), card_x + 600, y + 10, {color={100, 180, 255}, size=12})
         else
-            screen.draw_text("0mm", card_x + 530, y + 10, {color=theme.text_dim, size=12})
+            screen.draw_text("0mm", card_x + 600, y + 10, {color=theme.text_dim, size=12})
         end
-        screen.draw_text(string.format("%.0fkm/h", day.wind_max), card_x + 530, y + 30, {color={120, 220, 180}, size=11})
+        screen.draw_text(string.format("%.0fkm/h", day.wind_max), card_x + 600, y + 30, {color={120, 220, 180}, size=11})
 
         -- Sunrise / Sunset
-        screen.draw_text("\226\134\145" .. day.sunrise .. " \226\134\147" .. day.sunset, card_x + 510, y + 50, {color=theme.text_dim, size=10})
+        screen.draw_text("\226\134\145" .. day.sunrise .. " \226\134\147" .. day.sunset, card_x + 580, y + 50, {color=theme.text_dim, size=10})
     end
 
     draw_footer({
@@ -478,7 +478,7 @@ local function draw_settings_screen()
     draw_tab_indicator(3)
 
     local content_top = 76
-    local content_bottom = 444
+    local content_bottom = 684
     local row_height = 46
     local visible_rows = math.floor((content_bottom - content_top) / row_height)
 
@@ -502,7 +502,7 @@ local function draw_settings_screen()
         local is_current = (idx == state.city_idx)
 
         local card_x = 6
-        local card_w = 628
+        local card_w = 708
         local card_h = row_height - 4
 
         if is_selected then
@@ -523,7 +523,7 @@ local function draw_settings_screen()
 
     -- Scroll indicator
     if #CITIES > visible_rows then
-        local bar_x = 634
+        local bar_x = 714
         local bar_y = content_top + 18
         local bar_h = content_bottom - bar_y - 4
         local thumb_h = math.max(16, math.floor(bar_h * visible_rows / #CITIES))

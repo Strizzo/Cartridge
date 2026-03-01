@@ -66,12 +66,13 @@ impl InputManager {
         keyboard_map.insert(Keycode::Return, Button::Start);
         keyboard_map.insert(Keycode::Space, Button::Select);
 
-        // R36S Plus button mapping
+        // R36S Plus button mapping (Nintendo layout: right=A, bottom=B)
+        // Button indices: 0=bottom(B), 1=right(A), 2=top(X→Y), 3=left(Y→X)
         let mut gamepad_map = HashMap::new();
-        gamepad_map.insert(0, Button::A);
-        gamepad_map.insert(1, Button::B);
-        gamepad_map.insert(2, Button::X);
-        gamepad_map.insert(3, Button::Y);
+        gamepad_map.insert(0, Button::B);
+        gamepad_map.insert(1, Button::A);
+        gamepad_map.insert(2, Button::Y);
+        gamepad_map.insert(3, Button::X);
         gamepad_map.insert(4, Button::L1);
         gamepad_map.insert(5, Button::R1);
         gamepad_map.insert(6, Button::L2);

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use cartridge_core::screen::Screen;
+use cartridge_core::screen::{Screen, WIDTH, HEIGHT};
 use cartridge_core::storage::AppStorage;
 use cartridge_core::theme::Theme;
 use cartridge_net::HttpClient;
@@ -542,6 +542,10 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
             )?,
         )?;
     }
+
+    // Screen dimension constants (available from file scope, no render context needed)
+    screen_table.set("width", WIDTH)?;
+    screen_table.set("height", HEIGHT)?;
 
     lua.globals().set("screen", screen_table)?;
     Ok(())

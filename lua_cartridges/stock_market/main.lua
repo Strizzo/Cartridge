@@ -119,30 +119,30 @@ local ROW_HEIGHT = 56
 -- ── Helpers ──────────────────────────────────────────────────────────────────
 
 local function draw_header(title, right_text, right_color)
-    screen.draw_gradient_rect(0, 0, 640, 40,
+    screen.draw_gradient_rect(0, 0, 720, 40,
         theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
         theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 640, 0, {color=theme.accent})
+    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
     screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
     if right_text then
         local rc = right_color or theme.text_dim
         local rw = screen.get_text_width(right_text, 12, false)
-        screen.draw_text(right_text, 624 - rw, 14, {color=rc, size=12})
+        screen.draw_text(right_text, 704 - rw, 14, {color=rc, size=12})
     end
 end
 
 local function draw_footer(hints)
-    screen.draw_rect(0, 444, 640, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 444, 640, 444, {color=theme.border})
+    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
+    screen.draw_line(0, 684, 720, 684, {color=theme.border})
     local x = 10
     for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 452, {color=h[3], size=12})
+        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
         x = x + w + 14
     end
 end
 
 local function draw_tab_bar(tabs, active_idx, y)
-    screen.draw_rect(0, y, 640, 30, {color=theme.bg_header, filled=true})
+    screen.draw_rect(0, y, 720, 30, {color=theme.bg_header, filled=true})
     local tx = 10
     for i, label in ipairs(tabs) do
         local is_active = (i == active_idx)
@@ -157,12 +157,12 @@ local function draw_tab_bar(tabs, active_idx, y)
         end
         tx = tx + tab_w + 6
     end
-    screen.draw_line(0, y + 30, 640, y + 30, {color=theme.border})
+    screen.draw_line(0, y + 30, 720, y + 30, {color=theme.border})
 end
 
 local function draw_scroll_indicator(y_start, height, cursor, total, visible)
     if total <= visible then return end
-    local ind_x = 635
+    local ind_x = 715
     local bar_top = y_start + 4
     local bar_h = height - 8
     screen.draw_line(ind_x, bar_top, ind_x, bar_top + bar_h, {color=theme.border})
@@ -308,7 +308,7 @@ end
 
 local function draw_quote_row(q, y, is_selected)
     local card_x = 6
-    local card_w = 628
+    local card_w = 708
     local card_h = ROW_HEIGHT - 4
 
     local is_positive = q.change >= 0
@@ -375,12 +375,12 @@ local function draw_watchlist_screen()
     draw_tab_bar(state.tabs, state.active_tab, 40)
 
     local content_y = 72
-    local footer_y = 444
+    local footer_y = 684
     local content_h = footer_y - content_y
 
     if state.loading then
         local tw = screen.get_text_width("Fetching quotes...", 16, false)
-        screen.draw_text("Fetching quotes...", (640 - tw) / 2, content_y + content_h / 2 - 8, {color=theme.text_dim, size=16})
+        screen.draw_text("Fetching quotes...", (720 - tw) / 2, content_y + content_h / 2 - 8, {color=theme.text_dim, size=16})
     elseif n > 0 then
         local visible = math.max(1, math.floor(content_h / ROW_HEIGHT))
         state.cursor = math.max(1, math.min(state.cursor, n))
@@ -426,11 +426,11 @@ local function draw_detail_screen()
     local sign = is_positive and "+" or ""
 
     -- Header with gradient
-    screen.draw_gradient_rect(0, 0, 640, 70,
+    screen.draw_gradient_rect(0, 0, 720, 70,
         theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
         theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 640, 0, {color=theme.accent})
-    screen.draw_line(0, 70, 640, 70, {color=theme.border})
+    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
+    screen.draw_line(0, 70, 720, 70, {color=theme.border})
 
     -- Symbol and name
     screen.draw_text(q.symbol, 20, 8, {color=theme.text, size=24, bold=true})
@@ -439,13 +439,13 @@ local function draw_detail_screen()
     -- Price (top right)
     local price_str = q.price > 0 and string.format("$%.2f", q.price) or "N/A"
     local pw = screen.get_text_width(price_str, 24, true)
-    screen.draw_text(price_str, 620 - pw, 8, {color=theme.text, size=24, bold=true})
+    screen.draw_text(price_str, 700 - pw, 8, {color=theme.text, size=24, bold=true})
 
     -- Change (below price)
     local arrow = is_positive and "\226\150\178" or "\226\150\188"
     local change_str = q.price > 0 and (arrow .. " " .. sign .. string.format("%.2f", q.change) .. " (" .. sign .. string.format("%.1f", q.change_pct) .. "%)") or "---"
     local cw = screen.get_text_width(change_str, 14, false)
-    screen.draw_text(change_str, 620 - cw, 40, {color=change_color, size=14})
+    screen.draw_text(change_str, 700 - cw, 40, {color=change_color, size=14})
 
     -- Period tabs
     local y = 78
@@ -467,48 +467,48 @@ local function draw_detail_screen()
 
     -- L1/R1 hint
     local hw = screen.get_text_width("L1/R1 switch", 10, false)
-    screen.draw_text("L1/R1 switch", 620 - hw, y + 5, {color=theme.text_dim, size=10})
+    screen.draw_text("L1/R1 switch", 700 - hw, y + 5, {color=theme.text_dim, size=10})
 
     -- Chart area
     local chart_y = 108
     local chart_h = 180
-    screen.draw_card(8, chart_y, 624, chart_h, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    screen.draw_card(8, chart_y, 704, chart_h, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
 
     local spark_data = state.sparklines[q.symbol]
     if spark_data and #spark_data >= 2 then
-        screen.draw_sparkline(spark_data, 16, chart_y + 8, 608, chart_h - 16, {color=change_color})
+        screen.draw_sparkline(spark_data, 16, chart_y + 8, 688, chart_h - 16, {color=change_color})
     else
         local tw = screen.get_text_width("No chart data", 13, false)
-        screen.draw_text("No chart data", (640 - tw) / 2, chart_y + chart_h / 2 - 8, {color=theme.text_dim, size=13})
+        screen.draw_text("No chart data", (720 - tw) / 2, chart_y + chart_h / 2 - 8, {color=theme.text_dim, size=13})
     end
 
     -- Stats cards
     local stats_y = chart_y + chart_h + 12
 
     -- Day range card
-    screen.draw_card(8, stats_y, 304, 60, {bg=theme.card_bg, border=theme.border, radius=6})
+    screen.draw_card(8, stats_y, 344, 60, {bg=theme.card_bg, border=theme.border, radius=6})
     screen.draw_text("Day Range", 18, stats_y + 6, {color=theme.text_dim, size=11})
     local low_str = q.low > 0 and string.format("$%.2f", q.low) or "---"
     local high_str = q.high > 0 and string.format("$%.2f", q.high) or "---"
     screen.draw_text(low_str, 18, stats_y + 22, {color=theme.text, size=12})
     local hsw = screen.get_text_width(high_str, 12, false)
-    screen.draw_text(high_str, 302 - hsw, stats_y + 22, {color=theme.text, size=12})
+    screen.draw_text(high_str, 342 - hsw, stats_y + 22, {color=theme.text, size=12})
     if q.low > 0 and q.high > q.low and q.price > 0 then
         local progress = math.max(0, math.min(1, (q.price - q.low) / (q.high - q.low)))
-        screen.draw_progress_bar(18, stats_y + 42, 284, 6, progress, {})
+        screen.draw_progress_bar(18, stats_y + 42, 324, 6, progress, {})
     end
 
     -- 52-week range card
-    screen.draw_card(328, stats_y, 304, 60, {bg=theme.card_bg, border=theme.border, radius=6})
-    screen.draw_text("52-Week Range", 338, stats_y + 6, {color=theme.text_dim, size=11})
+    screen.draw_card(368, stats_y, 344, 60, {bg=theme.card_bg, border=theme.border, radius=6})
+    screen.draw_text("52-Week Range", 378, stats_y + 6, {color=theme.text_dim, size=11})
     local w52_low = q.week52_low > 0 and string.format("$%.2f", q.week52_low) or "---"
     local w52_high = q.week52_high > 0 and string.format("$%.2f", q.week52_high) or "---"
-    screen.draw_text(w52_low, 338, stats_y + 22, {color=theme.text, size=12})
+    screen.draw_text(w52_low, 378, stats_y + 22, {color=theme.text, size=12})
     local w52hw = screen.get_text_width(w52_high, 12, false)
-    screen.draw_text(w52_high, 622 - w52hw, stats_y + 22, {color=theme.text, size=12})
+    screen.draw_text(w52_high, 702 - w52hw, stats_y + 22, {color=theme.text, size=12})
     if q.week52_low > 0 and q.week52_high > q.week52_low and q.price > 0 then
         local progress = math.max(0, math.min(1, (q.price - q.week52_low) / (q.week52_high - q.week52_low)))
-        screen.draw_progress_bar(338, stats_y + 42, 284, 6, progress, {})
+        screen.draw_progress_bar(378, stats_y + 42, 324, 6, progress, {})
     end
 
     draw_footer({
@@ -549,14 +549,14 @@ local function draw_browse_screen()
 
     -- Stock list
     local list_y = 70
-    local list_h = 374
+    local list_h = 614
     local stocks = state.browse_stocks
     local n = #stocks
     local browse_row_h = 44
 
     if n == 0 then
         local tw = screen.get_text_width("No stocks in this sector", 14, false)
-        screen.draw_text("No stocks in this sector", (640 - tw) / 2, list_y + 40, {color=theme.text_dim, size=14})
+        screen.draw_text("No stocks in this sector", (720 - tw) / 2, list_y + 40, {color=theme.text_dim, size=14})
     else
         local visible = math.max(1, math.floor(list_h / browse_row_h))
         state.browse_cursor = math.max(1, math.min(state.browse_cursor, n))
@@ -576,7 +576,7 @@ local function draw_browse_screen()
             local in_wl = is_in_watchlist(stock.symbol)
 
             local card_x = 6
-            local card_w = 628
+            local card_w = 708
             local card_h = browse_row_h - 4
 
             if is_selected then
