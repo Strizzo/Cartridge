@@ -106,6 +106,7 @@ end
 | `storage` | Scoped key-value persistence per app |
 | `http` | HTTP requests for fetching data |
 | `json` | JSON encode/decode |
+| `ssh` | SSH tunnel management |
 
 ## Bundled Apps
 
@@ -117,6 +118,55 @@ end
 | Stock Market | Finance | Track stocks, crypto, indices with live charts |
 | System Monitor | Tools | Real-time CPU, memory, disk, and network monitoring |
 | Weather | Tools | Current conditions and 5-day forecast |
+
+## Community Cartridges
+
+| App | Category | Description |
+|-----|----------|-------------|
+| [VibeBoy](https://github.com/Strizzo/vibeboy-cartridge) | Tools | Remote control for VibeBoy daemon, manage tmux sessions and Claude Code |
+
+## Creating Cartridges
+
+A cartridge is a directory with a `cartridge.json` manifest and a Lua entry point:
+
+```
+my-cartridge/
+  cartridge.json
+  main.lua
+  icon.png          # optional, 64x64
+```
+
+The manifest describes your app:
+
+```json
+{
+    "id": "dev.cartridge.my-app",
+    "name": "My App",
+    "version": "0.1.0",
+    "author": "Your Name",
+    "description": "What it does",
+    "category": "tools",
+    "tags": ["example"],
+    "permissions": ["network", "storage"],
+    "entry": "main.lua"
+}
+```
+
+Available permissions: `network`, `storage`, `ssh`.
+
+### Testing locally
+
+```bash
+cargo run -- run --path /path/to/my-cartridge
+```
+
+### Publishing to the registry
+
+The app registry is the `registry.json` file in this repo. To list your cartridge:
+
+1. Host your cartridge in a public GitHub repo
+2. Add a release workflow that creates a `.zip` artifact (see any existing cartridge repo for reference)
+3. Open a PR adding your app entry to `registry.json`
 
 ## Project Structure
 

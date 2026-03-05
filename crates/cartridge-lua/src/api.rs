@@ -5,7 +5,7 @@ use std::rc::Rc;
 use cartridge_core::screen::{Screen, WIDTH, HEIGHT};
 use cartridge_core::storage::AppStorage;
 use cartridge_core::theme::Theme;
-use cartridge_net::HttpClient;
+use cartridge_net::{HttpClient, SshTunnel};
 use mlua::prelude::*;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
@@ -873,5 +873,76 @@ pub fn register_json_api(lua: &Lua) -> LuaResult<()> {
     )?;
 
     lua.globals().set("json", json_table)?;
+    Ok(())
+}
+
+/// Register the `ssh` global table with tunnel, close, and is_alive methods.
+pub fn register_ssh_api(lua: &Lua) -> LuaResult<()> {
+    let tunnel: Rc<RefCell<Option<SshTunnel>>> = Rc::new(RefCell::new(None));
+    let ssh_table = lua.create_table()?;
+
+    // ssh.tunnel({host, user, key_path?, remote_port?}) -> {ok, local_port, error?}
+    {
+        let t = tunnel.clone();
+        ssh_table.set(
+            "tunnel",
+            lua.create_function(move |lua, opts: LuaTable| {
+                let host: String = opts.get("host")?;
+                let user: String = opts.get("user")?;
+                let key_path: Option<String> = opts.get("key_path")?;
+                let remote_port: u16 = opts.get::<Option<f64>>("remote_port")?
+                    .map(|v| v as u16)
+                    .unwrap_or(8766);
+
+                let result = lua.create_table()?;
+
+                match SshTunnel::open(&host, &user, key_path.as_deref(), remote_port) {
+                    Ok(tun) => {
+                        let port = tun.local_port();
+                        *t.borrow_mut() = Some(tun);
+                        result.set("ok", true)?;
+                        result.set("local_port", port)?;
+                    }
+                    Err(e) => {
+                        result.set("ok", false)?;
+                        result.set("error", e)?;
+                    }
+                }
+                Ok(result)
+            })?,
+        )?;
+    }
+
+    // ssh.close() -> nil
+    {
+        let t = tunnel.clone();
+        ssh_table.set(
+            "close",
+            lua.create_function(move |_, ()| {
+                if let Some(ref mut tun) = *t.borrow_mut() {
+                    tun.close();
+                }
+                *t.borrow_mut() = None;
+                Ok(())
+            })?,
+        )?;
+    }
+
+    // ssh.is_alive() -> bool
+    {
+        let t = tunnel.clone();
+        ssh_table.set(
+            "is_alive",
+            lua.create_function(move |_, ()| {
+                let alive = match *t.borrow_mut() {
+                    Some(ref mut tun) => tun.is_alive(),
+                    None => false,
+                };
+                Ok(alive)
+            })?,
+        )?;
+    }
+
+    lua.globals().set("ssh", ssh_table)?;
     Ok(())
 }

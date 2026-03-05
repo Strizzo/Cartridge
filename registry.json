@@ -99,6 +99,17 @@
       "tags": ["ai", "research", "papers", "arxiv"],
       "repo_url": "",
       "permissions": ["network"]
+    },
+    {
+      "id": "dev.cartridge.vibeboy",
+      "name": "VibeBoy",
+      "description": "Remote control for VibeBoy daemon - manage tmux sessions and Claude Code",
+      "version": "0.1.0",
+      "author": "VibeBoy Team",
+      "category": "tools",
+      "tags": ["vibeboy", "tmux", "claude", "remote", "cyberdeck"],
+      "repo_url": "https://github.com/Strizzo/vibeboy-cartridge",
+      "permissions": ["network", "storage", "ssh"]
     }
   ]
 }
