@@ -1,8 +1,23 @@
-# Cartridge — App SDK for Linux Handheld Devices
+# CartridgeOS
 
-An open app ecosystem for devices like R36S Plus, Anbernic, and PowKiddy handhelds. Built in Rust with SDL2. Apps are scripted in Lua.
+An open app platform for Linux handhelds (R36S Plus, Anbernic, PowKiddy). Turn a $40 retro gaming device into a general-purpose pocket computer with WiFi, apps, and a d-pad.
 
-Cheap Linux handhelds are open computers with WiFi, screens, d-pads, and buttons — but the entire ecosystem treats them as single-purpose retro gaming devices. Cartridge changes that by turning any Linux handheld into a general-purpose pocket device.
+Built in Rust with SDL2. Apps are scripted in Lua.
+
+## Install on R36S Plus
+
+No build tools needed. Works from Windows, macOS, or Linux.
+
+1. Download `cartridge-r36s-plus.zip` from the [latest release](https://github.com/Strizzo/Cartridge/releases/latest)
+2. Turn off the device and remove the SD card
+3. Insert SD card into your computer, open it, find the `roms/` folder
+4. Extract the zip into `roms/` so you get `roms/Cartridge/` and new files in `roms/tools/`
+5. Eject, put the SD card back, boot the device
+6. In EmulationStation, go to **Tools > Cartridge** to launch
+
+To make Cartridge the default at boot, run **Tools > Setup Cartridge Boot** from EmulationStation. You'll get a boot selector to choose between Cartridge and EmulationStation on every startup.
+
+See [INSTALL.md](INSTALL.md) for troubleshooting and build-from-source instructions.
 
 ## Architecture
 
