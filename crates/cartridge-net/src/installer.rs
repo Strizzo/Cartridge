@@ -41,20 +41,19 @@ impl AppInstaller {
         let archive_path = app_dir.join("archive.tar.gz");
         self.http.download(&archive_url, &archive_path)?;
 
-        // Write app metadata so we can list / query installed apps later.
-        let meta = serde_json::json!({
-            "id": app.id,
-            "name": app.name,
-            "version": app.version,
-            "author": app.author,
-            "category": app.category,
-            "repo_url": app.repo_url,
-        });
-        let meta_path = app_dir.join("cartridge.json");
-        let meta_json = serde_json::to_string_pretty(&meta)
-            .map_err(|e| format!("Failed to serialize metadata: {e}"))?;
-        fs::write(&meta_path, meta_json)
-            .map_err(|e| format!("Failed to write metadata {}: {e}", meta_path.display()))?;
+        // Extract the tarball into the app directory
+        let output = std::process::Command::new("tar")
+            .args(["xzf", &archive_path.to_string_lossy(), "-C", &app_dir.to_string_lossy()])
+            .output()
+            .map_err(|e| format!("Failed to run tar: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Failed to extract archive: {stderr}"));
+        }
+
+        // Clean up the archive
+        let _ = fs::remove_file(&archive_path);
 
         log::info!("Installed {} v{}", app.id, app.version);
         Ok(())
