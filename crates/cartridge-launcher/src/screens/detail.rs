@@ -86,17 +86,14 @@ impl LauncherScreen for DetailScreen {
                                     match installer.install(&net_app) {
                                         Ok(()) => {
                                             log::info!("Successfully installed {} via network", app_id);
+                                            ctx.installed.install(&app_id);
+                                            ctx.save_installed();
                                         }
                                         Err(e) => {
-                                            log::warn!(
-                                                "Network install failed for {}: {e} -- marking as installed locally",
-                                                app_id
-                                            );
+                                            log::warn!("Network install failed for {}: {e}", app_id);
                                         }
                                     }
                                 }
-                                ctx.installed.install(&app_id);
-                                ctx.save_installed();
                             }
                         }
                 }
