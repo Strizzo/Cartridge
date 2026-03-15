@@ -139,6 +139,7 @@ end
 | App | Category | Description |
 |-----|----------|-------------|
 | [VibeBoy](https://github.com/Strizzo/vibeboy-cartridge) | Tools | Remote control for VibeBoy daemon, manage tmux sessions and Claude Code |
+| [World Pulse](https://github.com/Strizzo/worldpulse-cartridge) | Tools | Real-time global earthquake monitor and intelligence dashboard |
 
 ## Creating Cartridges
 

@@ -110,6 +110,17 @@
       "tags": ["vibeboy", "tmux", "claude", "remote", "cyberdeck"],
       "repo_url": "https://github.com/Strizzo/vibeboy-cartridge",
       "permissions": ["network", "storage", "ssh"]
+    },
+    {
+      "id": "dev.cartridge.worldpulse",
+      "name": "World Pulse",
+      "description": "Real-time global earthquake monitor and intelligence dashboard",
+      "version": "0.1.0",
+      "author": "Cartridge",
+      "category": "tools",
+      "tags": ["world", "monitor", "earthquakes", "dashboard", "intelligence", "map"],
+      "repo_url": "https://github.com/Strizzo/worldpulse-cartridge",
+      "permissions": ["network", "storage"]
     }
   ]
 }
