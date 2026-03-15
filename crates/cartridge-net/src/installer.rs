@@ -94,6 +94,15 @@ impl AppInstaller {
         ids
     }
 
+    /// Return the installed version of an app by reading its cartridge.json.
+    /// Returns None if the app is not installed or the version can't be read.
+    pub fn installed_version(&self, app_id: &str) -> Option<String> {
+        let manifest_path = self.app_path(app_id).join("cartridge.json");
+        let content = fs::read_to_string(&manifest_path).ok()?;
+        let parsed: serde_json::Value = serde_json::from_str(&content).ok()?;
+        parsed.get("version").and_then(|v| v.as_str()).map(|s| s.to_string())
+    }
+
     /// Return the on-disk path for a given app.
     pub fn app_path(&self, app_id: &str) -> PathBuf {
         self.install_dir.join(app_id)

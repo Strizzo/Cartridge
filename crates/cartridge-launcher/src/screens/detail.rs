@@ -78,8 +78,7 @@ impl LauncherScreen for DetailScreen {
                                 ctx.save_recents();
                                 return ScreenAction::LaunchApp(app_id);
                             } else {
-                                // Install via network, fall back to marking as
-                                // installed if the download fails.
+                                // Install via network
                                 let net_app = to_net_app(app);
                                 if let Some(installer) = &ctx.installer {
                                     log::info!("Attempting network install of {}...", app_id);
@@ -119,6 +118,30 @@ impl LauncherScreen for DetailScreen {
                         }
                     }
                 }
+                Button::Y => {
+                    // Update: reinstall if newer version available
+                    if let Some(app) = ctx.registry.apps.get(self.app_index) {
+                        let app_id = app.id.clone();
+                        if ctx.installed.is_installed(&app_id) {
+                            if let Some(installer) = &ctx.installer {
+                                let installed_ver = installer.installed_version(&app_id);
+                                let registry_ver = &app.version;
+                                if installed_ver.as_deref() != Some(registry_ver) {
+                                    log::info!("Updating {} to v{}...", app_id, registry_ver);
+                                    let net_app = to_net_app(app);
+                                    match installer.install(&net_app) {
+                                        Ok(()) => {
+                                            log::info!("Updated {} to v{}", app_id, registry_ver);
+                                        }
+                                        Err(e) => {
+                                            log::warn!("Update failed for {}: {e}", app_id);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 Button::Start => {
                     return ScreenAction::Push(super::ScreenId::Settings);
                 }
@@ -139,6 +162,9 @@ impl LauncherScreen for DetailScreen {
         };
 
         let is_installed = ctx.installed.is_installed(&app.id);
+        let has_update = is_installed && ctx.installer.as_ref().map_or(false, |inst| {
+            inst.installed_version(&app.id).as_deref() != Some(&app.version)
+        });
         let cat_color = category_color(&app.category);
 
         // -- Header (semi-transparent, atmosphere bleeds through) --
@@ -225,14 +251,25 @@ impl LauncherScreen for DetailScreen {
 
         // Status pill
         if is_installed {
-            screen.draw_pill(
-                "INSTALLED",
-                SCREEN_WIDTH as i32 - 120,
-                header_card_y + 40,
-                theme.positive,
-                Color::RGB(20, 20, 30),
-                11,
-            );
+            if has_update {
+                screen.draw_pill(
+                    "UPDATE AVAILABLE",
+                    SCREEN_WIDTH as i32 - 155,
+                    header_card_y + 40,
+                    theme.text_warning,
+                    Color::RGB(20, 20, 30),
+                    11,
+                );
+            } else {
+                screen.draw_pill(
+                    "INSTALLED",
+                    SCREEN_WIDTH as i32 - 120,
+                    header_card_y + 40,
+                    theme.positive,
+                    Color::RGB(20, 20, 30),
+                    11,
+                );
+            }
         }
 
         // -- Description card --
@@ -361,21 +398,33 @@ impl LauncherScreen for DetailScreen {
             );
             screen.draw_text("Launch", 38, action_y + 7, Some(btn_text), 14, true, None);
 
+            // Update button (if update available)
+            let mut next_btn_x = 144;
+            if has_update {
+                screen.draw_rounded_rect(
+                    Rect::new(next_btn_x, action_y, 120, 32),
+                    theme.bg_lighter,
+                    CARD_RADIUS,
+                    false,
+                );
+                screen.draw_text("Update", next_btn_x + 26, action_y + 7, Some(theme.text_warning), 14, true, None);
+                next_btn_x += 132;
+            }
+
             // Remove button
-            let rem_bg = theme.bg_lighter;
             screen.draw_rounded_rect(
-                Rect::new(144, action_y, 120, 32),
-                rem_bg,
+                Rect::new(next_btn_x, action_y, 120, 32),
+                theme.bg_lighter,
                 CARD_RADIUS,
                 false,
             );
-            screen.draw_text("Remove", 170, action_y + 7, Some(theme.negative), 14, true, None);
+            screen.draw_text("Remove", next_btn_x + 26, action_y + 7, Some(theme.negative), 14, true, None);
 
             // Category pill
             let cat_upper = app.category.to_uppercase();
             screen.draw_pill(
                 &cat_upper,
-                280,
+                next_btn_x + 140,
                 action_y + 6,
                 cat_color,
                 Color::RGB(20, 20, 30),
@@ -414,7 +463,7 @@ impl LauncherScreen for DetailScreen {
         }
 
         // -- Footer --
-        draw_detail_footer(screen, is_installed);
+        draw_detail_footer(screen, is_installed, has_update);
     }
 }
 
@@ -434,7 +483,7 @@ fn to_net_app(app: &crate::data::AppEntry) -> cartridge_net::RegistryApp {
     }
 }
 
-fn draw_detail_footer(screen: &mut Screen, is_installed: bool) {
+fn draw_detail_footer(screen: &mut Screen, is_installed: bool, has_update: bool) {
     let theme = screen.theme;
     let footer_y = SCREEN_HEIGHT as i32 - FOOTER_HEIGHT;
 
@@ -454,6 +503,10 @@ fn draw_detail_footer(screen: &mut Screen, is_installed: bool) {
     let w = screen.draw_button_hint("B", "Back", fx, footer_y + 8, Some(theme.btn_b), 12);
     fx += w as i32 + 12;
     if is_installed {
-        screen.draw_button_hint("X", "Remove", fx, footer_y + 8, Some(theme.btn_x), 12);
+        let w = screen.draw_button_hint("X", "Remove", fx, footer_y + 8, Some(theme.btn_x), 12);
+        fx += w as i32 + 12;
+        if has_update {
+            screen.draw_button_hint("Y", "Update", fx, footer_y + 8, Some(theme.btn_y), 12);
+        }
     }
 }
