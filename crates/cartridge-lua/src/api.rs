@@ -888,7 +888,7 @@ pub fn register_ssh_api(lua: &Lua) -> LuaResult<()> {
             "tunnel",
             lua.create_function(move |lua, opts: LuaTable| {
                 let host: String = opts.get("host")?;
-                let user: String = opts.get("user")?;
+                let user: String = opts.get::<Option<String>>("user")?.unwrap_or_default();
                 let key_path: Option<String> = opts.get("key_path")?;
                 let remote_port: u16 = opts.get::<Option<f64>>("remote_port")?
                     .map(|v| v as u16)

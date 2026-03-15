@@ -30,7 +30,11 @@ impl SshTunnel {
             .port();
 
         let forward = format!("{local_port}:localhost:{remote_port}");
-        let destination = format!("{user}@{host}");
+        let destination = if user.is_empty() {
+            host.to_string()
+        } else {
+            format!("{user}@{host}")
+        };
 
         let mut args: Vec<&str> = vec![
             "-N",
