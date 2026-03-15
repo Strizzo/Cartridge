@@ -114,11 +114,11 @@
     {
       "id": "dev.cartridge.worldpulse",
       "name": "World Pulse",
-      "description": "Real-time global earthquake monitor and intelligence dashboard",
-      "version": "0.1.0",
+      "description": "Real-time global news monitor and intelligence dashboard",
+      "version": "0.2.0",
       "author": "Cartridge",
       "category": "tools",
-      "tags": ["world", "monitor", "earthquakes", "dashboard", "intelligence", "map"],
+      "tags": ["world", "monitor", "news", "intelligence", "dashboard", "map", "geopolitics"],
       "repo_url": "https://github.com/Strizzo/worldpulse-cartridge",
       "permissions": ["network", "storage"]
     }
