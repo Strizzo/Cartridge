@@ -881,7 +881,7 @@ pub fn register_ssh_api(lua: &Lua) -> LuaResult<()> {
     let tunnel: Rc<RefCell<Option<SshTunnel>>> = Rc::new(RefCell::new(None));
     let ssh_table = lua.create_table()?;
 
-    // ssh.tunnel({host, user, key_path?, remote_port?}) -> {ok, local_port, error?}
+    // ssh.tunnel({host, user?, key_path?, key_dir?, remote_port?}) -> {ok, local_port, error?}
     {
         let t = tunnel.clone();
         ssh_table.set(
@@ -890,13 +890,14 @@ pub fn register_ssh_api(lua: &Lua) -> LuaResult<()> {
                 let host: String = opts.get("host")?;
                 let user: String = opts.get::<Option<String>>("user")?.unwrap_or_default();
                 let key_path: Option<String> = opts.get("key_path")?;
+                let key_dir: Option<String> = opts.get("key_dir")?;
                 let remote_port: u16 = opts.get::<Option<f64>>("remote_port")?
                     .map(|v| v as u16)
                     .unwrap_or(8766);
 
                 let result = lua.create_table()?;
 
-                match SshTunnel::open(&host, &user, key_path.as_deref(), remote_port) {
+                match SshTunnel::open(&host, &user, key_path.as_deref(), key_dir.as_deref(), remote_port) {
                     Ok(tun) => {
                         let port = tun.local_port();
                         *t.borrow_mut() = Some(tun);

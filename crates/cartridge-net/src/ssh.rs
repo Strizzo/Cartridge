@@ -1,6 +1,10 @@
 use std::net::TcpListener;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
+
+/// Well-known SSH key filenames to scan for, in priority order.
+const KEY_NAMES: &[&str] = &["id_ed25519", "id_rsa", "id_ecdsa"];
 
 /// An SSH tunnel wrapping a child `ssh` process.
 ///
@@ -16,10 +20,16 @@ impl SshTunnel {
     ///
     /// Finds an available local port, spawns `ssh -N -L ...`, then polls the
     /// local port for up to 5 seconds to confirm the tunnel is ready.
+    ///
+    /// If `key_path` is provided, it is used directly. Otherwise, if `key_dir`
+    /// is provided, the directory is scanned for well-known key files
+    /// (`id_ed25519`, `id_rsa`, `id_ecdsa`). As a final fallback, `~/.ssh/`
+    /// is scanned.
     pub fn open(
         host: &str,
         user: &str,
         key_path: Option<&str>,
+        key_dir: Option<&str>,
         remote_port: u16,
     ) -> Result<Self, String> {
         // Find an available local port
@@ -36,6 +46,9 @@ impl SshTunnel {
             format!("{user}@{host}")
         };
 
+        // Resolve key: explicit path > scan key_dir > scan ~/.ssh/
+        let resolved_key = Self::resolve_key(key_path, key_dir);
+
         let mut args: Vec<&str> = vec![
             "-N",
             "-o", "BatchMode=yes",
@@ -45,8 +58,8 @@ impl SshTunnel {
         ];
 
         let key_string;
-        if let Some(key) = key_path {
-            key_string = key.to_string();
+        if let Some(ref key) = resolved_key {
+            key_string = key.to_string_lossy().to_string();
             args.push("-i");
             args.push(&key_string);
         }
@@ -109,6 +122,46 @@ impl SshTunnel {
 
             std::thread::sleep(Duration::from_millis(200));
         }
+    }
+
+    /// Resolve which SSH key to use.
+    fn resolve_key(key_path: Option<&str>, key_dir: Option<&str>) -> Option<PathBuf> {
+        // 1. Explicit key path
+        if let Some(kp) = key_path {
+            let p = Path::new(kp);
+            if p.exists() {
+                return Some(p.to_path_buf());
+            }
+        }
+
+        // 2. Scan provided key directory
+        if let Some(dir) = key_dir {
+            if let Some(found) = Self::find_key_in_dir(Path::new(dir)) {
+                return Some(found);
+            }
+        }
+
+        // 3. Fallback: scan ~/.ssh/
+        if let Ok(home) = std::env::var("HOME") {
+            let ssh_dir = Path::new(&home).join(".ssh");
+            if let Some(found) = Self::find_key_in_dir(&ssh_dir) {
+                return Some(found);
+            }
+        }
+
+        None
+    }
+
+    /// Scan a directory for well-known SSH key files.
+    fn find_key_in_dir(dir: &Path) -> Option<PathBuf> {
+        for name in KEY_NAMES {
+            let candidate = dir.join(name);
+            if candidate.exists() {
+                log::info!("Found SSH key: {}", candidate.display());
+                return Some(candidate);
+            }
+        }
+        None
     }
 
     /// The local port that forwards to the remote port.
