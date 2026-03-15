@@ -134,24 +134,29 @@ impl InputManager {
                         self.last_repeat.remove(&button);
                     }
                 }
-                Event::JoyButtonDown { button_idx, .. } if !self.ignore_joystick => {
+                Event::JoyButtonDown { button_idx, .. } => {
                     if let Some(&button) = self.gamepad_map.get(button_idx) {
-                        result.push(InputEvent {
-                            button,
-                            action: InputAction::Press,
-                        });
-                        self.held.insert(button, now);
-                        self.last_repeat.insert(button, now);
+                        // Deduplicate: skip if already held (e.g. from GameController API)
+                        if !self.held.contains_key(&button) {
+                            result.push(InputEvent {
+                                button,
+                                action: InputAction::Press,
+                            });
+                            self.held.insert(button, now);
+                            self.last_repeat.insert(button, now);
+                        }
                     }
                 }
-                Event::JoyButtonUp { button_idx, .. } if !self.ignore_joystick => {
+                Event::JoyButtonUp { button_idx, .. } => {
                     if let Some(&button) = self.gamepad_map.get(button_idx) {
-                        result.push(InputEvent {
-                            button,
-                            action: InputAction::Release,
-                        });
-                        self.held.remove(&button);
-                        self.last_repeat.remove(&button);
+                        if self.held.contains_key(&button) {
+                            result.push(InputEvent {
+                                button,
+                                action: InputAction::Release,
+                            });
+                            self.held.remove(&button);
+                            self.last_repeat.remove(&button);
+                        }
                     }
                 }
                 Event::JoyAxisMotion { axis_idx, value, .. } if !self.ignore_joystick => {
@@ -160,22 +165,26 @@ impl InputManager {
                 // GameController API (used by ArkOS and modern SDL2 setups)
                 Event::ControllerButtonDown { button, .. } => {
                     if let Some(btn) = map_controller_button(*button) {
-                        result.push(InputEvent {
-                            button: btn,
-                            action: InputAction::Press,
-                        });
-                        self.held.insert(btn, now);
-                        self.last_repeat.insert(btn, now);
+                        if !self.held.contains_key(&btn) {
+                            result.push(InputEvent {
+                                button: btn,
+                                action: InputAction::Press,
+                            });
+                            self.held.insert(btn, now);
+                            self.last_repeat.insert(btn, now);
+                        }
                     }
                 }
                 Event::ControllerButtonUp { button, .. } => {
                     if let Some(btn) = map_controller_button(*button) {
-                        result.push(InputEvent {
-                            button: btn,
-                            action: InputAction::Release,
-                        });
-                        self.held.remove(&btn);
-                        self.last_repeat.remove(&btn);
+                        if self.held.contains_key(&btn) {
+                            result.push(InputEvent {
+                                button: btn,
+                                action: InputAction::Release,
+                            });
+                            self.held.remove(&btn);
+                            self.last_repeat.remove(&btn);
+                        }
                     }
                 }
                 Event::ControllerAxisMotion { axis, value, .. } => {
