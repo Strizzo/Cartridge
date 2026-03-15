@@ -104,7 +104,7 @@
       "id": "dev.cartridge.vibeboy",
       "name": "VibeBoy",
       "description": "Remote control for VibeBoy daemon - manage tmux sessions and Claude Code",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "author": "VibeBoy Team",
       "category": "tools",
       "tags": ["vibeboy", "tmux", "claude", "remote", "cyberdeck"],
