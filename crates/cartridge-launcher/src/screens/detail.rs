@@ -17,6 +17,7 @@ pub struct DetailScreen {
     app_index: usize,
     focus: DetailFocus,
     scroll_y: i32,
+    status_msg: Option<(String, std::time::Instant, bool)>, // (message, when, is_error)
 }
 
 impl DetailScreen {
@@ -25,7 +26,12 @@ impl DetailScreen {
             app_index,
             focus: DetailFocus::Info,
             scroll_y: 0,
+            status_msg: None,
         }
+    }
+
+    fn set_status(&mut self, msg: &str, is_error: bool) {
+        self.status_msg = Some((msg.to_string(), std::time::Instant::now(), is_error));
     }
 }
 
@@ -79,17 +85,24 @@ impl LauncherScreen for DetailScreen {
                                 return ScreenAction::LaunchApp(app_id);
                             } else {
                                 // Install via network
-                                let net_app = to_net_app(app);
-                                if let Some(installer) = &ctx.installer {
-                                    log::info!("Attempting network install of {}...", app_id);
-                                    match installer.install(&net_app) {
-                                        Ok(()) => {
-                                            log::info!("Successfully installed {} via network", app_id);
-                                            ctx.installed.install(&app_id);
-                                            ctx.save_installed();
-                                        }
-                                        Err(e) => {
-                                            log::warn!("Network install failed for {}: {e}", app_id);
+                                if app.repo_url.is_empty() {
+                                    self.set_status("This app is bundled and cannot be installed separately", true);
+                                } else {
+                                    self.set_status("Installing...", false);
+                                    let net_app = to_net_app(app);
+                                    if let Some(installer) = &ctx.installer {
+                                        log::info!("Attempting network install of {}...", app_id);
+                                        match installer.install(&net_app) {
+                                            Ok(()) => {
+                                                log::info!("Successfully installed {} via network", app_id);
+                                                ctx.installed.install(&app_id);
+                                                ctx.save_installed();
+                                                self.set_status("Installed successfully", false);
+                                            }
+                                            Err(e) => {
+                                                log::warn!("Network install failed for {}: {e}", app_id);
+                                                self.set_status(&format!("Install failed: {e}"), true);
+                                            }
                                         }
                                     }
                                 }
@@ -101,15 +114,16 @@ impl LauncherScreen for DetailScreen {
                     if let Some(app) = ctx.registry.apps.get(self.app_index) {
                         let app_id = app.id.clone();
                         if ctx.installed.is_installed(&app_id) {
-                            // Try to remove from disk via installer
                             if let Some(installer) = &ctx.installer {
                                 log::info!("Removing {} from disk...", app_id);
                                 match installer.remove(&app_id) {
                                     Ok(()) => {
                                         log::info!("Successfully removed {} from disk", app_id);
+                                        self.set_status("Removed", false);
                                     }
                                     Err(e) => {
                                         log::warn!("Disk removal failed for {}: {e}", app_id);
+                                        self.set_status(&format!("Remove failed: {e}"), true);
                                     }
                                 }
                             }
@@ -127,14 +141,17 @@ impl LauncherScreen for DetailScreen {
                                 let installed_ver = installer.installed_version(&app_id);
                                 let registry_ver = &app.version;
                                 if installed_ver.as_deref() != Some(registry_ver) {
+                                    self.set_status(&format!("Updating to v{}...", registry_ver), false);
                                     log::info!("Updating {} to v{}...", app_id, registry_ver);
                                     let net_app = to_net_app(app);
                                     match installer.install(&net_app) {
                                         Ok(()) => {
                                             log::info!("Updated {} to v{}", app_id, registry_ver);
+                                            self.set_status(&format!("Updated to v{}", registry_ver), false);
                                         }
                                         Err(e) => {
                                             log::warn!("Update failed for {}: {e}", app_id);
+                                            self.set_status(&format!("Update failed: {e}"), true);
                                         }
                                     }
                                 }
@@ -460,6 +477,19 @@ impl LauncherScreen for DetailScreen {
                 Color::RGB(20, 20, 30),
                 11,
             );
+        }
+
+        // -- Status message --
+        if let Some((ref msg, when, is_error)) = self.status_msg {
+            let elapsed = when.elapsed().as_secs_f32();
+            if elapsed < 5.0 {
+                let msg_color = if is_error { theme.negative } else { theme.positive };
+                let msg_y = action_y + 44;
+                screen.draw_text(msg, 12, msg_y, Some(msg_color), 13, false, Some(SCREEN_WIDTH - 24));
+            } else {
+                // Auto-clear after 5 seconds — can't mutate self here,
+                // so it will be cleared on next input.
+            }
         }
 
         // -- Footer --
