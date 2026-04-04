@@ -162,13 +162,19 @@ impl WifiManager {
     }
 
     /// Connect to a saved WiFi network.
-    /// Waits up to 10 seconds for the connection to establish, then verifies.
+    /// First ensures psk-flags=0 so the PSK is read from file (not a keyring agent),
+    /// then activates the connection.
     pub fn connect(&self, ssid: &str) -> Result<(), String> {
         #[cfg(target_os = "linux")]
         {
             use std::process::Command;
+
+            // Fix any saved connection that has psk-flags!=0 (keyring mode).
+            // This patches the connection file so NM reads the PSK from disk.
+            Self::fix_psk_flags(ssid);
+
             let output = Command::new("nmcli")
-                .args(["--wait", "10", "con", "up", ssid])
+                .args(["--wait", "15", "connection", "up", ssid])
                 .output()
                 .map_err(|e| format!("nmcli failed: {e}"))?;
             if output.status.success() {
@@ -183,6 +189,20 @@ impl WifiManager {
             let _ = ssid;
             Ok(())
         }
+    }
+
+    /// Ensure a saved connection has psk-flags=0 so the PSK is read from the
+    /// connection file instead of a keyring agent (which doesn't exist on the device).
+    #[cfg(target_os = "linux")]
+    fn fix_psk_flags(ssid: &str) {
+        use std::process::Command;
+        // Try to set psk-flags=0; ignore errors (profile might not have security)
+        let _ = Command::new("nmcli")
+            .args([
+                "connection", "modify", ssid,
+                "802-11-wireless-security.psk-flags", "0",
+            ])
+            .output();
     }
 
     /// Connect to a WiFi network with a password.
@@ -213,6 +233,7 @@ impl WifiManager {
                  [wifi-security]\n\
                  key-mgmt=wpa-psk\n\
                  psk={password}\n\
+                 psk-flags=0\n\
                  \n\
                  [ipv4]\n\
                  method=auto\n\
