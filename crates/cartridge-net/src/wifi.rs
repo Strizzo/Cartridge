@@ -200,29 +200,44 @@ impl WifiManager {
                 .args(["connection", "delete", ssid])
                 .output();
 
-            // Create a new connection profile with the password baked in
+            // Create a bare wifi connection profile
             let output = Command::new("nmcli")
                 .args([
                     "connection", "add",
                     "type", "wifi",
                     "con-name", ssid,
                     "ssid", ssid,
-                    "wifi-sec.key-mgmt", "wpa-psk",
-                    "wifi-sec.psk", password,
                 ])
                 .output()
-                .map_err(|e| format!("nmcli failed: {e}"))?;
+                .map_err(|e| format!("nmcli add failed: {e}"))?;
 
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
                 return Err(format!("Failed to create profile: {stderr}"));
             }
 
+            // Set security properties via modify (more compatible than inline)
+            let output = Command::new("nmcli")
+                .args([
+                    "connection", "modify", ssid,
+                    "802-11-wireless-security.key-mgmt", "wpa-psk",
+                    "802-11-wireless-security.psk", password,
+                ])
+                .output()
+                .map_err(|e| format!("nmcli modify failed: {e}"))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                // Clean up the profile we just created
+                let _ = Command::new("nmcli").args(["connection", "delete", ssid]).output();
+                return Err(format!("Failed to set password: {stderr}"));
+            }
+
             // Activate the connection
             let output = Command::new("nmcli")
                 .args(["--wait", "15", "connection", "up", ssid])
                 .output()
-                .map_err(|e| format!("nmcli failed: {e}"))?;
+                .map_err(|e| format!("nmcli up failed: {e}"))?;
 
             if output.status.success() {
                 self.verify_connection(ssid)
