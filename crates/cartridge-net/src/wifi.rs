@@ -186,15 +186,44 @@ impl WifiManager {
     }
 
     /// Connect to a WiFi network with a password.
-    /// Waits up to 10 seconds for the connection to establish, then verifies.
+    /// Creates a connection profile via `nmcli connection add`, then activates it.
+    /// This avoids issues with `dev wifi connect` on some nmcli versions that
+    /// require `--ask` for password input.
     pub fn connect_with_password(&self, ssid: &str, password: &str) -> Result<(), String> {
         #[cfg(target_os = "linux")]
         {
             use std::process::Command;
+
+            // First, delete any existing connection profile for this SSID
+            // (ignore errors — profile may not exist)
+            let _ = Command::new("nmcli")
+                .args(["connection", "delete", ssid])
+                .output();
+
+            // Create a new connection profile with the password baked in
             let output = Command::new("nmcli")
-                .args(["--wait", "10", "dev", "wifi", "connect", ssid, "password", password])
+                .args([
+                    "connection", "add",
+                    "type", "wifi",
+                    "con-name", ssid,
+                    "ssid", ssid,
+                    "wifi-sec.key-mgmt", "wpa-psk",
+                    "wifi-sec.psk", password,
+                ])
                 .output()
                 .map_err(|e| format!("nmcli failed: {e}"))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                return Err(format!("Failed to create profile: {stderr}"));
+            }
+
+            // Activate the connection
+            let output = Command::new("nmcli")
+                .args(["--wait", "15", "connection", "up", ssid])
+                .output()
+                .map_err(|e| format!("nmcli failed: {e}"))?;
+
             if output.status.success() {
                 self.verify_connection(ssid)
             } else {
