@@ -161,44 +161,13 @@ impl WifiManager {
         }
     }
 
-    /// Connect to a saved WiFi network using --passwd-file to supply secrets.
-    /// Reads the PSK from the NM connection file and feeds it to nmcli.
+    /// Connect to a saved WiFi network.
+    /// Activates by cycling WiFi off/on to trigger NM auto-connect.
     pub fn connect(&self, ssid: &str) -> Result<(), String> {
         #[cfg(target_os = "linux")]
         {
-            use std::process::Command;
-
-            // Try to read PSK from the saved connection file
-            let psk = Self::read_saved_psk(ssid);
-
-            let output = if let Some(ref psk) = psk {
-                // Feed the password via --passwd-file
-                let passwd_file = "/tmp/.cartridge_wifi_psk";
-                let content = format!("802-11-wireless-security.psk:{psk}");
-                let _ = std::fs::write(passwd_file, &content);
-                let _ = Command::new("chmod").args(["600", passwd_file]).output();
-
-                let result = Command::new("nmcli")
-                    .args(["--wait", "15", "--passwd-file", passwd_file, "connection", "up", ssid])
-                    .output()
-                    .map_err(|e| format!("nmcli failed: {e}"))?;
-
-                let _ = std::fs::remove_file(passwd_file);
-                result
-            } else {
-                // No saved PSK found, try without
-                Command::new("nmcli")
-                    .args(["--wait", "15", "connection", "up", ssid])
-                    .output()
-                    .map_err(|e| format!("nmcli failed: {e}"))?
-            };
-
-            if output.status.success() {
-                self.verify_connection(ssid)
-            } else {
-                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                Err(format!("Failed to connect: {stderr}"))
-            }
+            Self::activate_connection(ssid)?;
+            self.verify_connection(ssid)
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -207,42 +176,34 @@ impl WifiManager {
         }
     }
 
-    /// Read the PSK from a saved NM connection file.
-    #[cfg(target_os = "linux")]
-    fn read_saved_psk(ssid: &str) -> Option<String> {
-        // Check both common NM connection paths
-        let paths = [
-            format!("/etc/NetworkManager/system-connections/{ssid}.nmconnection"),
-            format!("/etc/NetworkManager/system-connections/{ssid}"),
-        ];
-        for path in &paths {
-            if let Ok(content) = std::fs::read_to_string(path) {
-                for line in content.lines() {
-                    let trimmed = line.trim();
-                    if trimmed.starts_with("psk=") && !trimmed.starts_with("psk-flags") {
-                        return Some(trimmed.trim_start_matches("psk=").to_string());
-                    }
-                }
-            }
-        }
-        None
-    }
-
     /// Connect to a WiFi network with a password.
-    /// Saves the password to a NM connection file and uses --passwd-file for activation.
+    /// Writes the NM connection file, then activates.
     pub fn connect_with_password(&self, ssid: &str, password: &str) -> Result<(), String> {
         #[cfg(target_os = "linux")]
         {
-            use std::process::Command;
+            Self::write_connection_file(ssid, password)?;
+            Self::activate_connection(ssid)?;
+            self.verify_connection(ssid)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = (ssid, password);
+            Ok(())
+        }
+    }
 
-            // Delete any existing connection profile for this SSID
-            let _ = Command::new("nmcli")
-                .args(["connection", "delete", ssid])
-                .output();
+    /// Write a NetworkManager connection file with inline PSK.
+    #[cfg(target_os = "linux")]
+    fn write_connection_file(ssid: &str, password: &str) -> Result<(), String> {
+        use std::process::Command;
 
-            // Write connection file directly to NetworkManager
-            let conn_file = format!("/etc/NetworkManager/system-connections/{ssid}.nmconnection");
-            let content = format!("\
+        // Delete any existing connection profiles for this SSID
+        let _ = Command::new("nmcli").args(["connection", "delete", ssid]).output();
+        // Also try with " 1" suffix in case of duplicates
+        let _ = Command::new("nmcli").args(["connection", "delete", &format!("{ssid} 1")]).output();
+
+        let conn_file = format!("/etc/NetworkManager/system-connections/{ssid}.nmconnection");
+        let content = format!("\
 [connection]
 id={ssid}
 type=wifi
@@ -264,43 +225,43 @@ method=auto
 method=auto
 ");
 
-            std::fs::write(&conn_file, &content)
-                .map_err(|e| format!("Failed to write connection file: {e}"))?;
+        std::fs::write(&conn_file, &content)
+            .map_err(|e| format!("Failed to write connection file: {e}"))?;
 
-            // Connection files must be 600 root:root
-            let _ = Command::new("chmod").args(["600", &conn_file]).output();
+        let _ = Command::new("chmod").args(["600", &conn_file]).output();
+        let _ = Command::new("nmcli").args(["connection", "reload"]).output();
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        Ok(())
+    }
 
-            // Reload connections so NetworkManager picks up the new file
-            let _ = Command::new("nmcli").args(["connection", "reload"]).output();
+    /// Activate a saved connection by cycling WiFi off/on.
+    /// This avoids `nmcli connection up` which can't read PSK without a keyring agent.
+    #[cfg(target_os = "linux")]
+    fn activate_connection(ssid: &str) -> Result<(), String> {
+        use std::process::Command;
 
-            // Brief pause for reload
-            std::thread::sleep(std::time::Duration::from_millis(500));
+        // Cycle WiFi radio to trigger auto-connect with saved profile
+        let _ = Command::new("nmcli").args(["radio", "wifi", "off"]).output();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let _ = Command::new("nmcli").args(["radio", "wifi", "on"]).output();
 
-            // Activate using --passwd-file to feed the PSK directly to nmcli
-            let passwd_file = "/tmp/.cartridge_wifi_psk";
-            let psk_content = format!("802-11-wireless-security.psk:{password}");
-            let _ = std::fs::write(passwd_file, &psk_content);
-            let _ = Command::new("chmod").args(["600", passwd_file]).output();
-
+        // Wait for NM to auto-connect (up to 15 seconds)
+        for _ in 0..15 {
+            std::thread::sleep(std::time::Duration::from_secs(1));
             let output = Command::new("nmcli")
-                .args(["--wait", "15", "--passwd-file", passwd_file, "connection", "up", ssid])
-                .output()
-                .map_err(|e| format!("nmcli up failed: {e}"))?;
-
-            let _ = std::fs::remove_file(passwd_file);
-
-            if output.status.success() {
-                self.verify_connection(ssid)
-            } else {
-                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                Err(format!("Failed to connect: {stderr}"))
+                .args(["-t", "-f", "DEVICE,STATE,CONNECTION", "dev", "status"])
+                .output();
+            if let Ok(output) = output {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines() {
+                    if line.contains("wlan0") && line.contains("connected") && line.contains(ssid) {
+                        return Ok(());
+                    }
+                }
             }
         }
-        #[cfg(not(target_os = "linux"))]
-        {
-            let _ = (ssid, password);
-            Ok(())
-        }
+
+        Err(format!("WiFi did not connect to {ssid} within 15 seconds"))
     }
 
     /// Verify that we're actually connected after nmcli reports success.
