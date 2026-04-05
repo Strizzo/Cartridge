@@ -176,7 +176,6 @@ impl WifiManager {
     }
 
     /// Connect to a saved WiFi network.
-    /// Reads saved PSK, writes NM connection file, restarts NM to apply.
     pub fn connect(&self, ssid: &str) -> Result<(), String> {
         #[cfg(target_os = "linux")]
         {
@@ -184,9 +183,7 @@ impl WifiManager {
             if let Some(password) = psk {
                 self.connect_with_password(ssid, &password)
             } else {
-                // Open network — write profile without PSK
-                Self::write_nm_file(ssid, None)?;
-                Self::restart_nm_and_wait(ssid)
+                Err("No saved password for this network".to_string())
             }
         }
         #[cfg(not(target_os = "linux"))]
@@ -197,13 +194,13 @@ impl WifiManager {
     }
 
     /// Connect to a WiFi network with a password.
-    /// Writes the NM connection file with PSK, restarts NM to load it fresh.
+    /// Uses wpa_supplicant directly since nmcli can't store secrets on this device.
     pub fn connect_with_password(&self, ssid: &str, password: &str) -> Result<(), String> {
         #[cfg(target_os = "linux")]
         {
             Self::save_psk(ssid, password);
-            Self::write_nm_file(ssid, Some(password))?;
-            Self::restart_nm_and_wait(ssid)
+            Self::connect_via_wpa(ssid, password)?;
+            self.verify_connection(ssid)
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -212,87 +209,114 @@ impl WifiManager {
         }
     }
 
-    /// Write a NM connection file. Removes all stale profiles first.
+    /// Connect using wpa_supplicant directly, bypassing NetworkManager's
+    /// broken secret handling.
     #[cfg(target_os = "linux")]
-    fn write_nm_file(ssid: &str, password: Option<&str>) -> Result<(), String> {
+    fn connect_via_wpa(ssid: &str, password: &str) -> Result<(), String> {
         use std::process::Command;
 
-        // Delete ALL existing profiles for this SSID
-        for suffix in ["", " 1", " 2", " 3", " 4", " 5"] {
-            let name = format!("{ssid}{suffix}");
-            let _ = Command::new("nmcli").args(["connection", "delete", &name]).output();
-        }
-        // Remove any leftover .nmconnection files
-        for ext in [".nmconnection", ""] {
-            let _ = std::fs::remove_file(
-                format!("/etc/NetworkManager/system-connections/{ssid}{ext}")
-            );
+        // Generate wpa_supplicant config block
+        let output = Command::new("wpa_passphrase")
+            .args([ssid, password])
+            .output()
+            .map_err(|e| format!("wpa_passphrase failed: {e}"))?;
+
+        if !output.status.success() {
+            return Err("wpa_passphrase failed to generate config".to_string());
         }
 
-        // Write the connection file
-        let conn_file = format!("/etc/NetworkManager/system-connections/{ssid}.nmconnection");
-        let security_section = if let Some(psk) = password {
-            format!("\n[wifi-security]\nkey-mgmt=wpa-psk\npsk={psk}\npsk-flags=0\n")
+        let config_block = String::from_utf8_lossy(&output.stdout).to_string();
+
+        // Find wpa_supplicant config file
+        let conf_paths = [
+            "/etc/wpa_supplicant/wpa_supplicant.conf",
+            "/etc/wpa_supplicant.conf",
+        ];
+        let conf_path = conf_paths.iter().find(|p| std::path::Path::new(p).exists());
+
+        if let Some(conf_path) = conf_path {
+            // Read existing config, remove any existing block for this SSID
+            let existing = std::fs::read_to_string(conf_path).unwrap_or_default();
+            let mut cleaned = String::new();
+            let mut skip = false;
+            for line in existing.lines() {
+                if line.trim().starts_with("network={") {
+                    skip = false;
+                }
+                if skip {
+                    if line.trim() == "}" { skip = false; }
+                    continue;
+                }
+                if line.contains(&format!("ssid=\"{ssid}\"")) {
+                    // Found our SSID — go back and remove the network={ line
+                    // Remove last line (network={) from cleaned
+                    if let Some(pos) = cleaned.rfind("network={") {
+                        cleaned.truncate(pos);
+                    }
+                    skip = true;
+                    continue;
+                }
+                cleaned.push_str(line);
+                cleaned.push('\n');
+            }
+
+            // Append the new network block
+            cleaned.push_str(&config_block);
+            cleaned.push('\n');
+
+            std::fs::write(conf_path, &cleaned)
+                .map_err(|e| format!("Failed to write wpa config: {e}"))?;
+
+            // Tell wpa_supplicant to reload
+            let _ = Command::new("wpa_cli")
+                .args(["-i", "wlan0", "reconfigure"])
+                .output();
         } else {
-            String::new()
-        };
+            // No config file found — try wpa_cli commands directly
+            let add = Command::new("wpa_cli")
+                .args(["-i", "wlan0", "add_network"])
+                .output()
+                .map_err(|e| format!("wpa_cli failed: {e}"))?;
 
-        let content = format!("\
-[connection]
-id={ssid}
-type=wifi
-autoconnect=true
+            let net_id = String::from_utf8_lossy(&add.stdout).trim().to_string();
+            // If wpa_cli returns "FAIL" or non-numeric, it didn't work
+            if net_id == "FAIL" || net_id.parse::<u32>().is_err() {
+                return Err("wpa_cli add_network failed — is wpa_supplicant running?".to_string());
+            }
 
-[wifi]
-ssid={ssid}
-mode=infrastructure
-{security_section}
-[ipv4]
-method=auto
+            let _ = Command::new("wpa_cli")
+                .args(["-i", "wlan0", "set_network", &net_id, "ssid", &format!("\"{}\"", ssid)])
+                .output();
+            let _ = Command::new("wpa_cli")
+                .args(["-i", "wlan0", "set_network", &net_id, "psk", &format!("\"{}\"", password)])
+                .output();
+            let _ = Command::new("wpa_cli")
+                .args(["-i", "wlan0", "enable_network", &net_id])
+                .output();
+            let _ = Command::new("wpa_cli")
+                .args(["-i", "wlan0", "save_config"])
+                .output();
+        }
 
-[ipv6]
-method=auto
-");
-
-        std::fs::write(&conn_file, &content)
-            .map_err(|e| format!("Failed to write connection file: {e}"))?;
-        let _ = Command::new("chmod").args(["600", &conn_file]).output();
-        Ok(())
-    }
-
-    /// Restart NetworkManager so it reads connection files fresh from disk,
-    /// then wait for the connection to come up.
-    #[cfg(target_os = "linux")]
-    fn restart_nm_and_wait(ssid: &str) -> Result<(), String> {
-        use std::process::Command;
-
-        // Full restart — NM re-reads all connection files from disk
-        let _ = Command::new("systemctl").args(["restart", "NetworkManager"]).output();
-
-        // Wait for NM to come back and auto-connect (up to 20 seconds)
-        for i in 0..20 {
+        // Wait for connection (up to 15 seconds)
+        for _ in 0..15 {
             std::thread::sleep(std::time::Duration::from_secs(1));
-            // NM might not be ready yet for the first few seconds
-            if i < 3 { continue; }
-
-            let output = Command::new("nmcli")
-                .args(["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "dev", "status"])
+            let output = Command::new("wpa_cli")
+                .args(["-i", "wlan0", "status"])
                 .output();
             if let Ok(output) = output {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    let parts: Vec<&str> = line.splitn(4, ':').collect();
-                    if parts.len() >= 4
-                        && parts[1] == "wifi"
-                        && parts[2] == "connected"
-                    {
-                        return Ok(());
-                    }
+                let text = String::from_utf8_lossy(&output.stdout);
+                if text.contains("wpa_state=COMPLETED") {
+                    // Request DHCP
+                    let _ = Command::new("dhclient").args(["wlan0"]).output();
+                    // Alternative: udhcpc
+                    let _ = Command::new("udhcpc").args(["-i", "wlan0", "-n", "-q"]).output();
+                    return Ok(());
                 }
             }
         }
 
-        Err(format!("WiFi did not connect to {ssid} within 20 seconds"))
+        Err("WiFi authentication failed or timed out".to_string())
     }
 
     /// Save PSK to a simple file so we can retrieve it for reconnection.
