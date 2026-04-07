@@ -125,16 +125,24 @@ impl LauncherScreen for WifiScreen {
                     } else {
                         let net_idx = self.selected_row - 1;
                         if let Some(network) = self.networks.get(net_idx) {
+                            let ssid = network.ssid.clone();
+                            let is_open = network.security == "--" || network.security.is_empty();
+
                             if network.is_saved {
-                                let ssid = network.ssid.clone();
+                                // Try to connect with saved password
                                 match ctx.wifi_manager.connect(&ssid) {
-                                    Ok(()) => self.set_message(format!("Connected to {ssid}")),
-                                    Err(e) => self.set_message(format!("Error: {e}")),
+                                    Ok(()) => {
+                                        self.set_message(format!("Connected to {ssid}"));
+                                        self.refresh(ctx);
+                                    }
+                                    Err(_) => {
+                                        // Saved password missing or failed — ask for password
+                                        let label = format!("Password for {}", ssid);
+                                        self.password_input.show(&label);
+                                        self.connecting_ssid = Some(ssid);
+                                    }
                                 }
-                                self.refresh(ctx);
-                            } else if network.security == "--" || network.security.is_empty() {
-                                // Open network, no password needed
-                                let ssid = network.ssid.clone();
+                            } else if is_open {
                                 match ctx.wifi_manager.connect_with_password(&ssid, "") {
                                     Ok(()) => self.set_message(format!("Connected to {ssid}")),
                                     Err(e) => self.set_message(format!("Error: {e}")),
@@ -142,7 +150,6 @@ impl LauncherScreen for WifiScreen {
                                 self.refresh(ctx);
                             } else {
                                 // Password required — show on-screen keyboard
-                                let ssid = network.ssid.clone();
                                 let label = format!("Password for {}", ssid);
                                 self.password_input.show(&label);
                                 self.connecting_ssid = Some(ssid);
