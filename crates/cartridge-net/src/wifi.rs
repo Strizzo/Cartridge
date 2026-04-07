@@ -25,8 +25,8 @@ impl WifiManager {
         Self
     }
 
-    /// Write a NetworkManager drop-in config that disables polkit and
-    /// defaults psk-flags=0 (store secrets in file, no agent needed).
+    /// Write a NetworkManager drop-in config for headless operation.
+    /// Disables polkit, defaults psk-flags=0, disables MAC randomization.
     /// Only writes once — skips if the file already exists.
     #[cfg(target_os = "linux")]
     fn ensure_nm_headless_config() {
@@ -35,9 +35,12 @@ impl WifiManager {
         if Path::new(conf).exists() {
             return;
         }
-        let content = "\
-[main]\n\
+        // Matches ArkOS's own NM configuration
+        let content = "[main]\n\
 auth-polkit=false\n\
+\n\
+[device]\n\
+wifi.scan-rand-mac-address=no\n\
 \n\
 [connection]\n\
 wifi-sec.psk-flags=0\n";
@@ -45,7 +48,6 @@ wifi-sec.psk-flags=0\n";
         let _ = std::fs::create_dir_all("/etc/NetworkManager/conf.d");
         if std::fs::write(conf, content).is_ok() {
             log::info!("Wrote NM headless config to {conf}");
-            // Reload NM config
             let _ = std::process::Command::new("nmcli")
                 .args(["general", "reload"])
                 .output();
@@ -197,25 +199,45 @@ wifi-sec.psk-flags=0\n";
 
     /// Connect to a WiFi network with a password.
     ///
-    /// Strategy: write a correct NM keyfile with psk-flags=0, load it,
-    /// then activate. Falls back to `nmcli connection add` if file approach
-    /// fails. Logs all steps to /tmp/cartridge_wifi.log for diagnostics.
+    /// Uses the exact pattern from ArkOS's importwifi.sh (the fix for issue #580):
+    ///   1. nmcli c add (bare wifi, no security)
+    ///   2. nmcli c modify (add WPA-PSK credentials)
+    ///   3. nmcli con up
+    /// Falls back to keyfile approach if that fails.
+    /// Logs all steps to /tmp/cartridge_wifi.log for diagnostics.
     pub fn connect_with_password(&self, ssid: &str, password: &str) -> Result<(), String> {
         #[cfg(target_os = "linux")]
         {
             Self::save_psk(ssid, password);
 
-            // Log everything for diagnostics
             let mut log = String::new();
-            log.push_str(&format!("=== WiFi connect: '{}' at {} ===\n",
-                ssid, chrono_now()));
+            log.push_str(&format!("=== WiFi connect: '{}' at {} ===\n", ssid, chrono_now()));
+
+            // Step 0: Ensure NM headless config exists
+            Self::ensure_nm_headless_config();
 
             // Step 1: Clean up ALL stale profiles
             let cleanup = Self::cleanup_profiles(ssid);
             log.push_str(&format!("cleanup: {cleanup}\n"));
 
-            // Step 2: Try primary approach — write keyfile + load + activate
-            log.push_str("Trying keyfile approach...\n");
+            // Step 2: Primary — ArkOS importwifi.sh pattern (add → modify → up)
+            log.push_str("Trying ArkOS add/modify/up pattern...\n");
+            match Self::connect_arkos_pattern(ssid, password, &mut log) {
+                Ok(()) => {
+                    log.push_str("SUCCESS via add/modify/up\n");
+                    let _ = std::fs::write("/tmp/cartridge_wifi.log", &log);
+                    return self.verify_connection(ssid);
+                }
+                Err(e) => {
+                    log.push_str(&format!("add/modify/up failed: {e}\n"));
+                }
+            }
+
+            // Step 3: Fallback — write keyfile directly + load + up
+            log.push_str("Trying keyfile fallback...\n");
+            let cleanup2 = Self::cleanup_profiles(ssid);
+            log.push_str(&format!("cleanup2: {cleanup2}\n"));
+
             match Self::connect_via_keyfile(ssid, password, &mut log) {
                 Ok(()) => {
                     log.push_str("SUCCESS via keyfile\n");
@@ -224,22 +246,6 @@ wifi-sec.psk-flags=0\n";
                 }
                 Err(e) => {
                     log.push_str(&format!("keyfile failed: {e}\n"));
-                }
-            }
-
-            // Step 3: Fallback — use nmcli connection add with explicit psk-flags 0
-            log.push_str("Trying nmcli connection add fallback...\n");
-            let cleanup2 = Self::cleanup_profiles(ssid);
-            log.push_str(&format!("cleanup2: {cleanup2}\n"));
-
-            match Self::connect_via_nmcli_add(ssid, password, &mut log) {
-                Ok(()) => {
-                    log.push_str("SUCCESS via nmcli add\n");
-                    let _ = std::fs::write("/tmp/cartridge_wifi.log", &log);
-                    return self.verify_connection(ssid);
-                }
-                Err(e) => {
-                    log.push_str(&format!("nmcli add failed: {e}\n"));
                 }
             }
 
@@ -253,34 +259,78 @@ wifi-sec.psk-flags=0\n";
         }
     }
 
-    /// Primary approach: write a NM keyfile and load it.
+    /// ArkOS importwifi.sh pattern — the proven fix for issue #580.
+    /// Exact sequence: add bare connection → modify to add WPA-PSK → activate.
+    #[cfg(target_os = "linux")]
+    fn connect_arkos_pattern(ssid: &str, password: &str, log: &mut String) -> Result<(), String> {
+        use std::process::Command;
+
+        // Step A: Create bare wifi connection (NO security params in add)
+        let add_out = Command::new("nmcli")
+            .args(["c", "add", "con-name", ssid, "type", "wifi", "ssid", ssid, "ifname", "wlan0"])
+            .output()
+            .map_err(|e| format!("nmcli add: {e}"))?;
+
+        let add_ok = add_out.status.success();
+        let add_msg = String::from_utf8_lossy(&add_out.stdout).trim().to_string();
+        let add_err = String::from_utf8_lossy(&add_out.stderr).trim().to_string();
+        log.push_str(&format!("add ok={add_ok} out='{add_msg}' err='{add_err}'\n"));
+
+        if !add_ok {
+            return Err(format!("add failed: {add_err}"));
+        }
+
+        // Step B: Modify to add WPA-PSK (using wifi-sec.* shorthand)
+        let mod_out = Command::new("nmcli")
+            .args(["c", "modify", ssid, "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", password])
+            .output()
+            .map_err(|e| format!("nmcli modify: {e}"))?;
+
+        let mod_ok = mod_out.status.success();
+        let mod_msg = String::from_utf8_lossy(&mod_out.stdout).trim().to_string();
+        let mod_err = String::from_utf8_lossy(&mod_out.stderr).trim().to_string();
+        log.push_str(&format!("modify ok={mod_ok} out='{mod_msg}' err='{mod_err}'\n"));
+
+        if !mod_ok {
+            // Clean up the profile we just created
+            let _ = Command::new("nmcli").args(["c", "delete", ssid]).output();
+            return Err(format!("modify failed: {mod_err}"));
+        }
+
+        // Step C: Activate
+        let up_out = Command::new("nmcli")
+            .args(["con", "up", ssid])
+            .output()
+            .map_err(|e| format!("nmcli up: {e}"))?;
+
+        let up_ok = up_out.status.success();
+        let up_msg = String::from_utf8_lossy(&up_out.stdout).trim().to_string();
+        let up_err = String::from_utf8_lossy(&up_out.stderr).trim().to_string();
+        log.push_str(&format!("up ok={up_ok} out='{up_msg}' err='{up_err}'\n"));
+
+        if up_ok {
+            Ok(())
+        } else {
+            Err(format!("{up_err}"))
+        }
+    }
+
+    /// Fallback: write a NM keyfile directly and load it.
     #[cfg(target_os = "linux")]
     fn connect_via_keyfile(ssid: &str, password: &str, log: &mut String) -> Result<(), String> {
         use std::process::Command;
 
-        // Read UUID from /proc if available, otherwise generate one
         let uuid = std::fs::read_to_string("/proc/sys/kernel/random/uuid")
-            .unwrap_or_else(|_| {
-                format!("{:08x}-{:04x}-4{:03x}-8{:03x}-{:012x}",
-                    std::process::id(),
-                    std::process::id() as u16,
-                    std::process::id() & 0xfff,
-                    std::process::id() & 0xfff,
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_nanos() as u64 & 0xffffffffffff)
-            })
+            .unwrap_or_else(|_| "00000000-0000-4000-8000-000000000000".to_string())
             .trim()
             .to_string();
 
-        // NM keyfile format — section names are [wifi] and [wifi-security],
-        // NOT [802-11-wireless]. type is "wifi", NOT "802-11-wireless".
         let conn_file = format!("/etc/NetworkManager/system-connections/{ssid}.nmconnection");
         let content = format!("[connection]\n\
 id={ssid}\n\
 uuid={uuid}\n\
 type=wifi\n\
+interface-name=wlan0\n\
 autoconnect=true\n\
 \n\
 [wifi]\n\
@@ -288,7 +338,6 @@ mode=infrastructure\n\
 ssid={ssid}\n\
 \n\
 [wifi-security]\n\
-auth-alg=open\n\
 key-mgmt=wpa-psk\n\
 psk={password}\n\
 psk-flags=0\n\
@@ -302,23 +351,19 @@ method=auto\n");
         log.push_str(&format!("Writing {conn_file}\n"));
         std::fs::write(&conn_file, &content)
             .map_err(|e| format!("write failed: {e}"))?;
-
         let _ = Command::new("chmod").args(["600", &conn_file]).output();
 
-        // Use `nmcli connection load` for the specific file (NOT reload)
+        // Load the specific file
         let load_out = Command::new("nmcli")
             .args(["connection", "load", &conn_file])
             .output()
-            .map_err(|e| format!("nmcli load failed: {e}"))?;
+            .map_err(|e| format!("nmcli load: {e}"))?;
 
         let load_ok = load_out.status.success();
-        let load_stdout = String::from_utf8_lossy(&load_out.stdout).trim().to_string();
-        let load_stderr = String::from_utf8_lossy(&load_out.stderr).trim().to_string();
-        log.push_str(&format!("load ok={load_ok} stdout='{load_stdout}' stderr='{load_stderr}'\n"));
+        let load_err = String::from_utf8_lossy(&load_out.stderr).trim().to_string();
+        log.push_str(&format!("load ok={load_ok} err='{load_err}'\n"));
 
         if !load_ok {
-            // If load fails, try reload as fallback
-            log.push_str("load failed, trying reload...\n");
             let _ = Command::new("nmcli").args(["connection", "reload"]).output();
         }
 
@@ -326,67 +371,19 @@ method=auto\n");
 
         // Activate
         let up_out = Command::new("nmcli")
-            .args(["--wait", "20", "connection", "up", ssid])
+            .args(["con", "up", ssid])
             .output()
-            .map_err(|e| format!("nmcli up failed: {e}"))?;
+            .map_err(|e| format!("nmcli up: {e}"))?;
 
         let up_ok = up_out.status.success();
-        let up_stdout = String::from_utf8_lossy(&up_out.stdout).trim().to_string();
-        let up_stderr = String::from_utf8_lossy(&up_out.stderr).trim().to_string();
-        log.push_str(&format!("up ok={up_ok} stdout='{up_stdout}' stderr='{up_stderr}'\n"));
+        let up_msg = String::from_utf8_lossy(&up_out.stdout).trim().to_string();
+        let up_err = String::from_utf8_lossy(&up_out.stderr).trim().to_string();
+        log.push_str(&format!("up ok={up_ok} out='{up_msg}' err='{up_err}'\n"));
 
         if up_ok {
             Ok(())
         } else {
-            Err(format!("{up_stderr}"))
-        }
-    }
-
-    /// Fallback approach: use `nmcli connection add` with explicit psk-flags.
-    #[cfg(target_os = "linux")]
-    fn connect_via_nmcli_add(ssid: &str, password: &str, log: &mut String) -> Result<(), String> {
-        use std::process::Command;
-
-        let add_out = Command::new("nmcli")
-            .args([
-                "connection", "add",
-                "type", "wifi",
-                "con-name", ssid,
-                "ifname", "wlan0",
-                "ssid", ssid,
-                "wifi-sec.key-mgmt", "wpa-psk",
-                "wifi-sec.psk", password,
-                "wifi-sec.psk-flags", "0",
-            ])
-            .output()
-            .map_err(|e| format!("nmcli add failed: {e}"))?;
-
-        let add_ok = add_out.status.success();
-        let add_stdout = String::from_utf8_lossy(&add_out.stdout).trim().to_string();
-        let add_stderr = String::from_utf8_lossy(&add_out.stderr).trim().to_string();
-        log.push_str(&format!("add ok={add_ok} stdout='{add_stdout}' stderr='{add_stderr}'\n"));
-
-        if !add_ok {
-            return Err(format!("add failed: {add_stderr}"));
-        }
-
-        std::thread::sleep(std::time::Duration::from_millis(500));
-
-        // Activate
-        let up_out = Command::new("nmcli")
-            .args(["--wait", "20", "connection", "up", ssid])
-            .output()
-            .map_err(|e| format!("nmcli up failed: {e}"))?;
-
-        let up_ok = up_out.status.success();
-        let up_stdout = String::from_utf8_lossy(&up_out.stdout).trim().to_string();
-        let up_stderr = String::from_utf8_lossy(&up_out.stderr).trim().to_string();
-        log.push_str(&format!("up ok={up_ok} stdout='{up_stdout}' stderr='{up_stderr}'\n"));
-
-        if up_ok {
-            Ok(())
-        } else {
-            Err(format!("{up_stderr}"))
+            Err(format!("{up_err}"))
         }
     }
 
