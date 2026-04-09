@@ -31,10 +31,17 @@ impl LauncherApp {
         let storage = AppStorage::new("cartridge-launcher");
 
         // Load settings first -- we need registry_url and cache_duration_mins
-        let settings: LauncherSettings = storage
+        let mut settings: LauncherSettings = storage
             .load("settings")
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();
+
+        // Migrate stale registry URL
+        if settings.registry_url.contains("cartridge.dev") {
+            settings.registry_url = LauncherSettings::default().registry_url;
+            let json = serde_json::to_value(&settings).unwrap_or_default();
+            storage.save("settings", &json);
+        }
 
         // Set up network clients
         let cache_dir = home_dir().join(".cartridges/launcher/cache/http");

@@ -122,7 +122,7 @@ pub struct LauncherSettings {
 impl Default for LauncherSettings {
     fn default() -> Self {
         Self {
-            registry_url: "https://cartridge.dev/registry.json".to_string(),
+            registry_url: "https://raw.githubusercontent.com/Strizzo/Cartridge/main/registry.json".to_string(),
             auto_refresh: true,
             cache_duration_mins: 60,
         }
