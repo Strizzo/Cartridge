@@ -395,83 +395,28 @@ impl LauncherScreen for DetailScreen {
         let action_y = perm_card_y + perm_card_h + MARGIN + 4;
         let is_action_focused = self.focus == DetailFocus::Action;
 
-        if is_installed {
-            // Launch button
-            let btn_bg = if is_action_focused {
-                theme.positive
+        {
+            // Action hints — show which button does what (not navigable)
+            let mut ax = 12;
+            if is_installed {
+                let w = screen.draw_button_hint("A", "Launch", ax, action_y + 8, Some(theme.positive), 14);
+                ax += w as i32 + 16;
+                if has_update {
+                    let w = screen.draw_button_hint("Y", "Update", ax, action_y + 8, Some(theme.text_warning), 14);
+                    ax += w as i32 + 16;
+                }
+                let w = screen.draw_button_hint("X", "Remove", ax, action_y + 8, Some(theme.negative), 14);
+                ax += w as i32 + 20;
             } else {
-                theme.bg_lighter
-            };
-            let btn_text = if is_action_focused {
-                Color::RGB(20, 20, 30)
-            } else {
-                theme.positive
-            };
-            screen.draw_rounded_rect(
-                Rect::new(12, action_y, 120, 32),
-                btn_bg,
-                CARD_RADIUS,
-                is_action_focused,
-            );
-            screen.draw_text("Launch", 38, action_y + 7, Some(btn_text), 14, true, None);
-
-            // Update button (if update available)
-            let mut next_btn_x = 144;
-            if has_update {
-                screen.draw_rounded_rect(
-                    Rect::new(next_btn_x, action_y, 120, 32),
-                    theme.bg_lighter,
-                    CARD_RADIUS,
-                    false,
-                );
-                screen.draw_text("Update", next_btn_x + 26, action_y + 7, Some(theme.text_warning), 14, true, None);
-                next_btn_x += 132;
+                let w = screen.draw_button_hint("A", "Install", ax, action_y + 8, Some(theme.accent), 14);
+                ax += w as i32 + 20;
             }
 
-            // Remove button
-            screen.draw_rounded_rect(
-                Rect::new(next_btn_x, action_y, 120, 32),
-                theme.bg_lighter,
-                CARD_RADIUS,
-                false,
-            );
-            screen.draw_text("Remove", next_btn_x + 26, action_y + 7, Some(theme.negative), 14, true, None);
-
             // Category pill
             let cat_upper = app.category.to_uppercase();
             screen.draw_pill(
                 &cat_upper,
-                next_btn_x + 140,
-                action_y + 6,
-                cat_color,
-                Color::RGB(20, 20, 30),
-                11,
-            );
-        } else {
-            // Install button
-            let btn_bg = if is_action_focused {
-                theme.accent
-            } else {
-                theme.bg_lighter
-            };
-            let btn_text = if is_action_focused {
-                Color::RGB(20, 20, 30)
-            } else {
-                theme.accent
-            };
-            screen.draw_rounded_rect(
-                Rect::new(12, action_y, 120, 32),
-                btn_bg,
-                CARD_RADIUS,
-                is_action_focused,
-            );
-            screen.draw_text("Install", 34, action_y + 7, Some(btn_text), 14, true, None);
-
-            // Category pill
-            let cat_upper = app.category.to_uppercase();
-            screen.draw_pill(
-                &cat_upper,
-                148,
+                ax,
                 action_y + 6,
                 cat_color,
                 Color::RGB(20, 20, 30),
