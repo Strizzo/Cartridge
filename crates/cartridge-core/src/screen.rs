@@ -6,6 +6,7 @@ use sdl2::video::{Window, WindowContext};
 
 use crate::font::{FontCache, FontStyle};
 use crate::image_cache::ImageCache;
+use crate::text_cache::TextCache;
 use crate::theme::Theme;
 
 pub const WIDTH: u32 = 720;
@@ -17,6 +18,7 @@ pub struct Screen<'a> {
     pub theme: &'a Theme,
     pub fonts: &'a mut FontCache,
     pub images: &'a mut ImageCache,
+    pub text_cache: &'a mut TextCache,
     pub texture_creator: &'a TextureCreator<WindowContext>,
 }
 
@@ -27,6 +29,7 @@ impl<'a> Screen<'a> {
     }
 
     /// Render text. Returns rendered width.
+    /// Uses the text cache to avoid re-rasterizing the same string every frame.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_text(
         &mut self,
@@ -42,51 +45,42 @@ impl<'a> Screen<'a> {
             return 0;
         }
 
-        let style = if bold {
-            FontStyle::MonoBold
-        } else {
-            FontStyle::Mono
-        };
         let color = color.unwrap_or(self.theme.text);
 
-        let mut display_text = text.to_string();
-
-        if let Some(max_w) = max_width {
-            let font = self.fonts.get(style, font_size);
-            let (full_w, _) = font.size_of(&display_text).unwrap_or((0, 0));
+        // Truncate to max_width if needed. We use the cache's measure() which
+        // checks any cached entry first to avoid font metric lookups.
+        let display_text = if let Some(max_w) = max_width {
+            let full_w = self.text_cache.measure(self.fonts, text, font_size, bold);
             if full_w > max_w {
-                while !display_text.is_empty() {
-                    let candidate = format!("{display_text}..");
-                    let (w, _) = font.size_of(&candidate).unwrap_or((0, 0));
+                let mut s = text.to_string();
+                while !s.is_empty() {
+                    let candidate = format!("{s}..");
+                    let w = self.text_cache.measure(self.fonts, &candidate, font_size, bold);
                     if w <= max_w {
-                        display_text = candidate;
+                        s = candidate;
                         break;
                     }
-                    display_text.pop();
+                    s.pop();
                 }
-                if display_text.is_empty() {
-                    display_text = "..".to_string();
+                if s.is_empty() {
+                    s = "..".to_string();
                 }
+                s
+            } else {
+                // No truncation needed; avoid the allocation.
+                return self.text_cache.render(
+                    self.canvas, self.fonts, text, x, y, color, font_size, bold,
+                );
             }
-        }
+        } else {
+            return self.text_cache.render(
+                self.canvas, self.fonts, text, x, y, color, font_size, bold,
+            );
+        };
 
-        let font = self.fonts.get(style, font_size);
-        let surface = font
-            .render(&display_text)
-            .blended(color)
-            .unwrap_or_else(|e| panic!("Failed to render text: {e}"));
-
-        let texture = self
-            .texture_creator
-            .create_texture_from_surface(&surface)
-            .unwrap_or_else(|e| panic!("Failed to create texture: {e}"));
-
-        let TextureQuery { width, height, .. } = texture.query();
-        self.canvas
-            .copy(&texture, None, Rect::new(x, y, width, height))
-            .ok();
-
-        width
+        self.text_cache.render(
+            self.canvas, self.fonts, &display_text, x, y, color, font_size, bold,
+        )
     }
 
     pub fn draw_rect(
@@ -504,13 +498,8 @@ impl<'a> Screen<'a> {
     }
 
     pub fn get_text_width(&mut self, text: &str, font_size: u16, bold: bool) -> u32 {
-        let style = if bold {
-            FontStyle::MonoBold
-        } else {
-            FontStyle::Mono
-        };
-        let font = self.fonts.get(style, font_size);
-        font.size_of(text).unwrap_or((0, 0)).0
+        // Hit the text cache first; it has cached width if the text was drawn.
+        self.text_cache.measure(self.fonts, text, font_size, bold)
     }
 
     pub fn get_line_height(&mut self, font_size: u16, bold: bool) -> u32 {

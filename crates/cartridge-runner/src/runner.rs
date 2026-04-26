@@ -2,6 +2,7 @@ use cartridge_core::font::FontCache;
 use cartridge_core::image_cache::ImageCache;
 use cartridge_core::input::{Button, InputAction, InputManager};
 use cartridge_core::screen::{Screen, HEIGHT, WIDTH};
+use cartridge_core::text_cache::TextCache;
 use cartridge_core::theme::Theme;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
@@ -36,6 +37,7 @@ pub fn run_demo(assets_dir: &Path) -> Result<(), String> {
     let mut fonts = FontCache::new(assets_dir)?;
     fonts.prewarm();
     let mut images = ImageCache::new(&texture_creator)?;
+    let mut text_cache = TextCache::new(&texture_creator);
 
     let theme = Theme::default();
     let mut input_manager = InputManager::new();
@@ -93,6 +95,7 @@ pub fn run_demo(assets_dir: &Path) -> Result<(), String> {
                 theme: &theme,
                 fonts: &mut fonts,
                 images: &mut images,
+                text_cache: &mut text_cache,
                 texture_creator: &texture_creator,
             };
 

@@ -775,22 +775,45 @@ pub(crate) fn json_to_lua(lua: &Lua, value: &serde_json::Value) -> LuaResult<Lua
     }
 }
 
-/// Register the `http` global table with get, get_cached, and post methods.
+/// Register the `http` global table with sync (`get`, `get_cached`, `post`)
+/// and async (`get_async`, `post_async`, `poll`) methods.
 ///
-/// Each method returns a Lua table with fields: `ok` (boolean), `status` (number), `body` (string).
-/// The underlying `HttpClient` is synchronous (ureq-based) which is fine for single-threaded Lua apps.
+/// The synchronous methods block the render thread — fine for one-off calls.
+/// The async methods spawn a background thread, return a request id immediately,
+/// and let Lua poll for the result. This keeps the UI responsive while
+/// HTTP is in flight.
 pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
+    use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let cache_dir = PathBuf::from(home)
         .join(".cartridges")
         .join(app_id)
         .join("cache")
         .join("http");
-    let client = Rc::new(HttpClient::new(cache_dir));
+    // Arc so async threads can share the client.
+    let client = Arc::new(HttpClient::new(cache_dir));
+
+    // Async request infrastructure
+    struct AsyncResp {
+        id: u64,
+        ok: bool,
+        status: u16,
+        body: String,
+    }
+    type AsyncTx = Sender<AsyncResp>;
+    type AsyncRx = Receiver<AsyncResp>;
+
+    let (async_tx, async_rx): (AsyncTx, AsyncRx) = channel();
+    let async_tx = Arc::new(Mutex::new(async_tx));
+    let async_rx = Rc::new(RefCell::new(async_rx));
+    let next_id = Rc::new(RefCell::new(0u64));
 
     let http_table = lua.create_table()?;
 
-    // http.get(url) -> {ok, status, body}
+    // http.get(url) -> {ok, status, body} — synchronous (blocks)
     {
         let c = client.clone();
         http_table.set(
@@ -824,7 +847,7 @@ pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
         )?;
     }
 
-    // http.post(url, body) -> {ok, status, body}
+    // http.post(url, body) -> {ok, status, body} — synchronous (blocks)
     {
         let c = client.clone();
         http_table.set(
@@ -837,6 +860,100 @@ pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
                 table.set("ok", resp.ok)?;
                 table.set("status", resp.status)?;
                 table.set("body", resp.body)?;
+                Ok(table)
+            })?,
+        )?;
+    }
+
+    // http.get_async(url) -> request_id (number)
+    // Spawns a background thread; result is retrieved via http.poll().
+    {
+        let c = client.clone();
+        let tx = async_tx.clone();
+        let id_counter = next_id.clone();
+        http_table.set(
+            "get_async",
+            lua.create_function(move |_, url: String| {
+                let id = {
+                    let mut n = id_counter.borrow_mut();
+                    *n += 1;
+                    *n
+                };
+                let c2 = c.clone();
+                let tx2 = tx.clone();
+                thread::Builder::new()
+                    .name(format!("lua-http-{id}"))
+                    .spawn(move || {
+                        let (ok, status, body) = match c2.get(&url) {
+                            Ok(r) => (r.ok, r.status, r.body),
+                            Err(e) => (false, 0, e),
+                        };
+                        if let Ok(sender) = tx2.lock() {
+                            let _ = sender.send(AsyncResp { id, ok, status, body });
+                        }
+                    })
+                    .ok();
+                Ok(id)
+            })?,
+        )?;
+    }
+
+    // http.post_async(url, body) -> request_id (number)
+    {
+        let c = client.clone();
+        let tx = async_tx.clone();
+        let id_counter = next_id.clone();
+        http_table.set(
+            "post_async",
+            lua.create_function(move |_, (url, body): (String, String)| {
+                let id = {
+                    let mut n = id_counter.borrow_mut();
+                    *n += 1;
+                    *n
+                };
+                let c2 = c.clone();
+                let tx2 = tx.clone();
+                thread::Builder::new()
+                    .name(format!("lua-http-post-{id}"))
+                    .spawn(move || {
+                        let (ok, status, resp_body) = match c2.post(&url, &body) {
+                            Ok(r) => (r.ok, r.status, r.body),
+                            Err(e) => (false, 0, e),
+                        };
+                        if let Ok(sender) = tx2.lock() {
+                            let _ = sender.send(AsyncResp { id, ok, status, body: resp_body });
+                        }
+                    })
+                    .ok();
+                Ok(id)
+            })?,
+        )?;
+    }
+
+    // http.poll() -> array of completed responses: [{id, ok, status, body}, ...]
+    // Non-blocking; returns empty table if no responses ready.
+    {
+        let rx = async_rx.clone();
+        http_table.set(
+            "poll",
+            lua.create_function(move |lua, ()| {
+                let table = lua.create_table()?;
+                let mut idx = 1;
+                let receiver = rx.borrow();
+                loop {
+                    match receiver.try_recv() {
+                        Ok(resp) => {
+                            let entry = lua.create_table()?;
+                            entry.set("id", resp.id)?;
+                            entry.set("ok", resp.ok)?;
+                            entry.set("status", resp.status)?;
+                            entry.set("body", resp.body)?;
+                            table.set(idx, entry)?;
+                            idx += 1;
+                        }
+                        Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
+                    }
+                }
                 Ok(table)
             })?,
         )?;

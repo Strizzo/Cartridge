@@ -8,6 +8,7 @@ use cartridge_core::font::FontCache;
 use cartridge_core::image_cache::ImageCache;
 use cartridge_core::input::InputManager;
 use cartridge_core::screen::{Screen, HEIGHT, WIDTH};
+use cartridge_core::text_cache::TextCache;
 use cartridge_core::theme::Theme;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -50,6 +51,7 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
     let mut fonts = FontCache::new(assets_dir)?;
     fonts.prewarm();
     let mut images = ImageCache::new(&texture_creator)?;
+    let mut text_cache = TextCache::new(&texture_creator);
 
     let theme = Theme::default();
     let mut input_manager = InputManager::new();
@@ -61,7 +63,12 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
     let mut launcher = LauncherApp::new(assets_dir);
     let mut atmosphere = Atmosphere::new();
     let mut last_frame = Instant::now();
-    let mut sysinfo_timer = 0.0_f32;
+
+    // Optional FPS / frametime overlay enabled via CARTRIDGE_FPS=1
+    let show_fps = std::env::var("CARTRIDGE_FPS").ok().as_deref() == Some("1");
+    let mut frame_times: std::collections::VecDeque<f32> = std::collections::VecDeque::with_capacity(60);
+    let mut last_stats_log = Instant::now();
+    let mut frames_since_log: u32 = 0;
 
     loop {
         let frame_start = Instant::now();
@@ -69,12 +76,8 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
         last_frame = frame_start;
         atmosphere.update(dt);
 
-        // Poll system info every 2 seconds
-        sysinfo_timer += dt;
-        if sysinfo_timer >= 2.0 {
-            sysinfo_timer -= 2.0;
-            launcher.poll_sysinfo();
-        }
+        // Drain new sysinfo snapshots from the background poller (cheap).
+        launcher.refresh_sysinfo();
 
         // Collect SDL events
         let events: Vec<sdl2::event::Event> = event_pump.poll_iter().collect();
@@ -109,9 +112,32 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
                 theme: &theme,
                 fonts: &mut fonts,
                 images: &mut images,
+                text_cache: &mut text_cache,
                 texture_creator: &texture_creator,
             };
             launcher.render(&mut screen, &atmosphere);
+
+            // FPS / frametime overlay
+            if show_fps {
+                let last_ms = frame_times.back().copied().unwrap_or(0.0) * 1000.0;
+                let avg_ms = if frame_times.is_empty() {
+                    0.0
+                } else {
+                    frame_times.iter().sum::<f32>() / frame_times.len() as f32 * 1000.0
+                };
+                let max_ms = frame_times.iter().cloned().fold(0.0_f32, f32::max) * 1000.0;
+                let fps = if avg_ms > 0.0 { 1000.0 / avg_ms } else { 0.0 };
+                let stats = format!(
+                    "fps {:.1} | last {:.0}ms | avg {:.0}ms | max {:.0}ms | cache {}h/{}m {}",
+                    fps, last_ms, avg_ms, max_ms,
+                    screen.text_cache.hits, screen.text_cache.misses,
+                    screen.text_cache.entry_count(),
+                );
+                let bg = sdl2::pixels::Color::RGBA(0, 0, 0, 200);
+                screen.canvas.set_draw_color(bg);
+                screen.canvas.fill_rect(sdl2::rect::Rect::new(2, 2, 716, 16)).ok();
+                screen.draw_text(&stats, 6, 4, Some(sdl2::pixels::Color::RGB(0, 255, 100)), 11, false, None);
+            }
         }
 
         canvas.present();
@@ -121,6 +147,32 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
         let target_time = std::time::Duration::from_secs_f64(1.0 / TARGET_FPS as f64);
         if frame_time < target_time {
             std::thread::sleep(target_time - frame_time);
+        }
+
+        // Track frametimes for the FPS overlay
+        if show_fps {
+            if frame_times.len() >= 60 {
+                frame_times.pop_front();
+            }
+            frame_times.push_back(frame_time.as_secs_f32());
+            frames_since_log += 1;
+            if last_stats_log.elapsed().as_secs() >= 5 {
+                let avg_ms: f32 = if frame_times.is_empty() {
+                    0.0
+                } else {
+                    frame_times.iter().sum::<f32>() / frame_times.len() as f32 * 1000.0
+                };
+                log::info!(
+                    "perf: fps={:.1} avg_render={:.0}ms cache_hits={} misses={} entries={}",
+                    if avg_ms > 0.0 { 1000.0 / avg_ms } else { 0.0 },
+                    avg_ms,
+                    text_cache.hits,
+                    text_cache.misses,
+                    text_cache.entry_count(),
+                );
+                last_stats_log = Instant::now();
+                frames_since_log = 0;
+            }
         }
     }
 }

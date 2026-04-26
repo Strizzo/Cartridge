@@ -65,9 +65,42 @@ pub fn name_variants(app_id: &str) -> Vec<String> {
     names
 }
 
+use std::sync::OnceLock;
+use std::sync::Mutex;
+use std::collections::HashMap;
+
+/// Process-wide cache for resolved icon paths. Resolution involves multiple
+/// stat() syscalls; the result is stable for the process lifetime.
+fn icon_path_cache() -> &'static Mutex<HashMap<String, Option<String>>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 /// Resolve the icon.png path for an app, checking bundled and install locations.
-/// Bundled icons (next to binary) are preferred over installed copies.
+/// Cached for the process lifetime — icons don't move at runtime.
 pub fn resolve_icon_path(app_id: &str) -> Option<String> {
+    if let Ok(cache) = icon_path_cache().lock() {
+        if let Some(cached) = cache.get(app_id) {
+            return cached.clone();
+        }
+    }
+
+    let result = resolve_icon_path_uncached(app_id);
+
+    if let Ok(mut cache) = icon_path_cache().lock() {
+        cache.insert(app_id.to_string(), result.clone());
+    }
+    result
+}
+
+/// Force re-resolution on next call (use after install/remove).
+pub fn invalidate_icon_path(app_id: &str) {
+    if let Ok(mut cache) = icon_path_cache().lock() {
+        cache.remove(app_id);
+    }
+}
+
+fn resolve_icon_path_uncached(app_id: &str) -> Option<String> {
     let home = std::env::var("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."));
@@ -78,7 +111,6 @@ pub fn resolve_icon_path(app_id: &str) -> Option<String> {
 
     let variants = name_variants(app_id);
 
-    // First pass: check ALL bundled paths (next to binary + cwd) for ALL variants
     for name in &variants {
         if let Some(ref dir) = exe_dir {
             let bundled_icon = dir.join("lua_cartridges").join(name).join("icon.png");
@@ -92,7 +124,6 @@ pub fn resolve_icon_path(app_id: &str) -> Option<String> {
         }
     }
 
-    // Second pass: fall back to user-installed paths
     for name in &variants {
         let installed_icon = home.join(".cartridges/apps").join(name).join("icon.png");
         if installed_icon.exists() {

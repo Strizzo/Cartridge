@@ -5,5 +5,6 @@ pub mod input;
 pub mod screen;
 pub mod storage;
 pub mod sysinfo;
+pub mod text_cache;
 pub mod theme;
 pub mod ui;

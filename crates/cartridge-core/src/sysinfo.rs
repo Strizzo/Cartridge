@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
-use std::time::Instant;
+use std::sync::mpsc::{channel, Receiver, TryRecvError};
+use std::thread;
+use std::time::{Duration, Instant};
 
 const HISTORY_SIZE: usize = 30;
 const MAX_PROCESSES: usize = 12;
@@ -16,6 +18,7 @@ pub struct ProcessEntry {
 
 /// Live system information collector.
 /// Reads from /proc/ on Linux, uses shell commands or simulated data on macOS.
+#[derive(Clone)]
 pub struct SystemInfo {
     pub cpu_percent: f32,
     pub mem_used_mb: u64,
@@ -601,4 +604,79 @@ fn parse_kb(val: &str) -> u64 {
         .next()
         .and_then(|s| s.parse().ok())
         .unwrap_or(0)
+}
+
+// ---------------------------------------------------------------------------
+// AsyncSystemInfo: polls SystemInfo on a background thread to keep the
+// render thread responsive. nmcli/ps/df forks alone can take 100-400ms,
+// which would otherwise stall the UI for 2-6 frames every poll.
+// ---------------------------------------------------------------------------
+
+/// A SystemInfo wrapper that polls in a background thread and exposes
+/// the latest snapshot. Implements `Deref<Target = SystemInfo>` so
+/// existing code using `info.cpu_percent` etc. works unchanged.
+pub struct AsyncSystemInfo {
+    current: SystemInfo,
+    receiver: Receiver<SystemInfo>,
+}
+
+impl AsyncSystemInfo {
+    /// Create a new AsyncSystemInfo. The background thread polls every
+    /// `interval`. The first snapshot is computed synchronously on the
+    /// caller's thread so render code has data on the first frame.
+    pub fn new(interval: Duration) -> Self {
+        let (tx, rx) = channel();
+
+        // Synchronous initial poll so the first frame has data.
+        let mut initial = SystemInfo::new();
+        initial.poll();
+
+        // Background thread polls and sends snapshots.
+        let mut bg = initial.clone();
+        thread::Builder::new()
+            .name("sysinfo-poller".to_string())
+            .spawn(move || {
+                loop {
+                    thread::sleep(interval);
+                    bg.poll();
+                    if tx.send(bg.clone()).is_err() {
+                        break; // receiver dropped, exit
+                    }
+                }
+            })
+            .ok();
+
+        Self {
+            current: initial,
+            receiver: rx,
+        }
+    }
+
+    /// Drain pending snapshots and update `current` with the latest.
+    /// Cheap: just a non-blocking try_recv loop. Call once per frame.
+    pub fn refresh(&mut self) {
+        loop {
+            match self.receiver.try_recv() {
+                Ok(snap) => self.current = snap,
+                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
+            }
+        }
+    }
+
+    pub fn current(&self) -> &SystemInfo {
+        &self.current
+    }
+}
+
+impl std::ops::Deref for AsyncSystemInfo {
+    type Target = SystemInfo;
+    fn deref(&self) -> &SystemInfo {
+        &self.current
+    }
+}
+
+impl Default for AsyncSystemInfo {
+    fn default() -> Self {
+        Self::new(Duration::from_secs(2))
+    }
 }

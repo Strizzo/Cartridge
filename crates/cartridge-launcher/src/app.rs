@@ -2,7 +2,7 @@ use cartridge_core::atmosphere::Atmosphere;
 use cartridge_core::input::InputEvent;
 use cartridge_core::screen::Screen;
 use cartridge_core::storage::AppStorage;
-use cartridge_core::sysinfo::SystemInfo;
+use cartridge_core::sysinfo::AsyncSystemInfo;
 
 use crate::data::{InstalledApps, LauncherSettings, Registry};
 use crate::screens::overlay::{BootOverlay, OverlayResult};
@@ -83,8 +83,9 @@ impl LauncherApp {
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();
 
-        let mut sysinfo = SystemInfo::new();
-        sysinfo.poll();
+        // Poll system info on a background thread (every 2s) so nmcli/ps/df
+        // forks don't stall the render thread. AsyncSystemInfo Derefs to SystemInfo.
+        let sysinfo = AsyncSystemInfo::new(std::time::Duration::from_secs(2));
 
         let wifi_manager = cartridge_net::WifiManager::new();
 
@@ -159,9 +160,10 @@ impl LauncherApp {
         false
     }
 
-    /// Poll system info (called ~once per second from main loop).
-    pub fn poll_sysinfo(&mut self) {
-        self.ctx.sysinfo.poll();
+    /// Drain pending sysinfo snapshots from the background poller.
+    /// Cheap; safe to call every frame.
+    pub fn refresh_sysinfo(&mut self) {
+        self.ctx.sysinfo.refresh();
     }
 
     /// Returns the app_id that the user wants to launch, if any.

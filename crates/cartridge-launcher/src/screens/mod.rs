@@ -7,7 +7,7 @@ pub mod wifi;
 
 use cartridge_core::input::InputEvent;
 use cartridge_core::screen::Screen;
-use cartridge_core::sysinfo::SystemInfo;
+use cartridge_core::sysinfo::{AsyncSystemInfo, SystemInfo};
 
 /// Result of handling input on a screen.
 pub enum ScreenAction {
@@ -49,7 +49,7 @@ pub struct ScreenContext {
     pub storage: cartridge_core::storage::AppStorage,
     pub registry_client: Option<cartridge_net::RegistryClient>,
     pub installer: Option<cartridge_net::AppInstaller>,
-    pub sysinfo: SystemInfo,
+    pub sysinfo: AsyncSystemInfo,
     pub wifi_manager: cartridge_net::WifiManager,
 }
 
