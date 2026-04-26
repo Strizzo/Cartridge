@@ -126,12 +126,23 @@ pub fn run_lua_app(app_dir: &Path, assets_dir: &Path) -> Result<(), String> {
         // Process input
         let input_events = input_manager.process_events(&events);
 
-        // Deliver input to Lua (filter out Select so apps don't see it)
-        let lua_events: Vec<_> = input_events
-            .into_iter()
-            .filter(|ie| ie.button != Button::Select)
-            .collect();
-        app.call_input(&lua_events);
+        // If the text input widget is up, route events to it instead of
+        // delivering them to the Lua app. Lua reads results via text_input.poll().
+        if app.text_input_active() {
+            for ev in &input_events {
+                if ev.button == Button::Select {
+                    continue;
+                }
+                app.text_input_handle(ev);
+            }
+        } else {
+            // Deliver input to Lua (filter out Select so apps don't see it)
+            let lua_events: Vec<_> = input_events
+                .into_iter()
+                .filter(|ie| ie.button != Button::Select)
+                .collect();
+            app.call_input(&lua_events);
+        }
 
         // Update
         app.call_update(dt);
@@ -159,6 +170,9 @@ pub fn run_lua_app(app_dir: &Path, assets_dir: &Path) -> Result<(), String> {
                     LuaAppRunner::render_error_screen(&mut screen, &msg);
                 }
             }
+
+            // Draw the text input widget over whatever the cartridge rendered.
+            app.text_input_draw(&mut screen);
         }
 
         canvas.present();

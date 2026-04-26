@@ -1355,3 +1355,97 @@ pub fn register_audio_api(lua: &Lua, app_dir: &std::path::Path) -> LuaResult<()>
     lua.globals().set("audio", audio)?;
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Text input widget shared with the runner
+// ---------------------------------------------------------------------------
+
+use cartridge_core::ui::text_input::{TextInput, TextInputResult};
+
+/// Shared TextInput widget owned by the runner, controlled from Lua.
+pub type SharedTextInput = Rc<RefCell<TextInput>>;
+
+pub fn new_text_input() -> SharedTextInput {
+    Rc::new(RefCell::new(TextInput::new("")))
+}
+
+/// Register the `text_input` global table so cartridges can show an
+/// on-screen keyboard without building their own.
+///
+/// Lua API:
+///   text_input.show(label, default?, masked?)  -- show the keyboard
+///   text_input.is_active()                     -- true while visible
+///   text_input.poll()                          -- nil pending, false cancel,
+///                                                 string on submit
+///   text_input.cancel()                        -- hide without result
+pub fn register_text_input_api(lua: &Lua, ti: SharedTextInput) -> LuaResult<()> {
+    let table = lua.create_table()?;
+
+    {
+        let ti = ti.clone();
+        table.set(
+            "show",
+            lua.create_function(move |_, args: mlua::Variadic<mlua::Value>| {
+                let label = args.get(0).and_then(|v| v.as_str().map(|s| s.to_string()))
+                    .unwrap_or_default();
+                let default = args.get(1).and_then(|v| v.as_str().map(|s| s.to_string()));
+                let masked = args.get(2).and_then(|v| match v {
+                    LuaValue::Boolean(b) => Some(*b),
+                    _ => None,
+                }).unwrap_or(false);
+                let mut t = ti.borrow_mut();
+                t.show(&label);
+                t.masked = masked;
+                if let Some(default) = default {
+                    t.text = default;
+                    t.cursor_pos = t.text.len();
+                }
+                Ok(())
+            })?,
+        )?;
+    }
+
+    {
+        let ti = ti.clone();
+        table.set(
+            "is_active",
+            lua.create_function(move |_, ()| Ok(ti.borrow().visible))?,
+        )?;
+    }
+
+    {
+        let ti = ti.clone();
+        table.set(
+            "cancel",
+            lua.create_function(move |_, ()| {
+                let mut t = ti.borrow_mut();
+                t.visible = false;
+                t.result = TextInputResult::Cancelled;
+                Ok(())
+            })?,
+        )?;
+    }
+
+    // poll() drains the result. Returns:
+    //   nil      -> still pending or never shown
+    //   string   -> submitted text
+    //   false    -> cancelled
+    {
+        let ti = ti.clone();
+        table.set(
+            "poll",
+            lua.create_function(move |lua, ()| {
+                let mut t = ti.borrow_mut();
+                let res = std::mem::replace(&mut t.result, TextInputResult::Pending);
+                Ok(match res {
+                    TextInputResult::Pending => LuaValue::Nil,
+                    TextInputResult::Cancelled => LuaValue::Boolean(false),
+                    TextInputResult::Submitted(s) => LuaValue::String(lua.create_string(&s)?),
+                })
+            })?,
+        )?;
+    }
+
+    lua.globals().set("text_input", table)?;
+    Ok(())
+}

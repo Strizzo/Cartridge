@@ -1,4 +1,5 @@
 pub mod atmosphere;
+pub mod device;
 pub mod font;
 pub mod image_cache;
 pub mod input;

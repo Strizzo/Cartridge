@@ -7,15 +7,17 @@ use cartridge_core::theme::Theme;
 use mlua::prelude::*;
 
 use crate::api::{
-    new_screen_handle, register_audio_api, register_http_api, register_json_api,
-    register_screen_api, register_ssh_api, register_storage_api, register_system_api,
-    register_theme_api, SharedScreenHandle,
+    new_screen_handle, new_text_input, register_audio_api, register_http_api,
+    register_json_api, register_screen_api, register_ssh_api, register_storage_api,
+    register_system_api, register_text_input_api, register_theme_api,
+    SharedScreenHandle, SharedTextInput,
 };
 
 /// Runs a Lua cartridge app within a Lua VM.
 pub struct LuaAppRunner {
     lua: Lua,
     screen_handle: SharedScreenHandle,
+    pub text_input: SharedTextInput,
     has_error: Option<String>,
 }
 
@@ -29,6 +31,7 @@ impl LuaAppRunner {
     ) -> Result<Self, String> {
         let lua = Lua::new();
         let screen_handle = new_screen_handle();
+        let text_input = new_text_input();
 
         // Sandbox: remove dangerous functions
         Self::sandbox(&lua).map_err(|e| format!("Failed to sandbox Lua: {e}"))?;
@@ -41,6 +44,8 @@ impl LuaAppRunner {
             .map_err(|e| format!("Failed to register screen API: {e}"))?;
         register_theme_api(&lua, theme)
             .map_err(|e| format!("Failed to register theme API: {e}"))?;
+        register_text_input_api(&lua, text_input.clone())
+            .map_err(|e| format!("Failed to register text_input API: {e}"))?;
 
         let storage = AppStorage::new(app_id);
         register_storage_api(&lua, storage)
@@ -88,8 +93,30 @@ impl LuaAppRunner {
         Ok(Self {
             lua,
             screen_handle,
+            text_input,
             has_error: None,
         })
+    }
+
+    /// True if the text input widget is currently visible. Callers should
+    /// route input to the widget instead of the Lua app while it is up.
+    pub fn text_input_active(&self) -> bool {
+        self.text_input.borrow().visible
+    }
+
+    /// Forward an input event to the text widget. Should only be called
+    /// when text_input_active() is true.
+    pub fn text_input_handle(&self, event: &cartridge_core::input::InputEvent) {
+        let mut t = self.text_input.borrow_mut();
+        let _ = t.handle_input(event);
+    }
+
+    /// Draw the text input widget over whatever the cartridge rendered.
+    pub fn text_input_draw(&self, screen: &mut cartridge_core::screen::Screen) {
+        let t = self.text_input.borrow();
+        if t.visible {
+            t.draw(screen);
+        }
     }
 
     fn sandbox(lua: &Lua) -> LuaResult<()> {

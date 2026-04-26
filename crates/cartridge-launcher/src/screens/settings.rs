@@ -1,3 +1,6 @@
+use cartridge_core::device::{
+    get_brightness_percent, get_volume_percent, set_brightness_percent, set_volume_percent,
+};
 use cartridge_core::input::{Button, InputAction, InputEvent};
 use cartridge_core::screen::Screen;
 use sdl2::rect::Rect;
@@ -6,7 +9,20 @@ use crate::ui_constants::*;
 use super::{LauncherScreen, ScreenAction, ScreenContext, ScreenId};
 
 const CACHE_OPTIONS: &[u32] = &[15, 30, 60, 120, 360];
-const SETTINGS_ROWS: usize = 6;
+const SETTINGS_ROWS: usize = 8;
+// Step size for brightness/volume left/right adjustments.
+const HW_STEP: u8 = 10;
+// Row indices.
+//   0: Registry URL  (read-only)
+//   1: Auto Refresh
+//   2: Cache Duration
+//   3: Show Process Panel
+//   4: WiFi
+//   5: Brightness    (hardware)
+//   6: Volume        (hardware)
+//   7: About
+const ROW_BRIGHTNESS: usize = 5;
+const ROW_VOLUME: usize = 6;
 
 pub struct SettingsScreen {
     selected_row: usize,
@@ -71,6 +87,16 @@ impl LauncherScreen for SettingsScreen {
                         4 => {
                             return ScreenAction::Push(ScreenId::WiFi);
                         }
+                        ROW_BRIGHTNESS => {
+                            let cur = get_brightness_percent();
+                            let next = cur.saturating_add(HW_STEP).min(100);
+                            set_brightness_percent(next);
+                        }
+                        ROW_VOLUME => {
+                            let cur = get_volume_percent();
+                            let next = cur.saturating_add(HW_STEP).min(100);
+                            set_volume_percent(next);
+                        }
                         _ => {}
                     }
                 }
@@ -97,6 +123,16 @@ impl LauncherScreen for SettingsScreen {
                         3 => {
                             ctx.settings.show_processes = !ctx.settings.show_processes;
                             ctx.save_settings();
+                        }
+                        ROW_BRIGHTNESS => {
+                            let cur = get_brightness_percent();
+                            let next = cur.saturating_sub(HW_STEP);
+                            set_brightness_percent(next);
+                        }
+                        ROW_VOLUME => {
+                            let cur = get_volume_percent();
+                            let next = cur.saturating_sub(HW_STEP);
+                            set_volume_percent(next);
                         }
                         _ => {}
                     }
@@ -335,10 +371,65 @@ impl LauncherScreen for SettingsScreen {
             }
         }
 
-        // Row 5: About
+        // Row 5: Brightness slider
         {
-            let y = start_y + 5 * (row_h + MARGIN);
-            let is_sel = self.selected_row == 5;
+            let y = start_y + ROW_BRIGHTNESS as i32 * (row_h + MARGIN);
+            let is_sel = self.selected_row == ROW_BRIGHTNESS;
+            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
+            let border = if is_sel { theme.accent } else { theme.card_border };
+            screen.draw_card(
+                Rect::new(12, y, card_w, row_h as u32),
+                Some(bg), Some(border), CARD_RADIUS, false,
+            );
+            screen.draw_text("Brightness", 24, y + 8, Some(theme.text), 14, true, None);
+            let pct = get_brightness_percent();
+            screen.draw_text(
+                &format!("{}%  (\u{25C0} \u{25B6} to adjust)", pct),
+                24, y + 30, Some(theme.text_dim), 12, false, None,
+            );
+            // Slider bar
+            let bar_x = SCREEN_WIDTH as i32 - 200;
+            let bar_y = y + 22;
+            let bar_w = 180u32;
+            let bar_h = 6u32;
+            screen.draw_rect(Rect::new(bar_x, bar_y, bar_w, bar_h), Some(theme.card_border), true, 3, None);
+            let fill_w = (bar_w as f32 * pct as f32 / 100.0) as u32;
+            if fill_w > 0 {
+                screen.draw_rect(Rect::new(bar_x, bar_y, fill_w, bar_h), Some(theme.accent), true, 3, None);
+            }
+        }
+
+        // Row 6: Volume slider
+        {
+            let y = start_y + ROW_VOLUME as i32 * (row_h + MARGIN);
+            let is_sel = self.selected_row == ROW_VOLUME;
+            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
+            let border = if is_sel { theme.accent } else { theme.card_border };
+            screen.draw_card(
+                Rect::new(12, y, card_w, row_h as u32),
+                Some(bg), Some(border), CARD_RADIUS, false,
+            );
+            screen.draw_text("Volume", 24, y + 8, Some(theme.text), 14, true, None);
+            let pct = get_volume_percent();
+            screen.draw_text(
+                &format!("{}%  (\u{25C0} \u{25B6} to adjust)", pct),
+                24, y + 30, Some(theme.text_dim), 12, false, None,
+            );
+            let bar_x = SCREEN_WIDTH as i32 - 200;
+            let bar_y = y + 22;
+            let bar_w = 180u32;
+            let bar_h = 6u32;
+            screen.draw_rect(Rect::new(bar_x, bar_y, bar_w, bar_h), Some(theme.card_border), true, 3, None);
+            let fill_w = (bar_w as f32 * pct as f32 / 100.0) as u32;
+            if fill_w > 0 {
+                screen.draw_rect(Rect::new(bar_x, bar_y, fill_w, bar_h), Some(theme.text_success), true, 3, None);
+            }
+        }
+
+        // Row 7: About
+        {
+            let y = start_y + 7 * (row_h + MARGIN);
+            let is_sel = self.selected_row == 7;
             let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
             let border = if is_sel { theme.accent } else { theme.card_border };
 
