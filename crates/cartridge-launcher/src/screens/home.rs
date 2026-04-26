@@ -293,8 +293,10 @@ impl LauncherScreen for HomeScreen {
         // ===== SPLIT DETAIL ROW (always visible) =====
         draw_detail_row(screen, ctx, &installed_apps, self.dock_index, sysinfo);
 
-        // ===== PROCESS PANEL =====
-        draw_process_panel(screen, sysinfo);
+        // ===== PROCESS PANEL (opt-in via Settings) =====
+        if ctx.settings.show_processes {
+            draw_process_panel(screen, sysinfo);
+        }
 
         // ===== FOOTER =====
         draw_footer(screen);

@@ -117,6 +117,14 @@ pub struct LauncherSettings {
     pub registry_url: String,
     pub auto_refresh: bool,
     pub cache_duration_mins: u32,
+    /// Show the htop-like process panel on the home screen.
+    /// Disabling it cuts ~64 text draws per frame and frees 200px of screen.
+    #[serde(default = "default_show_processes")]
+    pub show_processes: bool,
+}
+
+fn default_show_processes() -> bool {
+    false
 }
 
 impl Default for LauncherSettings {
@@ -125,6 +133,7 @@ impl Default for LauncherSettings {
             registry_url: "https://raw.githubusercontent.com/Strizzo/Cartridge/main/registry.json".to_string(),
             auto_refresh: true,
             cache_duration_mins: 60,
+            show_processes: false,
         }
     }
 }

@@ -15,7 +15,12 @@ use std::time::Instant;
 
 use app::LauncherApp;
 
-const TARGET_FPS: u32 = 15;
+/// Active frame rate (when input has happened recently).
+const ACTIVE_FPS: u32 = 30;
+/// Idle frame rate (when no input for a while). Saves CPU on battery.
+const IDLE_FPS: u32 = 5;
+/// Time of last input before considered idle (in seconds).
+const IDLE_AFTER_SECS: f32 = 3.0;
 
 /// The result of running the launcher -- either the user quit, or they want to launch an app.
 pub enum LauncherResult {
@@ -64,13 +69,16 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
 
     let mut launcher = LauncherApp::new(assets_dir);
     let mut atmosphere = Atmosphere::new();
+    // Pre-render the static atmosphere into cached textures (3 fullscreen
+    // image blits per frame -> 2 cached blits).
+    atmosphere.precompose(&mut canvas, &texture_creator, &mut images, &theme);
     let mut last_frame = Instant::now();
+    let mut last_input = Instant::now();
 
     // Optional FPS / frametime overlay enabled via CARTRIDGE_FPS=1
     let show_fps = std::env::var("CARTRIDGE_FPS").ok().as_deref() == Some("1");
     let mut frame_times: std::collections::VecDeque<f32> = std::collections::VecDeque::with_capacity(60);
     let mut last_stats_log = Instant::now();
-    let mut frames_since_log: u32 = 0;
 
     loop {
         let frame_start = Instant::now();
@@ -153,8 +161,14 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
 
         // Frame rate cap. If input happened, skip the sleep so the next
         // frame renders immediately (cuts input-to-pixel latency).
+        // Otherwise, choose ACTIVE_FPS or IDLE_FPS based on time since last input.
+        if had_input {
+            last_input = Instant::now();
+        }
         let frame_time = Instant::now().duration_since(frame_start);
-        let target_time = std::time::Duration::from_secs_f64(1.0 / TARGET_FPS as f64);
+        let idle_secs = last_input.elapsed().as_secs_f32();
+        let target_fps = if idle_secs > IDLE_AFTER_SECS { IDLE_FPS } else { ACTIVE_FPS };
+        let target_time = std::time::Duration::from_secs_f64(1.0 / target_fps as f64);
         if !had_input && frame_time < target_time {
             std::thread::sleep(target_time - frame_time);
         }
@@ -165,7 +179,6 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
                 frame_times.pop_front();
             }
             frame_times.push_back(frame_time.as_secs_f32());
-            frames_since_log += 1;
             if last_stats_log.elapsed().as_secs() >= 5 {
                 let avg_ms: f32 = if frame_times.is_empty() {
                     0.0
@@ -181,7 +194,6 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
                     text_cache.entry_count(),
                 );
                 last_stats_log = Instant::now();
-                frames_since_log = 0;
             }
         }
     }

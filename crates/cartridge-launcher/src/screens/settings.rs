@@ -6,7 +6,7 @@ use crate::ui_constants::*;
 use super::{LauncherScreen, ScreenAction, ScreenContext, ScreenId};
 
 const CACHE_OPTIONS: &[u32] = &[15, 30, 60, 120, 360];
-const SETTINGS_ROWS: usize = 5;
+const SETTINGS_ROWS: usize = 6;
 
 pub struct SettingsScreen {
     selected_row: usize,
@@ -64,6 +64,11 @@ impl LauncherScreen for SettingsScreen {
                             ctx.save_settings();
                         }
                         3 => {
+                            // Toggle process panel
+                            ctx.settings.show_processes = !ctx.settings.show_processes;
+                            ctx.save_settings();
+                        }
+                        4 => {
                             return ScreenAction::Push(ScreenId::WiFi);
                         }
                         _ => {}
@@ -87,6 +92,10 @@ impl LauncherScreen for SettingsScreen {
                                 idx - 1
                             };
                             ctx.settings.cache_duration_mins = CACHE_OPTIONS[next];
+                            ctx.save_settings();
+                        }
+                        3 => {
+                            ctx.settings.show_processes = !ctx.settings.show_processes;
                             ctx.save_settings();
                         }
                         _ => {}
@@ -239,10 +248,53 @@ impl LauncherScreen for SettingsScreen {
             }
         }
 
-        // Row 3: WiFi
+        // Row 3: Process panel toggle
         {
             let y = start_y + 3 * (row_h + MARGIN);
             let is_sel = self.selected_row == 3;
+            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
+            let border = if is_sel { theme.accent } else { theme.card_border };
+
+            screen.draw_card(
+                Rect::new(12, y, card_w, row_h as u32),
+                Some(bg),
+                Some(border),
+                CARD_RADIUS,
+                false,
+            );
+
+            screen.draw_text("Show Process Panel", 24, y + 8, Some(theme.text), 14, true, None);
+            screen.draw_text(
+                "htop-like view on home screen (uses CPU)",
+                24,
+                y + 30,
+                Some(theme.text_dim),
+                12,
+                false,
+                None,
+            );
+
+            let toggle_x = SCREEN_WIDTH as i32 - 80;
+            let toggle_label = if ctx.settings.show_processes { "ON" } else { "OFF" };
+            let toggle_color = if ctx.settings.show_processes {
+                theme.positive
+            } else {
+                theme.text_dim
+            };
+            screen.draw_pill(
+                toggle_label,
+                toggle_x,
+                y + 18,
+                toggle_color,
+                sdl2::pixels::Color::RGB(20, 20, 30),
+                13,
+            );
+        }
+
+        // Row 4: WiFi
+        {
+            let y = start_y + 4 * (row_h + MARGIN);
+            let is_sel = self.selected_row == 4;
             let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
             let border = if is_sel { theme.accent } else { theme.card_border };
 
@@ -283,10 +335,10 @@ impl LauncherScreen for SettingsScreen {
             }
         }
 
-        // Row 4: About
+        // Row 5: About
         {
-            let y = start_y + 4 * (row_h + MARGIN);
-            let is_sel = self.selected_row == 4;
+            let y = start_y + 5 * (row_h + MARGIN);
+            let is_sel = self.selected_row == 5;
             let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
             let border = if is_sel { theme.accent } else { theme.card_border };
 

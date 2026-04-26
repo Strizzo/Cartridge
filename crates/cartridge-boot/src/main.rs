@@ -276,6 +276,7 @@ fn run_boot_selector(assets_dir: &Path) -> Result<BootChoice, String> {
     }
     let mut event_pump = sdl_context.event_pump()?;
     let mut atmosphere = Atmosphere::new();
+    atmosphere.precompose(&mut canvas, &texture_creator, &mut images, &theme);
 
     // Load persisted state
     let state = load_state();
