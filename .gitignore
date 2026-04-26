@@ -15,3 +15,7 @@ Cargo.lock
 
 # Claude Code
 .claude/
+
+# Headless snapshot output (only tests/baseline/ is tracked)
+/snapshots/
+/tests/snapshots/
