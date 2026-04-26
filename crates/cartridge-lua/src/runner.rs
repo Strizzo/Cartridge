@@ -22,13 +22,18 @@ pub struct LuaAppRunner {
 }
 
 impl LuaAppRunner {
-    /// Create a new runner, register all APIs, and load the Lua source file.
+    /// Create a new runner. Registers APIs gated by `permissions` from the
+    /// cartridge manifest; APIs not in the list aren't accessible from Lua.
+    /// Always-available APIs: `screen`, `theme`, `json`, `text_input`.
+    /// Gated APIs: `storage`, `network` (http), `audio`, `system`, `ssh`.
     pub fn new(
         app_dir: &Path,
         entry_file: &str,
         app_id: &str,
         theme: &Theme,
+        permissions: &[String],
     ) -> Result<Self, String> {
+        let has = |p: &str| permissions.iter().any(|x| x == p);
         let lua = Lua::new();
         let screen_handle = new_screen_handle();
         let text_input = new_text_input();
@@ -39,28 +44,43 @@ impl LuaAppRunner {
         // Set up restricted require that only loads from the app directory
         Self::setup_require(&lua, app_dir).map_err(|e| format!("Failed to setup require: {e}"))?;
 
-        // Register APIs
+        // Always-available APIs (drawing, theme, json, text input).
         register_screen_api(&lua, screen_handle.clone(), app_dir)
             .map_err(|e| format!("Failed to register screen API: {e}"))?;
         register_theme_api(&lua, theme)
             .map_err(|e| format!("Failed to register theme API: {e}"))?;
         register_text_input_api(&lua, text_input.clone())
             .map_err(|e| format!("Failed to register text_input API: {e}"))?;
-
-        let storage = AppStorage::new(app_id);
-        register_storage_api(&lua, storage)
-            .map_err(|e| format!("Failed to register storage API: {e}"))?;
-
-        register_http_api(&lua, app_id)
-            .map_err(|e| format!("Failed to register HTTP API: {e}"))?;
         register_json_api(&lua)
             .map_err(|e| format!("Failed to register JSON API: {e}"))?;
-        register_ssh_api(&lua)
-            .map_err(|e| format!("Failed to register SSH API: {e}"))?;
-        register_system_api(&lua)
-            .map_err(|e| format!("Failed to register system API: {e}"))?;
-        register_audio_api(&lua, app_dir)
-            .map_err(|e| format!("Failed to register audio API: {e}"))?;
+
+        // Permission-gated APIs.
+        if has("storage") {
+            let storage = AppStorage::new(app_id);
+            register_storage_api(&lua, storage)
+                .map_err(|e| format!("Failed to register storage API: {e}"))?;
+        }
+        if has("network") {
+            register_http_api(&lua, app_id)
+                .map_err(|e| format!("Failed to register HTTP API: {e}"))?;
+        }
+        if has("ssh") {
+            register_ssh_api(&lua)
+                .map_err(|e| format!("Failed to register SSH API: {e}"))?;
+        }
+        if has("system") {
+            register_system_api(&lua)
+                .map_err(|e| format!("Failed to register system API: {e}"))?;
+        }
+        if has("audio") {
+            register_audio_api(&lua, app_dir)
+                .map_err(|e| format!("Failed to register audio API: {e}"))?;
+        }
+
+        log::info!(
+            "Cartridge {app_id} permissions: {}",
+            permissions.join(", ")
+        );
 
         // Register screen dimension constants
         lua.globals()

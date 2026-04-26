@@ -1,1 +1,1 @@
-{"id":"dev.cartridge.system-monitor","name":"System Monitor","version":"0.1.0","author":"Cartridge Team","description":"Real-time CPU, memory, disk, and network monitoring","category":"Tools","tags":["system","monitor","cpu","memory","network"],"permissions":[],"entry":"main.lua"}
+{"id":"dev.cartridge.system-monitor","name":"System Monitor","version":"0.1.0","author":"Cartridge Team","description":"Real-time CPU, memory, disk, and network monitoring","category":"Tools","tags":["system","monitor","cpu","memory","network"],"permissions":["system"],"entry":"main.lua"}

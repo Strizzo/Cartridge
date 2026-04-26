@@ -49,8 +49,22 @@ my-cartridge/
 }
 ```
 
-Permissions currently inform the user but are **not enforced** by the
-runtime. All APIs are always available. (Enforcement is on the roadmap.)
+Permissions are **enforced** by the runtime. APIs not declared in your
+manifest are not available to your Lua code (the global table simply
+doesn't exist). The store also displays permissions to the user before
+install.
+
+Always available (no permission needed): `screen`, `theme`, `json`, `text_input`.
+
+Permission-gated:
+
+| Permission | Grants                          |
+| ---------- | ------------------------------- |
+| `storage`  | `storage.*`                     |
+| `network`  | `http.*`                        |
+| `audio`    | `audio.*`                       |
+| `system`   | `system.*`                      |
+| `ssh`      | `ssh.*`                         |
 
 ## Lifecycle callbacks
 

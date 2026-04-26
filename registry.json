@@ -54,7 +54,7 @@
       "category": "productivity",
       "tags": ["timer", "pomodoro", "productivity"],
       "repo_url": "https://github.com/Strizzo/pomodoro-cartridge",
-      "permissions": ["storage"]
+      "permissions": ["storage", "audio"]
     },
     {
       "id": "dev.cartridge.system-monitor",
@@ -65,7 +65,7 @@
       "category": "tools",
       "tags": ["system", "monitor", "cpu", "memory"],
       "repo_url": "https://github.com/Strizzo/system-monitor-cartridge",
-      "permissions": []
+      "permissions": ["system"]
     },
     {
       "id": "dev.cartridge.network-tool",

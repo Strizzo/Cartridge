@@ -1,1 +1,1 @@
-{"id":"dev.cartridge.pomodoro","name":"Pomodoro","version":"0.1.0","author":"Cartridge Team","description":"Pomodoro productivity timer with stats","category":"Productivity","tags":["pomodoro","timer","productivity","focus"],"permissions":["storage"],"entry":"main.lua"}
+{"id":"dev.cartridge.pomodoro","name":"Pomodoro","version":"0.1.0","author":"Cartridge Team","description":"Pomodoro productivity timer with stats","category":"Productivity","tags":["pomodoro","timer","productivity","focus"],"permissions":["storage","audio"],"entry":"main.lua"}

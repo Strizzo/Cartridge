@@ -818,6 +818,7 @@ pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
         ok: bool,
         status: u16,
         body: String,
+        etag: Option<String>,
     }
     type AsyncTx = Sender<AsyncResp>;
     type AsyncRx = Receiver<AsyncResp>;
@@ -881,15 +882,20 @@ pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
         )?;
     }
 
-    // http.get_async(url) -> request_id (number)
+    // http.get_async(url, etag?) -> request_id (number)
     // Spawns a background thread; result is retrieved via http.poll().
+    // Optional etag is sent as If-None-Match for delta polling (304 = not modified).
     {
         let c = client.clone();
         let tx = async_tx.clone();
         let id_counter = next_id.clone();
         http_table.set(
             "get_async",
-            lua.create_function(move |_, url: String| {
+            lua.create_function(move |_, args: mlua::Variadic<mlua::Value>| {
+                let url = args.get(0)
+                    .and_then(|v| v.as_str().map(|s| s.to_string()))
+                    .ok_or_else(|| LuaError::RuntimeError("url required".to_string()))?;
+                let etag = args.get(1).and_then(|v| v.as_str().map(|s| s.to_string()));
                 let id = {
                     let mut n = id_counter.borrow_mut();
                     *n += 1;
@@ -900,12 +906,12 @@ pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
                 thread::Builder::new()
                     .name(format!("lua-http-{id}"))
                     .spawn(move || {
-                        let (ok, status, body) = match c2.get(&url) {
-                            Ok(r) => (r.ok, r.status, r.body),
-                            Err(e) => (false, 0, e),
+                        let (ok, status, body, et) = match c2.get_with_etag(&url, etag.as_deref()) {
+                            Ok(r) => (r.ok, r.status, r.body, r.etag),
+                            Err(e) => (false, 0, e, None),
                         };
                         if let Ok(sender) = tx2.lock() {
-                            let _ = sender.send(AsyncResp { id, ok, status, body });
+                            let _ = sender.send(AsyncResp { id, ok, status, body, etag: et });
                         }
                     })
                     .ok();
@@ -932,12 +938,12 @@ pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
                 thread::Builder::new()
                     .name(format!("lua-http-post-{id}"))
                     .spawn(move || {
-                        let (ok, status, resp_body) = match c2.post(&url, &body) {
-                            Ok(r) => (r.ok, r.status, r.body),
-                            Err(e) => (false, 0, e),
+                        let (ok, status, resp_body, et) = match c2.post(&url, &body) {
+                            Ok(r) => (r.ok, r.status, r.body, r.etag),
+                            Err(e) => (false, 0, e, None),
                         };
                         if let Ok(sender) = tx2.lock() {
-                            let _ = sender.send(AsyncResp { id, ok, status, body: resp_body });
+                            let _ = sender.send(AsyncResp { id, ok, status, body: resp_body, etag: et });
                         }
                     })
                     .ok();
@@ -964,6 +970,9 @@ pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
                             entry.set("ok", resp.ok)?;
                             entry.set("status", resp.status)?;
                             entry.set("body", resp.body)?;
+                            if let Some(etag) = resp.etag {
+                                entry.set("etag", etag)?;
+                            }
                             table.set(idx, entry)?;
                             idx += 1;
                         }

@@ -69,17 +69,54 @@ pub fn run_lua_app(app_dir: &Path, assets_dir: &Path) -> Result<(), String> {
     }
     let mut event_pump = sdl_context.event_pump()?;
 
-    let mut app = LuaAppRunner::new(app_dir, &manifest.entry, &manifest.id, &theme)?;
+    let mut app = LuaAppRunner::new(app_dir, &manifest.entry, &manifest.id, &theme, &manifest.permissions)?;
 
     // Call on_init
     app.call_init();
 
     let mut last_frame = Instant::now();
 
+    // Hot-reload support: when CARTRIDGE_HOT_RELOAD=1, watch the cartridge
+    // directory for .lua file changes and recreate the Lua VM on edits.
+    // Useful for cartridge development; ignored on the device by default.
+    let hot_reload = std::env::var("CARTRIDGE_HOT_RELOAD").as_deref() == Ok("1");
+    let mut last_lua_mtime = if hot_reload {
+        latest_lua_mtime(app_dir)
+    } else {
+        0
+    };
+    let mut last_reload_check = Instant::now();
+
     'running: loop {
         let now = Instant::now();
         let dt = now.duration_since(last_frame).as_secs_f32();
         last_frame = now;
+
+        // Hot reload: every 1s, check for .lua file changes and recreate the VM.
+        if hot_reload && last_reload_check.elapsed().as_secs_f32() >= 1.0 {
+            last_reload_check = Instant::now();
+            let cur = latest_lua_mtime(app_dir);
+            if cur > last_lua_mtime && last_lua_mtime > 0 {
+                log::info!("Hot reload: detected change, restarting cartridge VM");
+                app.call_destroy();
+                drop(app);
+                match LuaAppRunner::new(app_dir, &manifest.entry, &manifest.id, &theme, &manifest.permissions) {
+                    Ok(mut new_app) => {
+                        new_app.call_init();
+                        app = new_app;
+                    }
+                    Err(e) => {
+                        log::error!("Hot reload failed: {e}");
+                        // Caller will see a Lua error screen on next render via
+                        // the runner's error path -- but we couldn't reach a
+                        // runner. Re-create with the old code if possible.
+                        app = LuaAppRunner::new(app_dir, &manifest.entry, &manifest.id, &theme, &manifest.permissions)?;
+                        app.call_init();
+                    }
+                }
+            }
+            last_lua_mtime = cur;
+        }
 
         // Collect events
         let events: Vec<sdl2::event::Event> = event_pump.poll_iter().collect();
@@ -189,4 +226,39 @@ pub fn run_lua_app(app_dir: &Path, assets_dir: &Path) -> Result<(), String> {
     app.call_destroy();
 
     Ok(())
+}
+
+/// Walk the cartridge directory and return the latest mtime (in seconds
+/// since UNIX epoch) of any .lua file. Used for hot reload detection.
+/// Returns 0 if the directory can't be read.
+fn latest_lua_mtime(app_dir: &Path) -> u64 {
+    let mut latest = 0u64;
+    walk_lua(app_dir, &mut |p| {
+        if let Ok(meta) = std::fs::metadata(p) {
+            if let Ok(modified) = meta.modified() {
+                if let Ok(d) = modified.duration_since(std::time::UNIX_EPOCH) {
+                    let secs = d.as_secs();
+                    if secs > latest {
+                        latest = secs;
+                    }
+                }
+            }
+        }
+    });
+    latest
+}
+
+fn walk_lua(dir: &Path, visit: &mut dyn FnMut(&Path)) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            walk_lua(&path, visit);
+        } else if path.extension().map(|e| e == "lua").unwrap_or(false) {
+            visit(&path);
+        }
+    }
 }

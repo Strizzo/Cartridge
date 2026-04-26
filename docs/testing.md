@@ -75,6 +75,19 @@ handler is incompatible with SDL2 on macOS).
 | `CARTRIDGE_BENCH_P95_MS=50`  | Override the regression threshold for perf bench       |
 | `UPDATE_SNAPSHOTS=1`         | Update baselines instead of failing on diffs           |
 | `RUST_LOG=cartridge=info`    | Verbose logging for the launcher                       |
+| `CARTRIDGE_HOT_RELOAD=1`     | Re-run a Lua cartridge when its `.lua` files change    |
+
+## Iterating on a Lua Cartridge
+
+```bash
+# Run a cartridge with hot reload — edits to .lua files trigger a
+# fresh VM with on_init() called again. Useful for tight UI iteration.
+CARTRIDGE_HOT_RELOAD=1 cargo run -- run --path lua_cartridges/hello_world
+```
+
+The watcher polls every second for file mtime changes anywhere in the
+cartridge directory. Lua state is discarded across reloads (as if the
+cartridge had been quit and re-launched).
 
 ## Iterating on UI Changes
 
