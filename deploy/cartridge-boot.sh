@@ -8,40 +8,27 @@
 #   0 = Cartridge OS
 #   1 = EmulationStation
 
-set -euo pipefail
+set -uo pipefail
 
 # Resolve paths relative to this script's location
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CARTRIDGE_DIR="${SCRIPT_DIR}"
 
-# Binaries may be in the same directory or in a known system location
-find_binary() {
-    local name="$1"
-    # Same directory as this script
-    if [[ -x "${CARTRIDGE_DIR}/${name}" ]]; then
-        echo "${CARTRIDGE_DIR}/${name}"
-        return
-    fi
-    # System path
-    if command -v "$name" &>/dev/null; then
-        command -v "$name"
-        return
-    fi
-    # /usr/local/bin fallback
-    if [[ -x "/usr/local/bin/${name}" ]]; then
-        echo "/usr/local/bin/${name}"
-        return
-    fi
-    echo ""
-}
+# Fix execute permissions (exFAT/NTFS don't preserve Unix bits)
+chmod +x "${CARTRIDGE_DIR}/cartridge" 2>/dev/null || true
+chmod +x "${CARTRIDGE_DIR}/cartridge-boot" 2>/dev/null || true
 
-BOOT_BIN="$(find_binary cartridge-boot)"
-CARTRIDGE_BIN="$(find_binary cartridge)"
+BOOT_BIN="${CARTRIDGE_DIR}/cartridge-boot"
+CARTRIDGE_BIN="${CARTRIDGE_DIR}/cartridge"
 CHOICE_FILE="/tmp/.cartridge_boot_choice"
+
+# ArkOS EmulationStation launch script (verified from device)
+ES_SCRIPT="/usr/bin/emulationstation/emulationstation.sh"
 
 # SDL environment for direct framebuffer rendering (no X11/Wayland)
 export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-kmsdrm}"
 export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-alsa}"
+export HOME="${HOME:-/root}"
 
 # Point to assets directory
 if [[ -d "${CARTRIDGE_DIR}/assets" ]]; then
@@ -52,7 +39,7 @@ fi
 cd "${CARTRIDGE_DIR}"
 
 # Run the graphical boot selector (if available)
-if [[ -n "$BOOT_BIN" ]]; then
+if [[ -f "$BOOT_BIN" ]]; then
     "$BOOT_BIN"
     EXIT_CODE=$?
 else
@@ -74,24 +61,16 @@ fi
 case "${CHOICE}" in
     emulationstation)
         echo "[cartridge-boot] Launching EmulationStation"
-        if command -v emulationstation &>/dev/null; then
-            exec emulationstation
-        elif [ -x /usr/bin/emulationstation ]; then
-            exec /usr/bin/emulationstation
-        elif [ -x /opt/emulationstation/emulationstation ]; then
-            exec /opt/emulationstation/emulationstation
+        if [ -f "${ES_SCRIPT}" ]; then
+            exec bash "${ES_SCRIPT}"
         else
-            echo "[cartridge-boot] EmulationStation not found, falling back to Cartridge"
-            if [[ -n "$CARTRIDGE_BIN" ]]; then
-                cd "${CARTRIDGE_DIR}"
-                exec "$CARTRIDGE_BIN"
-            fi
+            echo "[cartridge-boot] ES script not found at ${ES_SCRIPT}, falling back to Cartridge"
+            exec "${CARTRIDGE_BIN}"
         fi
         ;;
     *)
         echo "[cartridge-boot] Launching Cartridge OS"
-        if [[ -n "$CARTRIDGE_BIN" ]]; then
-            cd "${CARTRIDGE_DIR}"
+        if [[ -f "$CARTRIDGE_BIN" ]]; then
             exec "$CARTRIDGE_BIN"
         else
             echo "[cartridge-boot] Cartridge binary not found!"

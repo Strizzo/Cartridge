@@ -438,16 +438,136 @@ install_to_device() {
     # Install boot logo to BOOT partition if found
     install_boot_logo
 
-    # Done
+    ok "Files installed."
+}
+
+# ── Setup Boot Service (writes to ext4 rootfs via debugfs) ──────────────────
+
+find_rootfs_partition() {
+    # Find the ext4 (Linux) partition on the same physical disk as EASYROMS.
+    local system
+    system="$(uname -s)"
+
+    case "$system" in
+        Darwin)
+            # Get the disk identifier for EASYROMS (e.g., disk5s3 → disk5)
+            local easyroms_disk
+            easyroms_disk=$(diskutil info "$DEVICE_PATH" 2>/dev/null | grep "Part of Whole:" | awk '{print $NF}')
+            if [[ -z "$easyroms_disk" ]]; then
+                return
+            fi
+
+            # Find the Linux partition on the same disk
+            local linux_part
+            linux_part=$(diskutil list "/dev/$easyroms_disk" 2>/dev/null | grep "Linux" | awk '{print $NF}')
+            if [[ -n "$linux_part" ]]; then
+                echo "/dev/$linux_part"
+            fi
+            ;;
+        Linux)
+            warn "Boot service setup via debugfs is only supported on macOS for now."
+            warn "Run 'Setup Cartridge Boot' from the device's Tools menu instead."
+            ;;
+    esac
+}
+
+setup_boot_service() {
+    local rootfs_dev
+    rootfs_dev="$(find_rootfs_partition)"
+
+    if [[ -z "$rootfs_dev" ]]; then
+        warn "Could not find rootfs partition. Boot service not configured."
+        warn "Run 'Setup Cartridge Boot' from the device's Tools menu after booting."
+        return
+    fi
+
+    # Check for debugfs
+    local debugfs_bin=""
+    if command -v debugfs &>/dev/null; then
+        debugfs_bin="debugfs"
+    elif [[ -x "/opt/homebrew/opt/e2fsprogs/sbin/debugfs" ]]; then
+        debugfs_bin="/opt/homebrew/opt/e2fsprogs/sbin/debugfs"
+    else
+        warn "debugfs not found. Install with: brew install e2fsprogs"
+        warn "Without it, run 'Setup Cartridge Boot' from the device's Tools menu."
+        return
+    fi
+
+    info "Found rootfs partition at $rootfs_dev"
+    info "Setting up boot service (requires sudo for raw disk access)..."
+
+    # Verify this is actually an ArkOS rootfs by checking for emulationstation.service
+    local verify
+    verify=$(sudo "$debugfs_bin" -R 'cat /etc/systemd/system/emulationstation.service' "$rootfs_dev" 2>/dev/null || true)
+    if ! echo "$verify" | grep -q "emulationstation"; then
+        warn "Rootfs does not look like ArkOS (no emulationstation.service found)."
+        warn "Skipping boot service setup."
+        return
+    fi
+    ok "Verified ArkOS rootfs"
+
+    # Check if already set up
+    local existing
+    existing=$(sudo "$debugfs_bin" -R 'stat /etc/systemd/system/cartridge-boot.service' "$rootfs_dev" 2>&1 || true)
+    if echo "$existing" | grep -q "Type: regular"; then
+        info "cartridge-boot.service already exists on rootfs. Updating..."
+        sudo "$debugfs_bin" -w -R "rm /etc/systemd/system/cartridge-boot.service" "$rootfs_dev" 2>/dev/null
+    fi
+
+    # Step 1: Write service file to rootfs
+    local service_file="${SCRIPT_DIR}/deploy/cartridge-boot.service"
+    info "Writing cartridge-boot.service to rootfs..."
+    sudo "$debugfs_bin" -w -R "write ${service_file} /etc/systemd/system/cartridge-boot.service" "$rootfs_dev"
+    ok "Service file written"
+
+    # Step 2: Create enable symlink in multi-user.target.wants
+    local symlink_check
+    symlink_check=$(sudo "$debugfs_bin" -R 'stat /etc/systemd/system/multi-user.target.wants/cartridge-boot.service' "$rootfs_dev" 2>&1 || true)
+    if echo "$symlink_check" | grep -q "Type:"; then
+        info "Enable symlink already exists, removing old one..."
+        sudo "$debugfs_bin" -w -R "rm /etc/systemd/system/multi-user.target.wants/cartridge-boot.service" "$rootfs_dev" 2>/dev/null
+    fi
+    info "Creating enable symlink..."
+    sudo "$debugfs_bin" -w -R 'symlink /etc/systemd/system/multi-user.target.wants/cartridge-boot.service /etc/systemd/system/cartridge-boot.service' "$rootfs_dev"
+    ok "Boot service enabled"
+
+    # Step 3: Disable EmulationStation (remove its enable symlink)
+    local es_symlink
+    es_symlink=$(sudo "$debugfs_bin" -R 'stat /etc/systemd/system/multi-user.target.wants/emulationstation.service' "$rootfs_dev" 2>&1 || true)
+    if echo "$es_symlink" | grep -q "Type: symlink"; then
+        info "Disabling EmulationStation auto-start..."
+        sudo "$debugfs_bin" -w -R "rm /etc/systemd/system/multi-user.target.wants/emulationstation.service" "$rootfs_dev"
+        ok "EmulationStation disabled"
+    else
+        info "EmulationStation was already disabled"
+    fi
+
+    # Verify
     echo ""
-    echo -e "${BOLD}Done!${NC}"
-    echo ""
-    echo "  1. Eject the SD card and put it back in your device"
-    echo "  2. Boot the device into EmulationStation"
-    echo "  3. Go to Tools > 'Cartridge' to launch Cartridge"
-    echo "  4. Go to Tools > 'Setup Cartridge Boot' to enable the boot selector"
-    echo "     (lets you choose Cartridge or EmulationStation at startup)"
-    echo ""
+    info "Verifying boot service setup..."
+    local verify_service
+    verify_service=$(sudo "$debugfs_bin" -R 'stat /etc/systemd/system/cartridge-boot.service' "$rootfs_dev" 2>&1 || true)
+    if echo "$verify_service" | grep -q "Type: regular"; then
+        ok "cartridge-boot.service exists on rootfs"
+    else
+        warn "VERIFICATION FAILED: cartridge-boot.service not found!"
+    fi
+
+    local verify_enabled
+    verify_enabled=$(sudo "$debugfs_bin" -R 'stat /etc/systemd/system/multi-user.target.wants/cartridge-boot.service' "$rootfs_dev" 2>&1 || true)
+    if echo "$verify_enabled" | grep -q "Type: symlink"; then
+        ok "cartridge-boot.service is enabled (symlink exists)"
+    else
+        warn "VERIFICATION FAILED: enable symlink not found!"
+    fi
+
+    local verify_es
+    verify_es=$(sudo "$debugfs_bin" -R 'stat /etc/systemd/system/multi-user.target.wants/emulationstation.service' "$rootfs_dev" 2>&1 || true)
+    if echo "$verify_es" | grep -q "Type: symlink"; then
+        warn "EmulationStation is still enabled (symlink still exists)"
+    else
+        ok "EmulationStation is disabled"
+    fi
 }
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -462,6 +582,27 @@ main() {
     generate_overlays
     detect_device
     install_to_device
+
+    # Unmount all partitions so debugfs can access the raw rootfs
+    local disk_id
+    disk_id=$(diskutil info "$DEVICE_PATH" 2>/dev/null | grep "Part of Whole:" | awk '{print $NF}')
+    if [[ -n "$disk_id" ]]; then
+        info "Unmounting SD card partitions for rootfs access..."
+        diskutil unmountDisk "/dev/$disk_id" 2>/dev/null || true
+    fi
+
+    setup_boot_service
+
+    # Done
+    echo ""
+    echo -e "${BOLD}Done!${NC}"
+    echo ""
+    echo "  1. Eject the SD card and put it back in your device"
+    echo "  2. Power on — the boot selector should appear"
+    echo "  3. Choose Cartridge or EmulationStation"
+    echo ""
+    echo "  To undo: run 'Undo Cartridge Boot' from the ES Tools menu"
+    echo ""
 }
 
 main "$@"

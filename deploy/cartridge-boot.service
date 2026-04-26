@@ -1,14 +1,20 @@
 [Unit]
-Description=Cartridge Boot Selector
-After=multi-user.target
-DefaultDependencies=no
+Description=CartridgeOS Boot Selector
+After=local-fs.target firstboot.service play-video.service
+Wants=local-fs.target play-video.service
+Conflicts=emulationstation.service
 
 [Service]
 Type=simple
-# This path is set by the installer -- adjust if installed elsewhere
 ExecStart=/roms/Cartridge/cartridge-boot.sh
+WorkingDirectory=/roms/Cartridge
 StandardInput=tty
+StandardOutput=tty
+StandardError=journal
 TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
 Environment=HOME=/root
 Environment=SDL_VIDEODRIVER=kmsdrm
 Environment=SDL_AUDIODRIVER=alsa

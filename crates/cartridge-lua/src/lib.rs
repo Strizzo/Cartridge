@@ -49,10 +49,10 @@ pub fn run_lua_app(app_dir: &Path, assets_dir: &Path) -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
+    // No present_vsync(): unreliable on RK3326; sleep cap below provides timing.
     let mut canvas = window
         .into_canvas()
         .accelerated()
-        .present_vsync()
         .build()
         .map_err(|e| e.to_string())?;
 

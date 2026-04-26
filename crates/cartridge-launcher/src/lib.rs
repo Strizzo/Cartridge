@@ -40,10 +40,12 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
         .build()
         .map_err(|e| e.to_string())?;
 
+    // Note: present_vsync() is unreliable on RK3326's fbdev/DRM path and
+    // would compound with the sleep-based frame cap below. Rely on the
+    // sleep cap alone for predictable timing.
     let mut canvas = window
         .into_canvas()
         .accelerated()
-        .present_vsync()
         .build()
         .map_err(|e| e.to_string())?;
 
