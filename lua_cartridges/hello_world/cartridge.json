@@ -1,0 +1,11 @@
+{
+  "id": "dev.cartridge.hello-world",
+  "name": "Hello World",
+  "version": "0.1.0",
+  "author": "CartridgeOS Team",
+  "description": "A minimal cartridge demonstrating the lifecycle, drawing, input, and audio.",
+  "category": "tools",
+  "tags": ["demo", "tutorial"],
+  "permissions": ["audio"],
+  "entry": "main.lua"
+}

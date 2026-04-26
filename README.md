@@ -168,12 +168,33 @@ The manifest describes your app:
 }
 ```
 
-Available permissions: `network`, `storage`, `ssh`.
+Available permissions: `network`, `storage`, `audio`, `system`, `input`, `ssh`.
+
+### Lua API reference
+
+Full API docs live in **[`docs/lua-api.md`](docs/lua-api.md)** — drawing
+primitives, lifecycle callbacks, input events, networking, storage,
+audio, system info, on-screen keyboard, and SSH tunneling.
+
+For a runnable starter, see **`lua_cartridges/hello_world/`** — a 90-line
+example covering input, drawing, and audio.
 
 ### Testing locally
 
 ```bash
 cargo run -- run --path /path/to/my-cartridge
+```
+
+### Performance & visual regression tools
+
+CartridgeOS ships a headless test harness for iterating without a device
+(see [`docs/testing.md`](docs/testing.md)):
+
+```bash
+cargo run --bin perf-bench --release    # frame-time stats with thresholds
+cargo run --bin snapshot                # PNG captures of UI screens
+cargo test --test snapshot_test         # visual regression test
+CARTRIDGE_FPS=1 ./dev-run.sh            # on-screen FPS overlay
 ```
 
 ### Publishing to the registry
