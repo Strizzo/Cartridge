@@ -12,3 +12,4 @@ serde_json.workspace = true
 serde.workspace = true
 log.workspace = true
 env_logger.workspace = true
+rodio.workspace = true

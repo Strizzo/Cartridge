@@ -654,13 +654,19 @@ impl AsyncSystemInfo {
 
     /// Drain pending snapshots and update `current` with the latest.
     /// Cheap: just a non-blocking try_recv loop. Call once per frame.
-    pub fn refresh(&mut self) {
+    /// Returns true if a new snapshot was received (caller can mark UI dirty).
+    pub fn refresh(&mut self) -> bool {
+        let mut updated = false;
         loop {
             match self.receiver.try_recv() {
-                Ok(snap) => self.current = snap,
+                Ok(snap) => {
+                    self.current = snap;
+                    updated = true;
+                }
                 Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
             }
         }
+        updated
     }
 
     pub fn current(&self) -> &SystemInfo {

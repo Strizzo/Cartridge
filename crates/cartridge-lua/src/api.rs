@@ -1080,3 +1080,278 @@ pub fn register_ssh_api(lua: &Lua) -> LuaResult<()> {
     lua.globals().set("ssh", ssh_table)?;
     Ok(())
 }
+
+/// Register the `system` global table for cartridges with the "system" permission.
+///
+/// Exposes a snapshot of system info that updates from a background poller.
+/// Methods:
+///   system.cpu_percent()    -> number   (0..100)
+///   system.mem_used_mb()    -> number   used physical memory in MB
+///   system.mem_total_mb()   -> number   total physical memory in MB
+///   system.mem_percent()    -> number   (0..100)
+///   system.disk_used_gb()   -> number
+///   system.disk_total_gb()  -> number
+///   system.battery_percent() -> number  (-1 if unknown)
+///   system.battery_charging() -> bool
+///   system.uptime_secs()    -> number
+///   system.hostname()       -> string
+///   system.wifi_ssid()      -> string|nil
+///   system.process_count()  -> number
+///   system.cpu_history()    -> array of numbers (last ~30 samples)
+///   system.mem_history()    -> array of numbers
+pub fn register_system_api(lua: &Lua) -> LuaResult<()> {
+    use cartridge_core::sysinfo::AsyncSystemInfo;
+    use std::sync::Mutex;
+    use std::time::Duration;
+
+    // One shared sysinfo poller per Lua VM. The 2s interval matches the launcher.
+    let sysinfo: Rc<Mutex<AsyncSystemInfo>> = Rc::new(Mutex::new(AsyncSystemInfo::new(Duration::from_secs(2))));
+
+    let system = lua.create_table()?;
+
+    macro_rules! getter {
+        ($name:expr, $sysinfo:expr, $body:expr) => {{
+            let s = $sysinfo.clone();
+            system.set(
+                $name,
+                lua.create_function(move |_, ()| {
+                    let mut info = s.lock().map_err(|e| LuaError::RuntimeError(format!("sysinfo lock: {e}")))?;
+                    info.refresh();
+                    Ok($body(&*info))
+                })?,
+            )?;
+        }};
+    }
+
+    getter!("cpu_percent", sysinfo, |i: &AsyncSystemInfo| i.cpu_percent as f64);
+    getter!("mem_used_mb", sysinfo, |i: &AsyncSystemInfo| i.mem_used_mb as f64);
+    getter!("mem_total_mb", sysinfo, |i: &AsyncSystemInfo| i.mem_total_mb as f64);
+    getter!("mem_percent", sysinfo, |i: &AsyncSystemInfo| i.mem_percent as f64);
+    getter!("disk_used_gb", sysinfo, |i: &AsyncSystemInfo| i.disk_used_gb as f64);
+    getter!("disk_total_gb", sysinfo, |i: &AsyncSystemInfo| i.disk_total_gb as f64);
+    getter!("battery_percent", sysinfo, |i: &AsyncSystemInfo| i.battery_percent as f64);
+    getter!("battery_charging", sysinfo, |i: &AsyncSystemInfo| i.battery_charging);
+    getter!("uptime_secs", sysinfo, |i: &AsyncSystemInfo| i.uptime_secs as f64);
+    getter!("hostname", sysinfo, |i: &AsyncSystemInfo| i.hostname.clone());
+    getter!("process_count", sysinfo, |i: &AsyncSystemInfo| i.process_count as f64);
+    getter!("net_rx_rate", sysinfo, |i: &AsyncSystemInfo| i.net_rx_rate as f64);
+    getter!("net_tx_rate", sysinfo, |i: &AsyncSystemInfo| i.net_tx_rate as f64);
+
+    {
+        let s = sysinfo.clone();
+        system.set(
+            "wifi_ssid",
+            lua.create_function(move |_, ()| {
+                let mut info = s.lock().map_err(|e| LuaError::RuntimeError(format!("sysinfo lock: {e}")))?;
+                info.refresh();
+                Ok(info.wifi_ssid.clone())
+            })?,
+        )?;
+    }
+
+    // History accessors return arrays.
+    {
+        let s = sysinfo.clone();
+        system.set(
+            "cpu_history",
+            lua.create_function(move |lua, ()| {
+                let mut info = s.lock().map_err(|e| LuaError::RuntimeError(format!("sysinfo lock: {e}")))?;
+                info.refresh();
+                let t = lua.create_table()?;
+                for (i, v) in info.cpu_history.iter().enumerate() {
+                    t.set(i + 1, *v as f64)?;
+                }
+                Ok(t)
+            })?,
+        )?;
+    }
+    {
+        let s = sysinfo.clone();
+        system.set(
+            "mem_history",
+            lua.create_function(move |lua, ()| {
+                let mut info = s.lock().map_err(|e| LuaError::RuntimeError(format!("sysinfo lock: {e}")))?;
+                info.refresh();
+                let t = lua.create_table()?;
+                for (i, v) in info.mem_history.iter().enumerate() {
+                    t.set(i + 1, *v as f64)?;
+                }
+                Ok(t)
+            })?,
+        )?;
+    }
+
+    lua.globals().set("system", system)?;
+    Ok(())
+}
+
+/// Register the `audio` global table for cartridges with the "audio" permission.
+///
+/// Methods:
+///   audio.play(path)            -- play a WAV/OGG file from the app dir
+///   audio.beep(freq_hz, ms)     -- play a sine-wave tone
+///   audio.stop()                -- stop all playing sounds
+///   audio.set_volume(0..1)      -- set the master volume
+pub fn register_audio_api(lua: &Lua, app_dir: &std::path::Path) -> LuaResult<()> {
+    use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
+    use std::cell::RefCell;
+    use std::sync::Mutex;
+
+    // Output stream and sink. We hold them in Rc<Mutex<...>> so the Lua API
+    // can access them across multiple closure captures. Initialization is
+    // lazy on first call -- audio devices fail loudly on macOS in some
+    // environments (e.g. headless tests), and we shouldn't crash the app.
+    struct AudioState {
+        _stream: Option<OutputStream>,
+        handle: Option<OutputStreamHandle>,
+        sink: Option<Sink>,
+        volume: f32,
+    }
+    impl AudioState {
+        fn new() -> Self {
+            Self { _stream: None, handle: None, sink: None, volume: 1.0 }
+        }
+        fn ensure_init(&mut self) -> bool {
+            if self.handle.is_some() {
+                return true;
+            }
+            match OutputStream::try_default() {
+                Ok((stream, handle)) => {
+                    let sink = Sink::try_new(&handle).ok();
+                    self._stream = Some(stream);
+                    self.handle = Some(handle);
+                    self.sink = sink;
+                    true
+                }
+                Err(e) => {
+                    log::warn!("audio init failed: {e}");
+                    false
+                }
+            }
+        }
+    }
+
+    // Wrap in Rc<Mutex<_>> for shared interior mutability across Lua closures.
+    let state: Rc<Mutex<AudioState>> = Rc::new(Mutex::new(AudioState::new()));
+    let app_dir = app_dir.to_path_buf();
+    let path_cache: Rc<RefCell<std::collections::HashMap<String, Option<String>>>> =
+        Rc::new(RefCell::new(std::collections::HashMap::new()));
+
+    let audio = lua.create_table()?;
+
+    // audio.play(path) -- queue a sound for playback
+    {
+        let s = state.clone();
+        let app_dir = app_dir.clone();
+        let cache = path_cache.clone();
+        audio.set(
+            "play",
+            lua.create_function(move |_, path: String| {
+                // Sandboxed path resolution (same pattern as draw_image).
+                let resolved = {
+                    let mut cache = cache.borrow_mut();
+                    if let Some(v) = cache.get(&path) {
+                        v.clone()
+                    } else {
+                        let canonical_app = app_dir.canonicalize().unwrap_or_else(|_| app_dir.clone());
+                        let full = app_dir.join(&path);
+                        let r = match full.canonicalize() {
+                            Ok(p) if p.starts_with(&canonical_app) => Some(p.to_string_lossy().to_string()),
+                            _ => None,
+                        };
+                        cache.insert(path.clone(), r.clone());
+                        r
+                    }
+                };
+                let path_str = match resolved {
+                    Some(p) => p,
+                    None => return Err(LuaError::RuntimeError(format!("Audio file not found: '{path}'"))),
+                };
+                let mut st = s.lock().map_err(|e| LuaError::RuntimeError(format!("audio lock: {e}")))?;
+                if !st.ensure_init() {
+                    return Ok(());
+                }
+                let file = match std::fs::File::open(&path_str) {
+                    Ok(f) => f,
+                    Err(e) => return Err(LuaError::RuntimeError(format!("open audio: {e}"))),
+                };
+                let reader = std::io::BufReader::new(file);
+                match rodio::Decoder::new(reader) {
+                    Ok(source) => {
+                        if let Some(sink) = &st.sink {
+                            sink.append(source);
+                        } else if let Some(handle) = &st.handle {
+                            let _ = handle.play_raw(source.convert_samples());
+                        }
+                    }
+                    Err(e) => {
+                        return Err(LuaError::RuntimeError(format!("decode audio: {e}")));
+                    }
+                }
+                Ok(())
+            })?,
+        )?;
+    }
+
+    // audio.beep(freq_hz, ms) -- play a sine tone for ms milliseconds
+    {
+        let s = state.clone();
+        audio.set(
+            "beep",
+            lua.create_function(move |_, (freq, ms): (f32, u32)| {
+                let mut st = s.lock().map_err(|e| LuaError::RuntimeError(format!("audio lock: {e}")))?;
+                if !st.ensure_init() {
+                    return Ok(());
+                }
+                let source = rodio::source::SineWave::new(freq)
+                    .take_duration(std::time::Duration::from_millis(ms as u64))
+                    .amplify(0.20);
+                if let Some(sink) = &st.sink {
+                    sink.append(source);
+                } else if let Some(handle) = &st.handle {
+                    let _ = handle.play_raw(source.convert_samples());
+                }
+                Ok(())
+            })?,
+        )?;
+    }
+
+    // audio.stop() -- clear any queued/playing sounds
+    {
+        let s = state.clone();
+        audio.set(
+            "stop",
+            lua.create_function(move |_, ()| {
+                let mut st = s.lock().map_err(|e| LuaError::RuntimeError(format!("audio lock: {e}")))?;
+                if let Some(sink) = &st.sink {
+                    sink.stop();
+                    // Recreate sink so future plays work.
+                    if let Some(handle) = &st.handle {
+                        st.sink = Sink::try_new(handle).ok();
+                    }
+                }
+                Ok(())
+            })?,
+        )?;
+    }
+
+    // audio.set_volume(0..1)
+    {
+        let s = state.clone();
+        audio.set(
+            "set_volume",
+            lua.create_function(move |_, vol: f32| {
+                let mut st = s.lock().map_err(|e| LuaError::RuntimeError(format!("audio lock: {e}")))?;
+                let v = vol.clamp(0.0, 1.0);
+                st.volume = v;
+                if let Some(sink) = &st.sink {
+                    sink.set_volume(v);
+                }
+                Ok(())
+            })?,
+        )?;
+    }
+
+    lua.globals().set("audio", audio)?;
+    Ok(())
+}

@@ -7,8 +7,9 @@ use cartridge_core::theme::Theme;
 use mlua::prelude::*;
 
 use crate::api::{
-    new_screen_handle, register_http_api, register_json_api, register_screen_api,
-    register_ssh_api, register_storage_api, register_theme_api, SharedScreenHandle,
+    new_screen_handle, register_audio_api, register_http_api, register_json_api,
+    register_screen_api, register_ssh_api, register_storage_api, register_system_api,
+    register_theme_api, SharedScreenHandle,
 };
 
 /// Runs a Lua cartridge app within a Lua VM.
@@ -51,6 +52,10 @@ impl LuaAppRunner {
             .map_err(|e| format!("Failed to register JSON API: {e}"))?;
         register_ssh_api(&lua)
             .map_err(|e| format!("Failed to register SSH API: {e}"))?;
+        register_system_api(&lua)
+            .map_err(|e| format!("Failed to register system API: {e}"))?;
+        register_audio_api(&lua, app_dir)
+            .map_err(|e| format!("Failed to register audio API: {e}"))?;
 
         // Register screen dimension constants
         lua.globals()

@@ -15,6 +15,7 @@ serde_json = "1"
 log = "0.4"
 env_logger = "0.11"
 image = { version = "0.25", default-features = false, features = ["png"] }
+rodio = { version = "0.20", default-features = false, features = ["wav", "vorbis"] }
 
 [package]
 name = "cartridge"

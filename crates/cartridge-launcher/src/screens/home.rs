@@ -185,6 +185,27 @@ impl LauncherScreen for HomeScreen {
             true,
             None,
         );
+        // Clock — centered in header
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let local_offset_secs = local_tz_offset_secs();
+        let local = now as i64 + local_offset_secs;
+        let secs_today = local.rem_euclid(86400);
+        let hh = secs_today / 3600;
+        let mm = (secs_today % 3600) / 60;
+        let clock_str = format!("{hh:02}:{mm:02}");
+        let cw = screen.get_text_width(&clock_str, 18, true);
+        screen.draw_text(
+            &clock_str,
+            (SCREEN_WIDTH as i32 - cw as i32) / 2,
+            8,
+            Some(theme.text),
+            18,
+            true,
+            None,
+        );
         // Status indicators on right side of header
         let mut hx = SCREEN_WIDTH as i32 - 12;
 
@@ -939,4 +960,28 @@ fn format_elapsed(timestamp_secs: u64) -> String {
     } else {
         format!("{}d", diff / 86400)
     }
+}
+
+/// Local timezone offset in seconds, computed once at first call.
+/// Reads `date +%z` -> "+HHMM" or "-HHMM". Falls back to UTC on failure.
+fn local_tz_offset_secs() -> i64 {
+    use std::sync::OnceLock;
+    static OFFSET: OnceLock<i64> = OnceLock::new();
+    *OFFSET.get_or_init(|| {
+        let output = std::process::Command::new("date").arg("+%z").output();
+        if let Ok(out) = output {
+            let s = String::from_utf8_lossy(&out.stdout);
+            let s = s.trim();
+            if s.len() >= 5 {
+                let sign: i64 = if s.as_bytes().first() == Some(&b'-') { -1 } else { 1 };
+                if let (Ok(h), Ok(m)) = (
+                    s[1..3].parse::<i64>(),
+                    s[3..5].parse::<i64>(),
+                ) {
+                    return sign * (h * 3600 + m * 60);
+                }
+            }
+        }
+        0
+    })
 }

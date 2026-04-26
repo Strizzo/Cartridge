@@ -143,6 +143,14 @@ local function advance_phase()
     state.remaining = state.durations[state.phase]
     state.running = false
     save_stats()
+
+    -- Audio alarm: 3 short beeps when a phase ends
+    if audio then
+        local freq = (state.phase == PHASE_WORK) and 880 or 660
+        audio.beep(freq, 200)
+        audio.beep(freq, 200)
+        audio.beep(freq, 400)
+    end
 end
 
 local function timer_toggle()

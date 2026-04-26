@@ -151,6 +151,15 @@ pub fn run_launcher_with_config(
     let bench_start = Instant::now();
     let result;
 
+    // Dirty rendering: skip render+present when nothing has changed.
+    // Always render the first few frames (warmup, asset loading).
+    let mut dirty = true;
+    let mut last_render = Instant::now();
+    // Force a re-render at least every N seconds even when idle (sysinfo
+    // history grows, clock ticks, etc.). 1 second is fine -- still saves
+    // 4 of every 5 idle frames at IDLE_FPS=5.
+    let force_render_every = std::time::Duration::from_secs(1);
+
     loop {
         let frame_start = Instant::now();
         let dt = frame_start.duration_since(last_frame).as_secs_f32();
@@ -158,7 +167,9 @@ pub fn run_launcher_with_config(
         atmosphere.update(dt);
 
         // Drain new sysinfo snapshots from the background poller (cheap).
-        launcher.refresh_sysinfo();
+        if launcher.refresh_sysinfo() {
+            dirty = true;
+        }
 
         // Collect SDL events
         let events: Vec<sdl2::event::Event> = event_pump.poll_iter().collect();
@@ -202,6 +213,9 @@ pub fn run_launcher_with_config(
         let had_input = input_events.iter().any(|e| {
             matches!(e.action, InputAction::Press | InputAction::Repeat)
         });
+        if had_input {
+            dirty = true;
+        }
         if launcher.handle_input(&input_events) {
             if let Some(app_id) = launcher.pending_launch() {
                 let app_dir = resolve_app_dir(app_id, assets_dir);
@@ -212,36 +226,46 @@ pub fn run_launcher_with_config(
             return Ok((result, build_stats(frame_count, &all_frame_ms, &text_cache, bench_start)));
         }
 
-        // Render
-        {
-            let mut screen = Screen {
-                canvas: &mut canvas,
-                theme: &theme,
-                fonts: &mut fonts,
-                images: &mut images,
-                text_cache: &mut text_cache,
-                texture_creator: &texture_creator,
-            };
-            launcher.render(&mut screen, &atmosphere);
+        // Force a render every N seconds even when idle (clock, sysinfo
+        // history, etc). Also force when this frame is being captured.
+        let should_capture = config.capture_frames.contains(&frame_count);
+        let force = last_render.elapsed() >= force_render_every || should_capture;
+        let render_this_frame = dirty || force;
 
-            if show_fps {
-                draw_fps_overlay(&mut screen, &frame_times);
-            }
-        }
+        if render_this_frame {
+            // Render
+            {
+                let mut screen = Screen {
+                    canvas: &mut canvas,
+                    theme: &theme,
+                    fonts: &mut fonts,
+                    images: &mut images,
+                    text_cache: &mut text_cache,
+                    texture_creator: &texture_creator,
+                };
+                launcher.render(&mut screen, &atmosphere);
 
-        // Capture frame BEFORE present so we get exactly what was drawn.
-        if config.capture_frames.contains(&frame_count) {
-            if let Some(ref dir) = config.capture_dir {
-                let path = dir.join(format!("frame_{frame_count:04}.png"));
-                if let Err(e) = capture_frame_to_png(&canvas, &path) {
-                    log::warn!("Failed to capture frame: {e}");
-                } else {
-                    log::info!("Captured frame {frame_count} to {}", path.display());
+                if show_fps {
+                    draw_fps_overlay(&mut screen, &frame_times);
                 }
             }
-        }
 
-        canvas.present();
+            // Capture frame BEFORE present so we get exactly what was drawn.
+            if should_capture {
+                if let Some(ref dir) = config.capture_dir {
+                    let path = dir.join(format!("frame_{frame_count:04}.png"));
+                    if let Err(e) = capture_frame_to_png(&canvas, &path) {
+                        log::warn!("Failed to capture frame: {e}");
+                    } else {
+                        log::info!("Captured frame {frame_count} to {}", path.display());
+                    }
+                }
+            }
+
+            canvas.present();
+            dirty = false;
+            last_render = Instant::now();
+        }
 
         // Frame rate cap.
         if had_input {

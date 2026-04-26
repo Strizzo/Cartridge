@@ -165,63 +165,94 @@ local function init_simulation()
     end
 end
 
+-- Use the real `system` API when available (CartridgeOS provides it),
+-- fall back to simulation otherwise (e.g. running under cartridge-runner).
+local USE_REAL_SYSINFO = (system ~= nil)
+
 local function update_simulation(dt)
     sim.sample_timer = sim.sample_timer + dt
     if sim.sample_timer < UPDATE_INTERVAL then return end
     sim.sample_timer = sim.sample_timer - UPDATE_INTERVAL
     sim.tick = sim.tick + 1
 
-    prng_next()
+    if USE_REAL_SYSINFO then
+        -- Pull real values from the system API. The launcher's background
+        -- poller updates these every ~2 seconds.
+        sim.cpu_current = system.cpu_percent()
+        push_history(sim.cpu_history, sim.cpu_current)
+        -- We don't have per-core breakdown from the API yet; jitter
+        -- around the overall CPU value for visual interest.
+        for c = 1, CPU_CORES do
+            local jitter = (math.random() - 0.5) * 10
+            sim.core_currents[c] = math.max(0, math.min(100, sim.cpu_current + jitter))
+            push_history(sim.core_histories[c], sim.core_currents[c])
+        end
 
-    -- Occasional "spike" events for realism
-    local spike = prng_float()
+        sim.mem_current = system.mem_percent()
+        sim.mem_total_mb = system.mem_total_mb()
+        push_history(sim.mem_history, sim.mem_current)
 
-    -- CPU overall
-    local cpu_vol = 4
-    if spike < 0.03 then cpu_vol = 25 end  -- occasional spike
-    sim.cpu_target = drift_target(sim.cpu_target, 5, 95, cpu_vol)
-    sim.cpu_current = smooth(sim.cpu_current, sim.cpu_target, SMOOTH_FACTOR)
-    push_history(sim.cpu_history, sim.cpu_current)
+        local disk_total = system.disk_total_gb()
+        local disk_used = system.disk_used_gb()
+        if disk_total > 0 then
+            sim.disk_current = (disk_used / disk_total) * 100
+        else
+            sim.disk_current = 0
+        end
+        sim.disk_total_gb = disk_total
+        push_history(sim.disk_history, sim.disk_current)
 
-    -- Per-core
-    for c = 1, CPU_CORES do
-        local core_vol = 6
-        if prng_float() < 0.05 then core_vol = 30 end
-        sim.core_targets[c] = drift_target(sim.core_targets[c], 2, 98, core_vol)
-        sim.core_currents[c] = smooth(sim.core_currents[c], sim.core_targets[c], SMOOTH_FACTOR * 1.2)
-        push_history(sim.core_histories[c], sim.core_currents[c])
-    end
-
-    -- Memory (slow, stable)
-    sim.mem_target = drift_target(sim.mem_target, 40, 85, 1.0)
-    sim.mem_current = smooth(sim.mem_current, sim.mem_target, SMOOTH_FACTOR * 0.5)
-    push_history(sim.mem_history, sim.mem_current)
-
-    -- Disk (very slow)
-    sim.disk_target = drift_target(sim.disk_target, 30, 80, 0.2)
-    sim.disk_current = smooth(sim.disk_current, sim.disk_target, SMOOTH_FACTOR * 0.3)
-    push_history(sim.disk_history, sim.disk_current)
-
-    -- Network (bursty with quiet periods)
-    local net_vol = 20
-    if prng_float() < 0.1 then
-        sim.net_target = drift_target(sim.net_target, 200, 800, 100) -- burst
-    elseif prng_float() < 0.15 then
-        sim.net_target = drift_target(sim.net_target, 0, 50, 30)     -- quiet
+        sim.net_rx_rate = system.net_rx_rate()
+        sim.net_tx_rate = system.net_tx_rate()
+        sim.net_current = sim.net_rx_rate + sim.net_tx_rate
+        push_history(sim.net_history, sim.net_current)
+        sim.net_rx_total_kb = sim.net_rx_total_kb + sim.net_rx_rate * UPDATE_INTERVAL
+        sim.net_tx_total_kb = sim.net_tx_total_kb + sim.net_tx_rate * UPDATE_INTERVAL
     else
-        sim.net_target = drift_target(sim.net_target, 10, 500, net_vol)
+        prng_next()
+        local spike = prng_float()
+
+        local cpu_vol = 4
+        if spike < 0.03 then cpu_vol = 25 end
+        sim.cpu_target = drift_target(sim.cpu_target, 5, 95, cpu_vol)
+        sim.cpu_current = smooth(sim.cpu_current, sim.cpu_target, SMOOTH_FACTOR)
+        push_history(sim.cpu_history, sim.cpu_current)
+
+        for c = 1, CPU_CORES do
+            local core_vol = 6
+            if prng_float() < 0.05 then core_vol = 30 end
+            sim.core_targets[c] = drift_target(sim.core_targets[c], 2, 98, core_vol)
+            sim.core_currents[c] = smooth(sim.core_currents[c], sim.core_targets[c], SMOOTH_FACTOR * 1.2)
+            push_history(sim.core_histories[c], sim.core_currents[c])
+        end
+
+        sim.mem_target = drift_target(sim.mem_target, 40, 85, 1.0)
+        sim.mem_current = smooth(sim.mem_current, sim.mem_target, SMOOTH_FACTOR * 0.5)
+        push_history(sim.mem_history, sim.mem_current)
+
+        sim.disk_target = drift_target(sim.disk_target, 30, 80, 0.2)
+        sim.disk_current = smooth(sim.disk_current, sim.disk_target, SMOOTH_FACTOR * 0.3)
+        push_history(sim.disk_history, sim.disk_current)
+
+        local net_vol = 20
+        if prng_float() < 0.1 then
+            sim.net_target = drift_target(sim.net_target, 200, 800, 100)
+        elseif prng_float() < 0.15 then
+            sim.net_target = drift_target(sim.net_target, 0, 50, 30)
+        else
+            sim.net_target = drift_target(sim.net_target, 10, 500, net_vol)
+        end
+        sim.net_current = smooth(sim.net_current, sim.net_target, SMOOTH_FACTOR)
+        sim.net_current = math.max(0, sim.net_current)
+        push_history(sim.net_history, sim.net_current)
+
+        sim.net_rx_rate = sim.net_current * 0.65
+        sim.net_tx_rate = sim.net_current * 0.35
+        sim.net_rx_total_kb = sim.net_rx_total_kb + sim.net_rx_rate * UPDATE_INTERVAL
+        sim.net_tx_total_kb = sim.net_tx_total_kb + sim.net_tx_rate * UPDATE_INTERVAL
     end
-    sim.net_current = smooth(sim.net_current, sim.net_target, SMOOTH_FACTOR)
-    sim.net_current = math.max(0, sim.net_current)
-    push_history(sim.net_history, sim.net_current)
 
-    -- Network totals accumulate
-    sim.net_rx_rate = sim.net_current * 0.65
-    sim.net_tx_rate = sim.net_current * 0.35
-    sim.net_rx_total_kb = sim.net_rx_total_kb + sim.net_rx_rate * UPDATE_INTERVAL
-    sim.net_tx_total_kb = sim.net_tx_total_kb + sim.net_tx_rate * UPDATE_INTERVAL
-
-    -- Lua VM memory (real measurement)
+    -- Lua VM memory (real measurement, both paths)
     sim.lua_mem_kb = collectgarbage("count")
 end
 

@@ -161,9 +161,10 @@ impl LauncherApp {
     }
 
     /// Drain pending sysinfo snapshots from the background poller.
-    /// Cheap; safe to call every frame.
-    pub fn refresh_sysinfo(&mut self) {
-        self.ctx.sysinfo.refresh();
+    /// Cheap; safe to call every frame. Returns true if data updated
+    /// (caller can use this to mark the UI dirty).
+    pub fn refresh_sysinfo(&mut self) -> bool {
+        self.ctx.sysinfo.refresh()
     }
 
     /// Returns the app_id that the user wants to launch, if any.
