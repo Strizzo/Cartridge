@@ -324,10 +324,16 @@ fn draw_system_panels(screen: &mut Screen, sysinfo: &SystemInfo) {
     let cpu_str = format!("{:.0}%", sysinfo.cpu_percent);
     let cw = screen.get_text_width(&cpu_str, 12, true);
     screen.draw_text(&cpu_str, x1 + pw1 as i32 - 6 - cw as i32, y + 4, Some(theme.accent), 12, true, None);
-    let spark_data: Vec<f32> = sysinfo.cpu_history.iter().copied().collect();
-    if spark_data.len() >= 2 {
+    // VecDeque slices may not be contiguous; copy iter into a small fixed buffer.
+    // Avoids the per-frame Vec allocation.
+    let mut spark_buf = [0f32; 30];
+    let spark_n = sysinfo.cpu_history.len().min(spark_buf.len());
+    for (i, v) in sysinfo.cpu_history.iter().take(spark_n).enumerate() {
+        spark_buf[i] = *v;
+    }
+    if spark_n >= 2 {
         screen.draw_sparkline(
-            &spark_data,
+            &spark_buf[..spark_n],
             Rect::new(x1 + 6, y + 22, pw1 - 12, panel_h as u32 - 28),
             Some(theme.accent),
             Some(Color::RGBA(60, 80, 120, 30)),
@@ -347,10 +353,14 @@ fn draw_system_panels(screen: &mut Screen, sysinfo: &SystemInfo) {
         Some(Color::RGBA(40, 40, 60, 180)),
         3,
     );
-    let mem_data: Vec<f32> = sysinfo.mem_history.iter().copied().collect();
-    if mem_data.len() >= 2 {
+    let mut mem_buf = [0f32; 30];
+    let mem_n = sysinfo.mem_history.len().min(mem_buf.len());
+    for (i, v) in sysinfo.mem_history.iter().take(mem_n).enumerate() {
+        mem_buf[i] = *v;
+    }
+    if mem_n >= 2 {
         screen.draw_sparkline(
-            &mem_data,
+            &mem_buf[..mem_n],
             Rect::new(x2 + 6, y + 36, pw2 - 12, panel_h as u32 - 42),
             Some(Color::RGBA(100, 180, 255, 40)),
             None,
@@ -366,10 +376,14 @@ fn draw_system_panels(screen: &mut Screen, sysinfo: &SystemInfo) {
     screen.draw_text(&up_str, x3 + pw3 as i32 - 6 - nw as i32, y + 4, Some(theme.text_success), 12, false, None);
     let dw = screen.get_text_width(&dn_str, 12, false);
     screen.draw_text(&dn_str, x3 + pw3 as i32 - 6 - nw as i32 - 8 - dw as i32, y + 4, Some(theme.text_warning), 12, false, None);
-    let net_data: Vec<f32> = sysinfo.net_history.iter().copied().collect();
-    if net_data.len() >= 2 {
+    let mut net_buf = [0f32; 30];
+    let net_n = sysinfo.net_history.len().min(net_buf.len());
+    for (i, v) in sysinfo.net_history.iter().take(net_n).enumerate() {
+        net_buf[i] = *v;
+    }
+    if net_n >= 2 {
         screen.draw_sparkline(
-            &net_data,
+            &net_buf[..net_n],
             Rect::new(x3 + 6, y + 22, pw3 - 12, panel_h as u32 - 28),
             Some(Color::RGBA(80, 210, 120, 120)),
             Some(Color::RGBA(60, 80, 120, 20)),

@@ -98,6 +98,13 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
 
         // Process input
         let input_events = input_manager.process_events(&events);
+        let had_input = input_events.iter().any(|e| {
+            matches!(
+                e.action,
+                cartridge_core::input::InputAction::Press
+                    | cartridge_core::input::InputAction::Repeat
+            )
+        });
         if launcher.handle_input(&input_events) {
             // Check if the launcher wants to launch an app
             if let Some(app_id) = launcher.pending_launch() {
@@ -144,10 +151,11 @@ pub fn run_launcher(assets_dir: &Path) -> Result<LauncherResult, String> {
 
         canvas.present();
 
-        // Frame rate cap
+        // Frame rate cap. If input happened, skip the sleep so the next
+        // frame renders immediately (cuts input-to-pixel latency).
         let frame_time = Instant::now().duration_since(frame_start);
         let target_time = std::time::Duration::from_secs_f64(1.0 / TARGET_FPS as f64);
-        if frame_time < target_time {
+        if !had_input && frame_time < target_time {
             std::thread::sleep(target_time - frame_time);
         }
 

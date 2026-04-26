@@ -514,33 +514,49 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
     {
         let h = handle.clone();
         let app_dir = app_dir.to_path_buf();
+        // Canonicalize app_dir once at registration. Per-frame draw_image
+        // calls then only need to verify the leaf path is inside it,
+        // and they cache canonical resolutions per-path.
+        let canonical_app = app_dir.canonicalize().unwrap_or_else(|_| app_dir.clone());
+        let path_cache: Rc<RefCell<std::collections::HashMap<String, Option<String>>>> =
+            Rc::new(RefCell::new(std::collections::HashMap::new()));
+
         screen_table.set(
             "draw_image",
             lua.create_function(
                 move |_, (path, x, y, opts): (String, f64, f64, Option<LuaTable>)| {
                     let x = num_i32(x);
                     let y = num_i32(y);
-                    // Resolve path relative to app_dir
-                    let full_path = app_dir.join(&path);
 
-                    // Security: ensure the resolved path is within the app directory
-                    let canonical_app = app_dir.canonicalize().map_err(|e| {
-                        LuaError::RuntimeError(format!(
-                            "Cannot resolve app directory: {e}"
-                        ))
-                    })?;
-                    let canonical_file = full_path.canonicalize().map_err(|_| {
-                        LuaError::RuntimeError(format!(
-                            "Image not found: '{path}'"
-                        ))
-                    })?;
-                    if !canonical_file.starts_with(&canonical_app) {
-                        return Err(LuaError::RuntimeError(format!(
-                            "Image path '{path}' is outside the app directory"
-                        )));
-                    }
-
-                    let path_str = canonical_file.to_string_lossy().to_string();
+                    // Per-path cache: canonicalize each unique path only once.
+                    let path_str = {
+                        let mut cache = path_cache.borrow_mut();
+                        if let Some(cached) = cache.get(&path) {
+                            match cached {
+                                Some(s) => s.clone(),
+                                None => return Err(LuaError::RuntimeError(format!("Image not found: '{path}'"))),
+                            }
+                        } else {
+                            let full_path = app_dir.join(&path);
+                            let resolved = match full_path.canonicalize() {
+                                Ok(p) if p.starts_with(&canonical_app) => {
+                                    Some(p.to_string_lossy().to_string())
+                                }
+                                Ok(_) => {
+                                    cache.insert(path.clone(), None);
+                                    return Err(LuaError::RuntimeError(format!(
+                                        "Image path '{path}' is outside the app directory"
+                                    )));
+                                }
+                                Err(_) => {
+                                    cache.insert(path.clone(), None);
+                                    return Err(LuaError::RuntimeError(format!("Image not found: '{path}'")));
+                                }
+                            };
+                            cache.insert(path.clone(), resolved.clone());
+                            resolved.unwrap()
+                        }
+                    };
 
                     let mut dst_size: Option<(u32, u32)> = None;
                     let mut src_rect: Option<sdl2::rect::Rect> = None;
