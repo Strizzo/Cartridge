@@ -305,7 +305,7 @@ impl LauncherScreen for HomeScreen {
             );
         } else {
             // ===== APP DOCK PANEL =====
-            draw_dock_panel(screen, &installed_apps, self.dock_index, self.zone);
+            draw_dock_panel(screen, ctx, &installed_apps, self.dock_index, self.zone);
 
             // ===== RECENT STRIP =====
             draw_recent_strip(screen, ctx, self.zone, self.recent_index);
@@ -420,6 +420,7 @@ fn draw_system_panels(screen: &mut Screen, sysinfo: &SystemInfo) {
 
 fn draw_dock_panel(
     screen: &mut Screen,
+    ctx: &ScreenContext,
     installed_apps: &[&crate::data::AppEntry],
     dock_index: i32,
     zone: HomeZone,
@@ -511,6 +512,18 @@ fn draw_dock_panel(
                 true,
                 None,
             );
+        }
+
+        // Update-available badge: small filled dot in the top-right
+        // corner of the icon. Visible from a glance without crowding.
+        let has_update = ctx.installer.as_ref().map_or(false, |inst| {
+            inst.installed_version(&app.id).as_deref() != Some(&app.version)
+        });
+        if has_update {
+            let cx = icon_x + icon_size as i32 - 6;
+            let cy = icon_y + 6;
+            screen.draw_circle(cx, cy, 5, theme.text_warning);
+            screen.draw_circle(cx, cy, 3, Color::RGB(20, 20, 30));
         }
 
         // App name label below icon

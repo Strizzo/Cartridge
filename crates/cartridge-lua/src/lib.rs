@@ -58,11 +58,14 @@ pub fn run_lua_app(app_dir: &Path, assets_dir: &Path) -> Result<(), String> {
 
     let texture_creator = canvas.texture_creator();
     let mut fonts = FontCache::new(assets_dir)?;
-    fonts.prewarm();
     let mut images = ImageCache::new(&texture_creator)?;
     let mut text_cache = TextCache::new(&texture_creator);
 
-    let theme = Theme::default();
+    // Inherit the launcher's selected theme. Cartridges share the user's
+    // palette and font family for a consistent look across the OS.
+    let theme = Theme::user_selected();
+    fonts.set_family(theme.font_regular, theme.font_bold);
+    fonts.prewarm();
     let mut input_manager = InputManager::new();
     if !_controllers.is_empty() {
         input_manager.set_ignore_joystick(true);

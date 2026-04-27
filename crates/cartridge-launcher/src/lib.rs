@@ -2,6 +2,7 @@ pub mod app;
 pub mod data;
 pub mod screens;
 pub mod ui_constants;
+pub mod ui_sounds;
 
 use cartridge_core::atmosphere::Atmosphere;
 use cartridge_core::font::FontCache;
@@ -14,11 +15,16 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use app::LauncherApp;
+use ui_sounds::UiSounds;
 
 /// Active frame rate (when input has happened recently).
 const ACTIVE_FPS: u32 = 30;
 /// Idle frame rate (when no input for a while). Saves CPU on battery.
 const IDLE_FPS: u32 = 5;
+/// Idle frame rate when an animated theme is active. Higher than IDLE_FPS
+/// so the sweep line looks smooth, lower than ACTIVE_FPS so we still save
+/// some battery while idle.
+const ANIM_IDLE_FPS: u32 = 18;
 /// Time of last input before considered idle (in seconds).
 const IDLE_AFTER_SECS: f32 = 3.0;
 
@@ -121,11 +127,9 @@ pub fn run_launcher_with_config(
 
     let texture_creator = canvas.texture_creator();
     let mut fonts = FontCache::new(assets_dir)?;
-    fonts.prewarm();
     let mut images = ImageCache::new(&texture_creator)?;
     let mut text_cache = TextCache::new(&texture_creator);
 
-    let theme = Theme::default();
     let mut input_manager = InputManager::new();
     if !_controllers.is_empty() {
         input_manager.set_ignore_joystick(true);
@@ -133,8 +137,18 @@ pub fn run_launcher_with_config(
     let mut event_pump = sdl_context.event_pump()?;
 
     let mut launcher = LauncherApp::new(assets_dir);
+    // Build the theme AFTER the launcher so we honor the user's saved
+    // theme_id. Atmosphere is pre-composited from theme colors, so it
+    // must be re-built whenever the user picks a different preset.
+    let mut theme_id = launcher.theme_id().to_string();
+    let mut theme = Theme::by_id(&theme_id);
+    fonts.set_family(theme.font_regular, theme.font_bold);
+    fonts.prewarm();
     let mut atmosphere = Atmosphere::new();
     atmosphere.precompose(&mut canvas, &texture_creator, &mut images, &theme);
+
+    let mut sounds = UiSounds::new();
+    sounds.set_enabled(launcher.sounds_enabled());
     let mut last_frame = Instant::now();
     let mut last_input = Instant::now();
 
@@ -216,14 +230,54 @@ pub fn run_launcher_with_config(
         if had_input {
             dirty = true;
         }
+
+        // Sound feedback for navigation. Triggered on Press only (not
+        // Repeat) so holding a direction doesn't machine-gun beeps.
+        for ev in &input_events {
+            if ev.action != InputAction::Press {
+                continue;
+            }
+            match ev.button {
+                Button::DpadUp | Button::DpadDown | Button::DpadLeft | Button::DpadRight => {
+                    sounds.click();
+                }
+                Button::A => sounds.confirm(),
+                Button::B => sounds.back(),
+                _ => {}
+            }
+        }
+        // While the theme has an animated sweep line and the user has
+        // animations enabled, force redraws so the line actually moves.
+        if atmosphere.has_animation() && launcher.animations_enabled() {
+            dirty = true;
+        }
         if launcher.handle_input(&input_events) {
             if let Some(app_id) = launcher.pending_launch() {
+                sounds.launch();
+                // Give the audio device ~150ms to actually emit the
+                // launch chirp before we surrender SDL to the cartridge.
+                std::thread::sleep(std::time::Duration::from_millis(120));
                 let app_dir = resolve_app_dir(app_id, assets_dir);
                 result = LauncherResult::LaunchApp(app_dir);
                 return Ok((result, build_stats(frame_count, &all_frame_ms, &text_cache, bench_start)));
             }
             result = LauncherResult::Quit;
             return Ok((result, build_stats(frame_count, &all_frame_ms, &text_cache, bench_start)));
+        }
+
+        // Reflect setting changes (sounds toggle).
+        sounds.set_enabled(launcher.sounds_enabled());
+
+        // If the user picked a different theme, rebuild the palette,
+        // swap the font family, and re-precompose the atmosphere texture
+        // (background, scanlines, corner markers are baked from theme).
+        if launcher.theme_id() != theme_id {
+            theme_id = launcher.theme_id().to_string();
+            theme = Theme::by_id(&theme_id);
+            fonts.set_family(theme.font_regular, theme.font_bold);
+            text_cache.clear();
+            atmosphere.precompose(&mut canvas, &texture_creator, &mut images, &theme);
+            dirty = true;
         }
 
         // Force a render every N seconds even when idle (clock, sysinfo
@@ -276,7 +330,16 @@ pub fn run_launcher_with_config(
 
         if !config.uncapped {
             let idle_secs = last_input.elapsed().as_secs_f32();
-            let target_fps = if idle_secs > IDLE_AFTER_SECS { IDLE_FPS } else { ACTIVE_FPS };
+            let animating = atmosphere.has_animation() && launcher.animations_enabled();
+            // When animations are on, don't drop to IDLE_FPS or the sweep
+            // line will visibly stutter. Cap at a moderate ANIM_IDLE_FPS so
+            // we still save some battery vs. ACTIVE_FPS when nothing else
+            // is happening.
+            let target_fps = if idle_secs > IDLE_AFTER_SECS {
+                if animating { ANIM_IDLE_FPS } else { IDLE_FPS }
+            } else {
+                ACTIVE_FPS
+            };
             let target_time = std::time::Duration::from_secs_f64(1.0 / target_fps as f64);
             if !had_input && frame_time < target_time {
                 std::thread::sleep(target_time - frame_time);

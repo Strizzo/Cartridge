@@ -121,10 +121,32 @@ pub struct LauncherSettings {
     /// Disabling it cuts ~64 text draws per frame and frees 200px of screen.
     #[serde(default = "default_show_processes")]
     pub show_processes: bool,
+    /// Visual theme preset id (see cartridge_core::theme::THEME_PRESETS).
+    #[serde(default = "default_theme_id")]
+    pub theme_id: String,
+    /// Whether to render the per-theme animated overlays (sweep line).
+    /// Off saves a few frames of constant redraws when idle.
+    #[serde(default = "default_animations_enabled")]
+    pub animations_enabled: bool,
+    /// Play short synthesized sounds on navigation and app launch.
+    #[serde(default = "default_sounds_enabled")]
+    pub sounds_enabled: bool,
 }
 
 fn default_show_processes() -> bool {
     false
+}
+
+fn default_theme_id() -> String {
+    cartridge_core::theme::DEFAULT_THEME_ID.to_string()
+}
+
+fn default_animations_enabled() -> bool {
+    true
+}
+
+fn default_sounds_enabled() -> bool {
+    true
 }
 
 impl Default for LauncherSettings {
@@ -134,6 +156,9 @@ impl Default for LauncherSettings {
             auto_refresh: true,
             cache_duration_mins: 60,
             show_processes: false,
+            theme_id: default_theme_id(),
+            animations_enabled: default_animations_enabled(),
+            sounds_enabled: default_sounds_enabled(),
         }
     }
 }

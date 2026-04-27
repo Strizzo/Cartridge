@@ -15,7 +15,13 @@ use crate::theme::Theme;
 pub struct Atmosphere {
     background: Option<Texture<'static>>,
     overlay: Option<Texture<'static>>,
+    sweep_y: f32,
+    sweep_color: Color,
+    sweep_enabled: bool,
 }
+
+/// Vertical speed of the animated sweep line in pixels per second.
+const SWEEP_PIXELS_PER_SEC: f32 = 280.0;
 
 impl Default for Atmosphere {
     fn default() -> Self {
@@ -28,6 +34,9 @@ impl Atmosphere {
         Self {
             background: None,
             overlay: None,
+            sweep_y: 0.0,
+            sweep_color: Color::RGBA(255, 255, 255, 0),
+            sweep_enabled: false,
         }
     }
 
@@ -42,11 +51,55 @@ impl Atmosphere {
         theme: &Theme,
     ) {
         self.background = build_background(canvas, texture_creator, images, theme);
-        self.overlay = build_overlay(canvas, texture_creator, images);
+        self.overlay = build_overlay(canvas, texture_creator, images, theme.scanline_strength);
+        self.sweep_color = theme.sweep_line;
+        self.sweep_enabled = theme.animated_sweep;
     }
 
-    /// No-op: animations disabled for CPU savings.
-    pub fn update(&mut self, _dt: f32) {}
+    /// Advance the sweep-line position. Cheap; one float add and a wrap.
+    /// Call once per frame regardless of animations_enabled -- the draw
+    /// step is what's gated by the toggle.
+    pub fn update(&mut self, dt: f32) {
+        if self.sweep_enabled {
+            // ~2.5 seconds for one full top-to-bottom pass.
+            self.sweep_y += SWEEP_PIXELS_PER_SEC * dt;
+            if self.sweep_y >= HEIGHT as f32 {
+                self.sweep_y -= HEIGHT as f32;
+            }
+        }
+    }
+
+    /// Whether this theme contributes per-frame animated rendering.
+    /// Used by the launcher's dirty-render heuristic to keep redrawing
+    /// while the sweep line is on.
+    pub fn has_animation(&self) -> bool {
+        self.sweep_enabled
+    }
+
+    /// Draw the slow scan-style sweep line across the screen.
+    /// Cost: a single horizontal `draw_line` (≈ negligible).
+    pub fn draw_animated(&self, screen: &mut Screen, animations_enabled: bool) {
+        if !animations_enabled || !self.sweep_enabled {
+            return;
+        }
+        let y = self.sweep_y as i32;
+        // Bright core line.
+        screen.canvas.set_blend_mode(BlendMode::Blend);
+        let core = self.sweep_color;
+        screen.canvas.set_draw_color(Color::RGBA(core.r, core.g, core.b, 200));
+        screen.canvas
+            .draw_line(Point::new(0, y), Point::new(WIDTH as i32 - 1, y))
+            .ok();
+        // Soft trail above and below for a phosphor-glow effect.
+        let trail = Color::RGBA(core.r, core.g, core.b, 70);
+        screen.canvas.set_draw_color(trail);
+        screen.canvas
+            .draw_line(Point::new(0, y - 1), Point::new(WIDTH as i32 - 1, y - 1))
+            .ok();
+        screen.canvas
+            .draw_line(Point::new(0, y + 1), Point::new(WIDTH as i32 - 1, y + 1))
+            .ok();
+    }
 
     /// Draw the atmospheric background: a single cached blit.
     /// Falls back to immediate-mode rendering if pre-composition failed.
@@ -120,6 +173,7 @@ fn build_overlay(
     canvas: &mut Canvas<Window>,
     texture_creator: &TextureCreator<WindowContext>,
     images: &mut ImageCache,
+    scanline_strength: u8,
 ) -> Option<Texture<'static>> {
     let mut target = texture_creator
         .create_texture_target(None, WIDTH, HEIGHT)
@@ -130,8 +184,8 @@ fn build_overlay(
     let _ = images.get("assets/overlays/scanlines.png");
     let _ = images.get("assets/overlays/vignette.png");
 
-    let scan_ptr: *const Texture<'static> =
-        images.get("assets/overlays/scanlines.png").map(|t| t as *const _).unwrap_or(std::ptr::null());
+    let scan_ptr: *mut Texture<'static> =
+        images.get_mut("assets/overlays/scanlines.png").map(|t| t as *mut _).unwrap_or(std::ptr::null_mut());
     let vig_ptr: *const Texture<'static> =
         images.get("assets/overlays/vignette.png").map(|t| t as *const _).unwrap_or(std::ptr::null());
 
@@ -142,8 +196,13 @@ fn build_overlay(
             c.clear();
 
             if !scan_ptr.is_null() {
-                let t = unsafe { &*scan_ptr };
+                // SAFETY: ImageCache outlives this scope; we modulate alpha
+                // briefly while baking the overlay, then leave the texture's
+                // alpha unchanged in the cache (set back to 255 below).
+                let t = unsafe { &mut *scan_ptr };
+                t.set_alpha_mod(scanline_strength);
                 c.copy(t, None, None).ok();
+                t.set_alpha_mod(255);
             }
             if !vig_ptr.is_null() {
                 let t = unsafe { &*vig_ptr };

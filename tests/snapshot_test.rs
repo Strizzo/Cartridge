@@ -66,7 +66,7 @@ fn ui_snapshots() {
     let baselines = baseline_dir();
     std::fs::create_dir_all(&baselines).ok();
 
-    let names = ["home", "store", "settings", "app_detail"];
+    let names = ["home", "store", "settings", "app_detail", "power_menu"];
     let mut errors = Vec::new();
 
     for name in &names {

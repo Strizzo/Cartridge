@@ -127,6 +127,14 @@ impl LauncherApp {
                     let _ = std::fs::write("/tmp/.cartridge_switch_to_es", "1");
                     return true;
                 }
+                OverlayResult::Reboot => {
+                    request_power_action(PowerAction::Reboot);
+                    return true;
+                }
+                OverlayResult::Shutdown => {
+                    request_power_action(PowerAction::Shutdown);
+                    return true;
+                }
             }
         }
 
@@ -167,6 +175,21 @@ impl LauncherApp {
         self.ctx.sysinfo.refresh()
     }
 
+    /// Read the user's currently selected theme id.
+    pub fn theme_id(&self) -> &str {
+        &self.ctx.settings.theme_id
+    }
+
+    /// Whether the user has animated theme overlays enabled.
+    pub fn animations_enabled(&self) -> bool {
+        self.ctx.settings.animations_enabled
+    }
+
+    /// Whether the user has launcher sound feedback enabled.
+    pub fn sounds_enabled(&self) -> bool {
+        self.ctx.settings.sounds_enabled
+    }
+
     /// Returns the app_id that the user wants to launch, if any.
     pub fn pending_launch(&self) -> Option<&str> {
         self.pending_launch.as_deref()
@@ -174,6 +197,7 @@ impl LauncherApp {
 
     /// Render the current screen (and overlay if active).
     pub fn render(&mut self, screen: &mut Screen, atmosphere: &Atmosphere) {
+        let animations_enabled = self.ctx.settings.animations_enabled;
         // Draw atmospheric background instead of flat clear
         atmosphere.draw_background(screen);
 
@@ -187,8 +211,42 @@ impl LauncherApp {
             overlay.render(screen);
         }
 
-        // Draw atmospheric overlays (scanlines, vignette, sweep line) on top
+        // Draw atmospheric overlays (scanlines, vignette) on top
         atmosphere.draw_overlays(screen);
+
+        // Animated effects (theme-dependent, gated by setting).
+        // Drawn last so the sweep line sits above scanlines/vignette.
+        atmosphere.draw_animated(screen, animations_enabled);
+    }
+}
+
+/// Power actions that can be triggered from the BootOverlay.
+#[derive(Clone, Copy)]
+enum PowerAction {
+    Reboot,
+    Shutdown,
+}
+
+/// Execute a power action. On Linux this calls `systemctl reboot|poweroff`.
+/// On other platforms (macOS dev) it just logs and exits cleanly so the
+/// developer can iterate without rebooting their workstation.
+fn request_power_action(action: PowerAction) {
+    #[cfg(target_os = "linux")]
+    {
+        let arg = match action {
+            PowerAction::Reboot => "reboot",
+            PowerAction::Shutdown => "poweroff",
+        };
+        log::info!("Power action: systemctl {arg}");
+        let _ = std::process::Command::new("systemctl").arg(arg).status();
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let label = match action {
+            PowerAction::Reboot => "reboot",
+            PowerAction::Shutdown => "shutdown",
+        };
+        log::warn!("Power action {label} requested -- ignored on non-Linux dev build");
     }
 }
 

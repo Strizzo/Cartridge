@@ -80,6 +80,25 @@ fn snap_settings(assets: &PathBuf, dir: &PathBuf) -> Result<(), String> {
     Ok(())
 }
 
+fn snap_power_menu(assets: &PathBuf, dir: &PathBuf) -> Result<(), String> {
+    println!("Capturing: power_menu");
+    // Press Select to bring up the system menu (BootOverlay).
+    let config = LauncherConfig {
+        max_frames: Some(80),
+        uncapped: true,
+        capture_dir: Some(dir.clone()),
+        capture_frames: vec![60],
+        script: vec![
+            ScriptStep { buttons: vec![], frames_after: 30 },
+            ScriptStep { buttons: vec![Button::Select], frames_after: 30 },
+        ],
+        ..Default::default()
+    };
+    let (_, _) = run_launcher_with_config(assets, config)?;
+    rename(&dir.join("frame_0060.png"), &dir.join("power_menu.png"));
+    Ok(())
+}
+
 fn snap_detail(assets: &PathBuf, dir: &PathBuf) -> Result<(), String> {
     println!("Capturing: app_detail");
     // Open the store, navigate to first app, press A to open detail
@@ -120,7 +139,7 @@ fn main() -> Result<(), String> {
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     let scenarios = if args.is_empty() {
-        vec!["home".into(), "store".into(), "settings".into(), "detail".into()]
+        vec!["home".into(), "store".into(), "settings".into(), "detail".into(), "power_menu".into()]
     } else {
         args
     };
@@ -131,6 +150,7 @@ fn main() -> Result<(), String> {
             "store" => snap_store(&assets, &dir)?,
             "settings" => snap_settings(&assets, &dir)?,
             "detail" => snap_detail(&assets, &dir)?,
+            "power_menu" => snap_power_menu(&assets, &dir)?,
             other => eprintln!("unknown scenario: {other}"),
         }
     }

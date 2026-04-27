@@ -310,14 +310,24 @@ impl LauncherScreen for StoreScreen {
                     11,
                 );
 
-                // INSTALLED pill
+                // INSTALLED / UPDATE pill. Update detection lives in
+                // the installer; if the on-disk version differs from the
+                // registry's, we show an UPDATE pill in place of INSTALLED.
                 if ctx.installed.is_installed(&app.id) {
-                    let inst_w = screen.get_text_width("INSTALLED", 11, true) + 12;
+                    let has_update = ctx.installer.as_ref().map_or(false, |inst| {
+                        inst.installed_version(&app.id).as_deref() != Some(&app.version)
+                    });
+                    let (label, color) = if has_update {
+                        ("UPDATE", theme.text_warning)
+                    } else {
+                        ("INSTALLED", theme.positive)
+                    };
+                    let inst_w = screen.get_text_width(label, 11, true) + 12;
                     screen.draw_pill(
-                        "INSTALLED",
+                        label,
                         pill_x - inst_w as i32 - 6,
                         card_y + 10,
-                        theme.positive,
+                        color,
                         Color::RGB(20, 20, 30),
                         11,
                     );

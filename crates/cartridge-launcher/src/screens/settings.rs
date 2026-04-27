@@ -3,13 +3,14 @@ use cartridge_core::device::{
 };
 use cartridge_core::input::{Button, InputAction, InputEvent};
 use cartridge_core::screen::Screen;
+use cartridge_core::theme::THEME_PRESETS;
 use sdl2::rect::Rect;
 
 use crate::ui_constants::*;
 use super::{LauncherScreen, ScreenAction, ScreenContext, ScreenId};
 
 const CACHE_OPTIONS: &[u32] = &[15, 30, 60, 120, 360];
-const SETTINGS_ROWS: usize = 8;
+const SETTINGS_ROWS: usize = 11;
 // Step size for brightness/volume left/right adjustments.
 const HW_STEP: u8 = 10;
 // Row indices.
@@ -17,12 +18,46 @@ const HW_STEP: u8 = 10;
 //   1: Auto Refresh
 //   2: Cache Duration
 //   3: Show Process Panel
-//   4: WiFi
-//   5: Brightness    (hardware)
-//   6: Volume        (hardware)
-//   7: About
-const ROW_BRIGHTNESS: usize = 5;
-const ROW_VOLUME: usize = 6;
+//   4: Theme
+//   5: Animations
+//   6: Sounds
+//   7: WiFi
+//   8: Brightness    (hardware)
+//   9: Volume        (hardware)
+//  10: About
+const ROW_THEME: usize = 4;
+const ROW_ANIMATIONS: usize = 5;
+const ROW_SOUNDS: usize = 6;
+const ROW_WIFI: usize = 7;
+const ROW_BRIGHTNESS: usize = 8;
+const ROW_VOLUME: usize = 9;
+const ROW_ABOUT: usize = 10;
+
+/// Move to the next/previous theme preset by id, wrapping at the ends.
+fn cycle_theme(current: &str, forward: bool) -> String {
+    let idx = THEME_PRESETS
+        .iter()
+        .position(|p| p.id == current)
+        .unwrap_or(0);
+    let n = THEME_PRESETS.len();
+    let next = if forward {
+        (idx + 1) % n
+    } else if idx == 0 {
+        n - 1
+    } else {
+        idx - 1
+    };
+    THEME_PRESETS[next].id.to_string()
+}
+
+/// Display name for a theme id (falls back to the id if unknown).
+fn theme_display_name(id: &str) -> &'static str {
+    THEME_PRESETS
+        .iter()
+        .find(|p| p.id == id)
+        .map(|p| p.name)
+        .unwrap_or("Unknown")
+}
 
 pub struct SettingsScreen {
     selected_row: usize,
@@ -84,7 +119,19 @@ impl LauncherScreen for SettingsScreen {
                             ctx.settings.show_processes = !ctx.settings.show_processes;
                             ctx.save_settings();
                         }
-                        4 => {
+                        ROW_THEME => {
+                            ctx.settings.theme_id = cycle_theme(&ctx.settings.theme_id, true);
+                            ctx.save_settings();
+                        }
+                        ROW_ANIMATIONS => {
+                            ctx.settings.animations_enabled = !ctx.settings.animations_enabled;
+                            ctx.save_settings();
+                        }
+                        ROW_SOUNDS => {
+                            ctx.settings.sounds_enabled = !ctx.settings.sounds_enabled;
+                            ctx.save_settings();
+                        }
+                        ROW_WIFI => {
                             return ScreenAction::Push(ScreenId::WiFi);
                         }
                         ROW_BRIGHTNESS => {
@@ -124,6 +171,18 @@ impl LauncherScreen for SettingsScreen {
                             ctx.settings.show_processes = !ctx.settings.show_processes;
                             ctx.save_settings();
                         }
+                        ROW_THEME => {
+                            ctx.settings.theme_id = cycle_theme(&ctx.settings.theme_id, false);
+                            ctx.save_settings();
+                        }
+                        ROW_ANIMATIONS => {
+                            ctx.settings.animations_enabled = !ctx.settings.animations_enabled;
+                            ctx.save_settings();
+                        }
+                        ROW_SOUNDS => {
+                            ctx.settings.sounds_enabled = !ctx.settings.sounds_enabled;
+                            ctx.save_settings();
+                        }
                         ROW_BRIGHTNESS => {
                             let cur = get_brightness_percent();
                             let next = cur.saturating_sub(HW_STEP);
@@ -161,8 +220,8 @@ impl LauncherScreen for SettingsScreen {
         screen.draw_text_glow("Settings", 12, 8, theme.accent, theme.glow_primary, 20, true, None);
 
         // -- Settings rows as cards --
-        let start_y = CONTENT_TOP + 12;
-        let row_h = 56;
+        let start_y = CONTENT_TOP + 6;
+        let row_h = 48;
         let card_w = SCREEN_WIDTH - 24;
 
         // Row 0: Registry URL
@@ -327,10 +386,143 @@ impl LauncherScreen for SettingsScreen {
             );
         }
 
-        // Row 4: WiFi
+        // Row 4: Theme
         {
-            let y = start_y + 4 * (row_h + MARGIN);
-            let is_sel = self.selected_row == 4;
+            let y = start_y + ROW_THEME as i32 * (row_h + MARGIN);
+            let is_sel = self.selected_row == ROW_THEME;
+            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
+            let border = if is_sel { theme.accent } else { theme.card_border };
+
+            screen.draw_card(
+                Rect::new(12, y, card_w, row_h as u32),
+                Some(bg),
+                Some(border),
+                CARD_RADIUS,
+                false,
+            );
+
+            screen.draw_text("Theme", 24, y + 8, Some(theme.text), 14, true, None);
+            screen.draw_text(
+                "Visual style for the launcher",
+                24,
+                y + 30,
+                Some(theme.text_dim),
+                12,
+                false,
+                None,
+            );
+
+            let name = theme_display_name(&ctx.settings.theme_id);
+            let toggle_x = SCREEN_WIDTH as i32 - 170;
+            if is_sel {
+                screen.draw_text("<", toggle_x, y + 18, Some(theme.text_accent), 14, true, None);
+            }
+            let nw = screen.get_text_width(name, 13, true);
+            let center_x = toggle_x + 14 + (130 - nw as i32) / 2;
+            screen.draw_text(
+                name,
+                center_x,
+                y + 19,
+                Some(theme.text_accent),
+                13,
+                true,
+                None,
+            );
+            if is_sel {
+                screen.draw_text(">", toggle_x + 148, y + 18, Some(theme.text_accent), 14, true, None);
+            }
+        }
+
+        // Row 5: Animations
+        {
+            let y = start_y + ROW_ANIMATIONS as i32 * (row_h + MARGIN);
+            let is_sel = self.selected_row == ROW_ANIMATIONS;
+            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
+            let border = if is_sel { theme.accent } else { theme.card_border };
+
+            screen.draw_card(
+                Rect::new(12, y, card_w, row_h as u32),
+                Some(bg),
+                Some(border),
+                CARD_RADIUS,
+                false,
+            );
+
+            screen.draw_text("Animations", 24, y + 8, Some(theme.text), 14, true, None);
+            screen.draw_text(
+                "Sweep line and other moving theme effects",
+                24,
+                y + 30,
+                Some(theme.text_dim),
+                12,
+                false,
+                None,
+            );
+
+            let toggle_x = SCREEN_WIDTH as i32 - 80;
+            let label = if ctx.settings.animations_enabled { "ON" } else { "OFF" };
+            let color = if ctx.settings.animations_enabled {
+                theme.positive
+            } else {
+                theme.text_dim
+            };
+            screen.draw_pill(
+                label,
+                toggle_x,
+                y + 18,
+                color,
+                sdl2::pixels::Color::RGB(20, 20, 30),
+                13,
+            );
+        }
+
+        // Row 6: Sounds
+        {
+            let y = start_y + ROW_SOUNDS as i32 * (row_h + MARGIN);
+            let is_sel = self.selected_row == ROW_SOUNDS;
+            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
+            let border = if is_sel { theme.accent } else { theme.card_border };
+
+            screen.draw_card(
+                Rect::new(12, y, card_w, row_h as u32),
+                Some(bg),
+                Some(border),
+                CARD_RADIUS,
+                false,
+            );
+
+            screen.draw_text("Sounds", 24, y + 8, Some(theme.text), 14, true, None);
+            screen.draw_text(
+                "Click feedback on navigation and launch",
+                24,
+                y + 30,
+                Some(theme.text_dim),
+                12,
+                false,
+                None,
+            );
+
+            let toggle_x = SCREEN_WIDTH as i32 - 80;
+            let label = if ctx.settings.sounds_enabled { "ON" } else { "OFF" };
+            let color = if ctx.settings.sounds_enabled {
+                theme.positive
+            } else {
+                theme.text_dim
+            };
+            screen.draw_pill(
+                label,
+                toggle_x,
+                y + 18,
+                color,
+                sdl2::pixels::Color::RGB(20, 20, 30),
+                13,
+            );
+        }
+
+        // Row 7: WiFi
+        {
+            let y = start_y + ROW_WIFI as i32 * (row_h + MARGIN);
+            let is_sel = self.selected_row == ROW_WIFI;
             let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
             let border = if is_sel { theme.accent } else { theme.card_border };
 
@@ -426,10 +618,10 @@ impl LauncherScreen for SettingsScreen {
             }
         }
 
-        // Row 7: About
+        // Row 8: About
         {
-            let y = start_y + 7 * (row_h + MARGIN);
-            let is_sel = self.selected_row == 7;
+            let y = start_y + ROW_ABOUT as i32 * (row_h + MARGIN);
+            let is_sel = self.selected_row == ROW_ABOUT;
             let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
             let border = if is_sel { theme.accent } else { theme.card_border };
 

@@ -50,6 +50,12 @@ impl TextCache {
         }
     }
 
+    /// Drop all cached glyphs. Call after the font family changes so old
+    /// rasterizations don't leak into the new look.
+    pub fn clear(&mut self) {
+        self.textures.clear();
+    }
+
     /// Look up or render a text texture. Returns (width, height) of the texture.
     /// The actual texture is rendered via the provided `render_fn` if cached.
     pub fn render(

@@ -44,6 +44,14 @@ impl ImageCache {
         self.textures.get(path)
     }
 
+    /// Same as `get()` but returns a mutable reference. Used when the
+    /// caller needs to set per-blit modulators (alpha_mod, color_mod).
+    pub fn get_mut(&mut self, path: &str) -> Option<&mut Texture<'static>> {
+        // Reuse the lazy-load path in get(), then re-borrow mutably.
+        self.get(path)?;
+        self.textures.get_mut(path)
+    }
+
     /// Check if an image exists at the given path without loading it.
     pub fn exists(path: &str) -> bool {
         std::path::Path::new(path).exists()
