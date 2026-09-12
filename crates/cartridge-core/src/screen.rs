@@ -12,6 +12,12 @@ use crate::theme::Theme;
 pub const WIDTH: u32 = 720;
 pub const HEIGHT: u32 = 720;
 
+thread_local! {
+    /// Reused by `draw_sparkline`, which runs once per visible row per frame.
+    static SPARK_POINTS: std::cell::RefCell<Vec<sdl2::rect::Point>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
 /// High-level drawing surface for Cartridge apps.
 pub struct Screen<'a> {
     pub canvas: &'a mut Canvas<Window>,
@@ -386,18 +392,6 @@ impl<'a> Screen<'a> {
             1.0
         };
 
-        let points: Vec<(i32, i32)> = data
-            .iter()
-            .enumerate()
-            .map(|(i, &v)| {
-                let px =
-                    rect.x() + (i as f32 / (data.len() - 1) as f32 * (rect.width() - 1) as f32) as i32;
-                let py = rect.y() + rect.height() as i32 - 1
-                    - (((v - mn) / rng) * (rect.height() - 1) as f32) as i32;
-                (px, py)
-            })
-            .collect();
-
         if let Some(bl_color) = baseline_color {
             let mid_y = rect.y() + rect.height() as i32 / 2;
             self.canvas.set_draw_color(bl_color);
@@ -409,17 +403,37 @@ impl<'a> Screen<'a> {
                 .ok();
         }
 
-        for window in points.windows(2) {
-            let (x1, y1) = window[0];
-            let (x2, y2) = window[1];
+        // One point per horizontal pixel at most: a 130-sample series in a
+        // 100px rect used to emit 130 segments into 100 columns. Longer series
+        // are averaged per column, which keeps the shape without the aliasing
+        // of plain stride sampling.
+        let cols = (rect.width() as usize).min(data.len());
+        let last_col = (cols - 1).max(1) as f32;
+        let span_x = (rect.width() - 1) as f32;
+        let span_y = (rect.height() - 1) as f32;
+        let bottom = rect.y() + rect.height() as i32 - 1;
+
+        SPARK_POINTS.with(|scratch| {
+            let mut points = scratch.borrow_mut();
+            points.clear();
+            points.reserve(cols);
+
+            for c in 0..cols {
+                let start = c * data.len() / cols;
+                let end = ((c + 1) * data.len() / cols).max(start + 1);
+                let bucket = &data[start..end.min(data.len())];
+                let v = bucket.iter().sum::<f32>() / bucket.len() as f32;
+
+                let px = rect.x() + (c as f32 / last_col * span_x) as i32;
+                let py = bottom - (((v - mn) / rng) * span_y) as i32;
+                points.push(sdl2::rect::Point::new(px, py));
+            }
+
+            // One color set and one draw call for the whole polyline, instead
+            // of a set_draw_color + draw_line pair per segment.
             self.canvas.set_draw_color(color);
-            self.canvas
-                .draw_line(
-                    sdl2::rect::Point::new(x1, y1),
-                    sdl2::rect::Point::new(x2, y2),
-                )
-                .ok();
-        }
+            self.canvas.draw_lines(&points[..]).ok();
+        });
     }
 
     /// Draw text with a 4-offset glow halo behind it.
