@@ -1,0 +1,11 @@
+{
+  "id": "dev.cartridge.bench",
+  "name": "Perf Bench",
+  "version": "0.1.0",
+  "author": "CartridgeOS Team",
+  "description": "Synthetic heavy frame for the perf-bench 'app' scenario. Not a real app.",
+  "category": "tools",
+  "tags": ["bench", "dev"],
+  "permissions": [],
+  "entry": "main.lua"
+}

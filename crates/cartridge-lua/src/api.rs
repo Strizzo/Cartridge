@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -10,10 +10,138 @@ use mlua::prelude::*;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 
+// ---------------------------------------------------------------------------
+// App control: redraw requests, idle frame rate, lifecycle phase
+// ---------------------------------------------------------------------------
+
+/// Which lifecycle callback is currently executing. Used to warn when a
+/// blocking HTTP call is made from a phase that must stay responsive.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Phase {
+    Idle,
+    Init,
+    Input,
+    Update,
+    Render,
+    Destroy,
+}
+
+/// Default idle frame rate for cartridges (matches the launcher's IDLE_FPS).
+pub const DEFAULT_IDLE_FPS: u32 = 5;
+
+/// State shared between the frame loop and the Lua `app` API.
+pub struct AppControl {
+    redraw: Cell<bool>,
+    idle_fps: Cell<u32>,
+    phase: Cell<Phase>,
+    sync_http_warned: Cell<bool>,
+}
+
+impl Default for AppControl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AppControl {
+    pub fn new() -> Self {
+        Self {
+            redraw: Cell::new(false),
+            idle_fps: Cell::new(DEFAULT_IDLE_FPS),
+            phase: Cell::new(Phase::Idle),
+            sync_http_warned: Cell::new(false),
+        }
+    }
+
+    /// Ask the loop to run on_render + present on the next frame.
+    pub fn request_redraw(&self) {
+        self.redraw.set(true);
+    }
+
+    /// Consume a pending redraw request.
+    pub fn take_redraw(&self) -> bool {
+        self.redraw.replace(false)
+    }
+
+    /// Frame rate to run at after IDLE_AFTER_SECS without input.
+    pub fn idle_fps(&self) -> u32 {
+        self.idle_fps.get()
+    }
+
+    pub fn set_idle_fps(&self, fps: u32) {
+        self.idle_fps.set(fps.clamp(1, 60));
+    }
+
+    pub fn phase(&self) -> Phase {
+        self.phase.get()
+    }
+
+    pub fn set_phase(&self, phase: Phase) {
+        self.phase.set(phase);
+    }
+
+    /// Log once if a blocking HTTP call is made during on_input/on_render.
+    fn warn_sync_http(&self, what: &str) {
+        let phase = self.phase.get();
+        if matches!(phase, Phase::Input | Phase::Render) && !self.sync_http_warned.replace(true) {
+            log::warn!(
+                "{what} called during {phase:?}: blocking HTTP stalls the UI. \
+                 Use http.get_async/post_async + http.poll() from on_update instead."
+            );
+        }
+    }
+}
+
+pub type SharedAppControl = Rc<AppControl>;
+
+pub fn new_app_control() -> SharedAppControl {
+    Rc::new(AppControl::new())
+}
+
+/// Register the `app` global:
+///   app.request_redraw()   -- render + present on the next frame
+///   app.set_idle_fps(n)    -- frame rate after 3s without input (1..60, default 5)
+///   app.idle_fps() -> n
+pub fn register_app_api(lua: &Lua, control: SharedAppControl) -> LuaResult<()> {
+    let table = lua.create_table()?;
+    {
+        let c = control.clone();
+        table.set(
+            "request_redraw",
+            lua.create_function(move |_, ()| {
+                c.request_redraw();
+                Ok(())
+            })?,
+        )?;
+    }
+    {
+        let c = control.clone();
+        table.set(
+            "set_idle_fps",
+            lua.create_function(move |_, fps: f64| {
+                c.set_idle_fps(fps.max(0.0) as u32);
+                Ok(())
+            })?,
+        )?;
+    }
+    {
+        let c = control.clone();
+        table.set(
+            "idle_fps",
+            lua.create_function(move |_, ()| Ok(c.idle_fps()))?,
+        )?;
+    }
+    lua.globals().set("app", table)?;
+    Ok(())
+}
+
 /// A wrapper that holds a raw pointer to Screen, set only during the render phase.
 /// This allows Lua callbacks to access Screen drawing methods.
 pub struct ScreenHandle {
     ptr: *mut ScreenErased,
+    /// Reusable buffer for draw_sparkline so copying the Lua table into
+    /// a slice doesn't allocate every frame.
+    spark_scratch: Vec<f32>,
 }
 
 /// Type-erased screen pointer. We store a raw pointer because Screen has complex
@@ -33,6 +161,7 @@ impl ScreenHandle {
     pub fn new() -> Self {
         Self {
             ptr: std::ptr::null_mut(),
+            spark_scratch: Vec::with_capacity(256),
         }
     }
 
@@ -69,17 +198,44 @@ pub fn new_screen_handle() -> SharedScreenHandle {
     Rc::new(RefCell::new(ScreenHandle::new()))
 }
 
+/// Read one colour channel: named key first, then the positional index.
+/// Both probes go through `Option` so a miss costs nothing -- constructing
+/// an mlua conversion error allocates two Strings.
+#[inline]
+fn color_channel(table: &LuaTable, name: &str, index: i64) -> LuaResult<f64> {
+    if let Some(v) = table.raw_get::<Option<f64>>(name)? {
+        return Ok(v);
+    }
+    table
+        .raw_get::<Option<f64>>(index)?
+        .ok_or_else(|| LuaError::RuntimeError(format!(
+            "color table needs '{name}' or [{index}]"
+        )))
+}
+
 fn parse_color_table(table: &LuaTable) -> LuaResult<Color> {
     // Accept both named {r=255, g=0, b=0} and indexed {255, 0, 0} color tables.
     // Use f64 to handle Lua 5.4 float arithmetic results, then clamp to u8.
-    let r: f64 = table.get("r").or_else(|_| table.get::<f64>(1))?;
-    let g: f64 = table.get("g").or_else(|_| table.get::<f64>(2))?;
-    let b: f64 = table.get("b").or_else(|_| table.get::<f64>(3))?;
+    let r = color_channel(table, "r", 1)?;
+    let g = color_channel(table, "g", 2)?;
+    let b = color_channel(table, "b", 3)?;
     Ok(Color::RGB(num_u8(r), num_u8(g), num_u8(b)))
 }
 
+/// Optional numeric option: absent -> None with no error construction.
+#[inline]
+fn opt_num(table: &LuaTable, key: &str) -> LuaResult<Option<f64>> {
+    table.raw_get::<Option<f64>>(key)
+}
+
+/// Optional boolean option: absent -> None with no error construction.
+#[inline]
+fn opt_bool(table: &LuaTable, key: &str) -> LuaResult<Option<bool>> {
+    table.raw_get::<Option<bool>>(key)
+}
+
 fn opt_color_from_table(table: &LuaTable, key: &str) -> LuaResult<Option<Color>> {
-    match table.get::<LuaValue>(key)? {
+    match table.raw_get::<LuaValue>(key)? {
         LuaValue::Table(t) => Ok(Some(parse_color_table(&t)?)),
         LuaValue::Nil => Ok(None),
         _ => Err(LuaError::RuntimeError(format!(
@@ -150,13 +306,13 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
 
                     if let Some(ref t) = opts {
                         color = opt_color_from_table(t, "color")?;
-                        if let Ok(s) = t.get::<f64>("size") {
+                        if let Some(s) = opt_num(t, "size")? {
                             size = num_u16(s);
                         }
-                        if let Ok(b) = t.get::<bool>("bold") {
+                        if let Some(b) = opt_bool(t, "bold")? {
                             bold = b;
                         }
-                        if let Ok(mw) = t.get::<f64>("max_width") {
+                        if let Some(mw) = opt_num(t, "max_width")? {
                             max_width = Some(num_u32(mw));
                         }
                     }
@@ -187,10 +343,10 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
 
                     if let Some(ref t) = opts {
                         color = opt_color_from_table(t, "color")?;
-                        if let Ok(f) = t.get::<bool>("filled") {
+                        if let Some(f) = opt_bool(t, "filled")? {
                             filled = f;
                         }
-                        if let Ok(r) = t.get::<f64>("radius") {
+                        if let Some(r) = opt_num(t, "radius")? {
                             radius = num_i16(r);
                         }
                     }
@@ -220,7 +376,7 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
 
                     if let Some(ref t) = opts {
                         color = opt_color_from_table(t, "color")?;
-                        if let Ok(w) = t.get::<f64>("width") {
+                        if let Some(w) = opt_num(t, "width")? {
                             width = num_u32(w);
                         }
                     }
@@ -253,10 +409,10 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
                     if let Some(ref t) = opts {
                         bg = opt_color_from_table(t, "bg")?;
                         border = opt_color_from_table(t, "border")?;
-                        if let Ok(r) = t.get::<f64>("radius") {
+                        if let Some(r) = opt_num(t, "radius")? {
                             radius = num_i16(r);
                         }
-                        if let Ok(s) = t.get::<bool>("shadow") {
+                        if let Some(s) = opt_bool(t, "shadow")? {
                             shadow = s;
                         }
                     }
@@ -317,7 +473,7 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
                         if let Some(c) = opt_color_from_table(t, "text_color")? {
                             text_color = c;
                         }
-                        if let Ok(s) = t.get::<f64>("size") {
+                        if let Some(s) = opt_num(t, "size")? {
                             size = num_u16(s);
                         }
                     }
@@ -350,7 +506,7 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
 
                     if let Some(ref t) = opts {
                         btn_color = opt_color_from_table(t, "color")?;
-                        if let Ok(s) = t.get::<f64>("size") {
+                        if let Some(s) = opt_num(t, "size")? {
                             size = num_u16(s);
                         }
                     }
@@ -386,7 +542,7 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
                     if let Some(ref t) = opts {
                         fill_color = opt_color_from_table(t, "fill_color")?;
                         bg_color = opt_color_from_table(t, "bg_color")?;
-                        if let Ok(r) = t.get::<f64>("radius") {
+                        if let Some(r) = opt_num(t, "radius")? {
                             radius = num_i16(r);
                         }
                     }
@@ -421,11 +577,6 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
                     f64,
                     Option<LuaTable>,
                 )| {
-                    let mut data = Vec::new();
-                    for pair in data_table.sequence_values::<f32>() {
-                        data.push(pair?);
-                    }
-
                     let mut color: Option<Color> = None;
                     let mut baseline_color: Option<Color> = None;
 
@@ -434,9 +585,25 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
                         baseline_color = opt_color_from_table(t, "baseline_color")?;
                     }
 
-                    h.borrow().with_screen(|s| {
+                    // Borrow the handle's scratch buffer instead of
+                    // allocating a fresh Vec for every sparkline.
+                    let mut handle = h.borrow_mut();
+                    let mut data = std::mem::take(&mut handle.spark_scratch);
+                    data.clear();
+                    let len = data_table.raw_len();
+                    data.reserve(len);
+                    for i in 1..=len {
+                        match data_table.raw_get::<Option<f32>>(i)? {
+                            Some(v) => data.push(v),
+                            None => break,
+                        }
+                    }
+
+                    let result = handle.with_screen(|s| {
                         s.draw_sparkline(&data, Rect::new(num_i32(x), num_i32(y), num_u32(w), num_u32(hh)), color, baseline_color);
-                    })
+                    });
+                    handle.spark_scratch = data;
+                    result
                 },
             )?,
         )?;
@@ -562,16 +729,16 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
                     let mut src_rect: Option<sdl2::rect::Rect> = None;
 
                     if let Some(ref t) = opts {
-                        let w = t.get::<Option<f64>>("w").ok().flatten();
-                        let hh = t.get::<Option<f64>>("h").ok().flatten();
+                        let w = opt_num(t, "w")?;
+                        let hh = opt_num(t, "h")?;
                         if let (Some(w), Some(hh)) = (w, hh) {
                             dst_size = Some((num_u32(w), num_u32(hh)));
                         }
 
-                        let src_x = t.get::<Option<f64>>("src_x").ok().flatten();
-                        let src_y = t.get::<Option<f64>>("src_y").ok().flatten();
-                        let src_w = t.get::<Option<f64>>("src_w").ok().flatten();
-                        let src_h = t.get::<Option<f64>>("src_h").ok().flatten();
+                        let src_x = opt_num(t, "src_x")?;
+                        let src_y = opt_num(t, "src_y")?;
+                        let src_w = opt_num(t, "src_w")?;
+                        let src_h = opt_num(t, "src_h")?;
                         if let (Some(sx), Some(sy), Some(sw), Some(sh)) =
                             (src_x, src_y, src_w, src_h)
                         {
@@ -794,20 +961,27 @@ pub(crate) fn json_to_lua(lua: &Lua, value: &serde_json::Value) -> LuaResult<Lua
 /// Register the `http` global table with sync (`get`, `get_cached`, `post`)
 /// and async (`get_async`, `post_async`, `poll`) methods.
 ///
-/// The synchronous methods block the render thread — fine for one-off calls.
-/// The async methods spawn a background thread, return a request id immediately,
-/// and let Lua poll for the result. This keeps the UI responsive while
-/// HTTP is in flight.
-pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
+/// The synchronous methods block the render thread — fine for one-off calls
+/// from on_init/on_update, but a one-time warning is logged if they are
+/// used from on_input/on_render.
+/// The async methods queue the request on a bounded worker pool
+/// (`HTTP_WORKERS` OS threads, spawned lazily on first use), return a
+/// request id immediately, and let Lua poll for the result. This keeps the
+/// UI responsive while HTTP is in flight and bounds thread count when a
+/// cartridge fans out dozens of requests at once.
+pub fn register_http_api(lua: &Lua, app_id: &str, control: SharedAppControl) -> LuaResult<()> {
     use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
     use std::sync::{Arc, Mutex};
     use std::thread;
+
+    /// Size of the async worker pool.
+    const HTTP_WORKERS: usize = 4;
 
     let cache_dir = cartridge_core::paths::cartridges_dir()
         .join(app_id)
         .join("cache")
         .join("http");
-    // Arc so async threads can share the client.
+    // Arc so worker threads can share the client.
     let client = Arc::new(HttpClient::new(cache_dir));
 
     // Async request infrastructure
@@ -818,22 +992,103 @@ pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
         body: String,
         etag: Option<String>,
     }
-    type AsyncTx = Sender<AsyncResp>;
-    type AsyncRx = Receiver<AsyncResp>;
+    enum Job {
+        Get { id: u64, url: String, etag: Option<String> },
+        Post { id: u64, url: String, body: String },
+    }
 
-    let (async_tx, async_rx): (AsyncTx, AsyncRx) = channel();
-    let async_tx = Arc::new(Mutex::new(async_tx));
-    let async_rx = Rc::new(RefCell::new(async_rx));
-    let next_id = Rc::new(RefCell::new(0u64));
+    /// Job queue + lazily spawned workers. Dropping the pool (when the Lua
+    /// VM goes away) closes the job channel, so idle workers exit and busy
+    /// ones exit after their current request.
+    struct Pool {
+        job_tx: Sender<Job>,
+        job_rx: Arc<Mutex<Receiver<Job>>>,
+        resp_tx: Sender<AsyncResp>,
+        client: Arc<HttpClient>,
+        spawned: bool,
+        next_id: u64,
+    }
+
+    impl Pool {
+        fn spawn_workers(&mut self) {
+            if self.spawned {
+                return;
+            }
+            self.spawned = true;
+            for i in 0..HTTP_WORKERS {
+                let rx = self.job_rx.clone();
+                let tx = self.resp_tx.clone();
+                let client = self.client.clone();
+                let spawned = thread::Builder::new()
+                    .name(format!("lua-http-{i}"))
+                    .spawn(move || loop {
+                        // Hold the lock only while waiting for a job, not
+                        // while performing the request.
+                        let job = {
+                            let guard = match rx.lock() {
+                                Ok(g) => g,
+                                Err(_) => return,
+                            };
+                            match guard.recv() {
+                                Ok(j) => j,
+                                Err(_) => return,
+                            }
+                        };
+                        let resp = match job {
+                            Job::Get { id, url, etag } => {
+                                match client.get_with_etag(&url, etag.as_deref()) {
+                                    Ok(r) => AsyncResp { id, ok: r.ok, status: r.status, body: r.body, etag: r.etag },
+                                    Err(e) => AsyncResp { id, ok: false, status: 0, body: e, etag: None },
+                                }
+                            }
+                            Job::Post { id, url, body } => match client.post(&url, &body) {
+                                Ok(r) => AsyncResp { id, ok: r.ok, status: r.status, body: r.body, etag: r.etag },
+                                Err(e) => AsyncResp { id, ok: false, status: 0, body: e, etag: None },
+                            },
+                        };
+                        if tx.send(resp).is_err() {
+                            return;
+                        }
+                    });
+                if let Err(e) = spawned {
+                    log::error!("failed to spawn http worker {i}: {e}");
+                }
+            }
+        }
+
+        fn submit(&mut self, make: impl FnOnce(u64) -> Job) -> u64 {
+            self.spawn_workers();
+            self.next_id += 1;
+            let id = self.next_id;
+            if self.job_tx.send(make(id)).is_err() {
+                log::error!("http worker pool is gone; request {id} dropped");
+            }
+            id
+        }
+    }
+
+    let (job_tx, job_rx) = channel::<Job>();
+    let (resp_tx, resp_rx) = channel::<AsyncResp>();
+    let pool = Rc::new(RefCell::new(Pool {
+        job_tx,
+        job_rx: Arc::new(Mutex::new(job_rx)),
+        resp_tx,
+        client: client.clone(),
+        spawned: false,
+        next_id: 0,
+    }));
+    let async_rx = Rc::new(RefCell::new(resp_rx));
 
     let http_table = lua.create_table()?;
 
     // http.get(url) -> {ok, status, body} — synchronous (blocks)
     {
         let c = client.clone();
+        let ctl = control.clone();
         http_table.set(
             "get",
             lua.create_function(move |lua, url: String| {
+                ctl.warn_sync_http("http.get");
                 let resp = c.get(&url).map_err(LuaError::RuntimeError)?;
                 let table = lua.create_table()?;
                 table.set("ok", resp.ok)?;
@@ -847,9 +1102,11 @@ pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
     // http.get_cached(url, ttl_seconds) -> {ok, status, body}
     {
         let c = client.clone();
+        let ctl = control.clone();
         http_table.set(
             "get_cached",
             lua.create_function(move |lua, (url, ttl): (String, u64)| {
+                ctl.warn_sync_http("http.get_cached");
                 let resp = c
                     .get_cached(&url, ttl)
                     .map_err(LuaError::RuntimeError)?;
@@ -865,9 +1122,11 @@ pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
     // http.post(url, body) -> {ok, status, body} — synchronous (blocks)
     {
         let c = client.clone();
+        let ctl = control.clone();
         http_table.set(
             "post",
             lua.create_function(move |lua, (url, body): (String, String)| {
+                ctl.warn_sync_http("http.post");
                 let resp = c
                     .post(&url, &body)
                     .map_err(LuaError::RuntimeError)?;
@@ -881,12 +1140,10 @@ pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
     }
 
     // http.get_async(url, etag?) -> request_id (number)
-    // Spawns a background thread; result is retrieved via http.poll().
+    // Queues the request on the worker pool; result is retrieved via http.poll().
     // Optional etag is sent as If-None-Match for delta polling (304 = not modified).
     {
-        let c = client.clone();
-        let tx = async_tx.clone();
-        let id_counter = next_id.clone();
+        let p = pool.clone();
         http_table.set(
             "get_async",
             lua.create_function(move |_, args: mlua::Variadic<mlua::Value>| {
@@ -894,25 +1151,7 @@ pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
                     .and_then(|v| v.as_str().map(|s| s.to_string()))
                     .ok_or_else(|| LuaError::RuntimeError("url required".to_string()))?;
                 let etag = args.get(1).and_then(|v| v.as_str().map(|s| s.to_string()));
-                let id = {
-                    let mut n = id_counter.borrow_mut();
-                    *n += 1;
-                    *n
-                };
-                let c2 = c.clone();
-                let tx2 = tx.clone();
-                thread::Builder::new()
-                    .name(format!("lua-http-{id}"))
-                    .spawn(move || {
-                        let (ok, status, body, et) = match c2.get_with_etag(&url, etag.as_deref()) {
-                            Ok(r) => (r.ok, r.status, r.body, r.etag),
-                            Err(e) => (false, 0, e, None),
-                        };
-                        if let Ok(sender) = tx2.lock() {
-                            let _ = sender.send(AsyncResp { id, ok, status, body, etag: et });
-                        }
-                    })
-                    .ok();
+                let id = p.borrow_mut().submit(|id| Job::Get { id, url, etag });
                 Ok(id)
             })?,
         )?;
@@ -920,40 +1159,22 @@ pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
 
     // http.post_async(url, body) -> request_id (number)
     {
-        let c = client.clone();
-        let tx = async_tx.clone();
-        let id_counter = next_id.clone();
+        let p = pool.clone();
         http_table.set(
             "post_async",
             lua.create_function(move |_, (url, body): (String, String)| {
-                let id = {
-                    let mut n = id_counter.borrow_mut();
-                    *n += 1;
-                    *n
-                };
-                let c2 = c.clone();
-                let tx2 = tx.clone();
-                thread::Builder::new()
-                    .name(format!("lua-http-post-{id}"))
-                    .spawn(move || {
-                        let (ok, status, resp_body, et) = match c2.post(&url, &body) {
-                            Ok(r) => (r.ok, r.status, r.body, r.etag),
-                            Err(e) => (false, 0, e, None),
-                        };
-                        if let Ok(sender) = tx2.lock() {
-                            let _ = sender.send(AsyncResp { id, ok, status, body: resp_body, etag: et });
-                        }
-                    })
-                    .ok();
+                let id = p.borrow_mut().submit(|id| Job::Post { id, url, body });
                 Ok(id)
             })?,
         )?;
     }
 
     // http.poll() -> array of completed responses: [{id, ok, status, body}, ...]
-    // Non-blocking; returns empty table if no responses ready.
+    // Non-blocking; returns empty table if no responses ready. Delivering
+    // a response marks the frame dirty so the app's new state gets drawn.
     {
         let rx = async_rx.clone();
+        let ctl = control.clone();
         http_table.set(
             "poll",
             lua.create_function(move |lua, ()| {
@@ -976,6 +1197,9 @@ pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
                         }
                         Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
                     }
+                }
+                if idx > 1 {
+                    ctl.request_redraw();
                 }
                 Ok(table)
             })?,

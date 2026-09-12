@@ -2,6 +2,13 @@
 resolver = "2"
 members = ["crates/*"]
 
+# Device builds are CPU-bound on a Cortex-A35 (RK3326); trade compile time
+# for a leaner, better-inlined binary.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+
 [workspace.package]
 version = "0.5.3"
 edition = "2024"
