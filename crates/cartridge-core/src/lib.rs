@@ -9,3 +9,4 @@ pub mod sysinfo;
 pub mod text_cache;
 pub mod theme;
 pub mod ui;
+pub mod window;

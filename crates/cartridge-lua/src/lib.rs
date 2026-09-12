@@ -43,18 +43,13 @@ pub fn run_lua_app(app_dir: &Path, assets_dir: &Path) -> Result<(), String> {
     let _controllers = cartridge_core::input::open_all_controllers(&game_controller_subsystem);
 
     let window_title = format!("CartridgeOS - {}", manifest.name);
-    let window = video_subsystem
-        .window(&window_title, WIDTH, HEIGHT)
-        .position_centered()
-        .build()
-        .map_err(|e| e.to_string())?;
-
+    // Shared helper: honors CARTRIDGE_HIDDEN/SOFTWARE/SCALE/FULLSCREEN.
     // No present_vsync(): unreliable on RK3326; sleep cap below provides timing.
-    let mut canvas = window
-        .into_canvas()
-        .accelerated()
-        .build()
-        .map_err(|e| e.to_string())?;
+    let mut canvas = cartridge_core::window::create_canvas(
+        &video_subsystem,
+        &window_title,
+        cartridge_core::window::WindowOptions::default(),
+    )?;
 
     let texture_creator = canvas.texture_creator();
     let mut fonts = FontCache::new(assets_dir)?;

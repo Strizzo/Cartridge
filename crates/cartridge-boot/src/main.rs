@@ -250,18 +250,13 @@ fn run_boot_selector(assets_dir: &Path) -> Result<BootChoice, String> {
     let game_controller_subsystem = sdl_context.game_controller()?;
     let _controllers = cartridge_core::input::open_all_controllers(&game_controller_subsystem);
 
-    let window = video_subsystem
-        .window("CartridgeOS Boot Selector", WIDTH, HEIGHT)
-        .position_centered()
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let mut canvas = window
-        .into_canvas()
-        .accelerated()
-        .present_vsync()
-        .build()
-        .map_err(|e| e.to_string())?;
+    // Shared helper: honors CARTRIDGE_HIDDEN/SOFTWARE/SCALE/FULLSCREEN and
+    // never enables vsync (unreliable on RK3326; the frame cap below paces us).
+    let mut canvas = cartridge_core::window::create_canvas(
+        &video_subsystem,
+        "CartridgeOS Boot Selector",
+        cartridge_core::window::WindowOptions::default(),
+    )?;
 
     let texture_creator = canvas.texture_creator();
     let mut fonts = FontCache::new(assets_dir)?;

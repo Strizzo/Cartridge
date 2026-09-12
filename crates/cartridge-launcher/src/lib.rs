@@ -101,29 +101,15 @@ pub fn run_launcher_with_config(
     let game_controller_subsystem = sdl_context.game_controller()?;
     let _controllers = cartridge_core::input::open_all_controllers(&game_controller_subsystem);
 
-    // Hidden window for headless capture (perf benches, snapshot tool).
-    let hidden = std::env::var("CARTRIDGE_HIDDEN").as_deref() == Ok("1");
-    let mut window_builder = video_subsystem.window("CartridgeOS", WIDTH, HEIGHT);
-    window_builder.position_centered();
-    if hidden {
-        window_builder.hidden();
-    }
-    let window = window_builder.build().map_err(|e| e.to_string())?;
-
-    // Note: present_vsync() is unreliable on RK3326's fbdev/DRM path and
-    // would compound with the sleep-based frame cap below. Rely on the
-    // sleep cap alone for predictable timing.
-    //
-    // Software rendering when CARTRIDGE_SOFTWARE=1 (for headless capture
-    // -- read_pixels is reliable on software renderers).
-    let software = std::env::var("CARTRIDGE_SOFTWARE").as_deref() == Ok("1");
-    let mut canvas_builder = window.into_canvas();
-    if software {
-        canvas_builder = canvas_builder.software();
-    } else {
-        canvas_builder = canvas_builder.accelerated();
-    }
-    let mut canvas = canvas_builder.build().map_err(|e| e.to_string())?;
+    // Window + canvas via the shared helper: honors CARTRIDGE_HIDDEN (headless
+    // capture), CARTRIDGE_SOFTWARE (reliable read_pixels), CARTRIDGE_SCALE and
+    // CARTRIDGE_FULLSCREEN (simulator). Never vsync (unreliable on RK3326;
+    // the sleep-based frame cap below provides timing).
+    let mut canvas = cartridge_core::window::create_canvas(
+        &video_subsystem,
+        "CartridgeOS",
+        cartridge_core::window::WindowOptions::default(),
+    )?;
 
     let texture_creator = canvas.texture_creator();
     let mut fonts = FontCache::new(assets_dir)?;
