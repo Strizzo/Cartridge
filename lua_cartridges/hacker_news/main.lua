@@ -29,11 +29,17 @@ local state = {
     reader_domain = "",
     reader_raw_body = nil,
     reader_needs_layout = false,
-    reader_url_to_load = nil,  -- deferred article loading
-    -- Deferred initial load (render sets ready_to_load after first frame)
-    needs_initial_load = true,
-    ready_to_load = false,
+    -- Async HTTP bookkeeping: request id -> handler(resp). Each load bumps
+    -- its generation so responses from a superseded load are dropped.
+    pending = {},
+    list_gen = 0,
+    detail_gen = 0,
+    reader_gen = 0,
 }
+
+-- Comments are fetched one level deep, at most this many.
+local MAX_COMMENTS = 20
+local MAX_STORIES = 30
 
 local ROW_HEIGHT = 64
 local CARD_RADIUS = 6
@@ -183,90 +189,62 @@ local function draw_scroll_indicator(y_start, height, cursor, total, visible)
     screen.draw_rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
 end
 
--- ── API Functions ────────────────────────────────────────────────────────────
+-- ── API Functions (async) ────────────────────────────────────────────────────
+-- Every network call goes through http.get_async; results are collected
+-- by on_update via http.poll() and dispatched to the handler registered
+-- here. The runtime runs at most a few requests concurrently, so issuing a
+-- batch of 30 item fetches simply queues them.
 
-local function fetch_story_ids(tab_id, callback)
-    local url_map = {
-        top = BASE_URL .. "/topstories.json",
-        new = BASE_URL .. "/newstories.json",
-        best = BASE_URL .. "/beststories.json",
-    }
-    local ok, resp = pcall(http.get_cached, url_map[tab_id], 120)
-    if ok and resp.ok then
-        local dok, ids = pcall(json.decode, resp.body)
-        if dok and ids then
-            local result = {}
-            for i = 1, math.min(30, #ids) do
-                result[#result + 1] = ids[i]
-            end
-            return result
-        end
+local function request(url, handler)
+    local ok, id = pcall(http.get_async, url)
+    if ok and id then
+        state.pending[id] = handler
+        return id
     end
-    return {}
-end
-
-local function fetch_item(item_id)
-    local ok, resp = pcall(http.get_cached, BASE_URL .. "/item/" .. item_id .. ".json", 300)
-    if ok and resp.ok then
-        local dok, item = pcall(json.decode, resp.body)
-        if dok then return item end
-    end
+    handler(nil)
     return nil
 end
 
-local function fetch_stories(ids)
-    local stories = {}
-    for _, id in ipairs(ids) do
-        local item = fetch_item(id)
-        if item then
-            stories[#stories + 1] = {
-                id = item.id or 0,
-                title = item.title or "",
-                url = item.url or "",
-                score = item.score or 0,
-                by = item.by or "",
-                time = item.time or 0,
-                descendants = item.descendants or 0,
-                kids = item.kids or {},
-                text = item.text or "",
-            }
-        end
-    end
-    return stories
+local function decode(resp)
+    if not resp or not resp.ok then return nil end
+    local ok, data = pcall(json.decode, resp.body)
+    if ok then return data end
+    return nil
 end
 
-local function fetch_comments(comment_ids, depth, max_depth)
-    depth = depth or 0
-    max_depth = max_depth or 2
-    if depth > max_depth or not comment_ids or #comment_ids == 0 then
-        return {}
-    end
+local function item_url(item_id)
+    return BASE_URL .. "/item/" .. item_id .. ".json"
+end
 
-    local comments = {}
-    local batch_size = math.min(20, #comment_ids)
-    for i = 1, batch_size do
-        local item = fetch_item(comment_ids[i])
-        if item and not item.deleted and not item.dead then
-            local comment = {
-                id = item.id or 0,
-                by = item.by or "[deleted]",
-                text = strip_html(item.text or ""),
-                time = item.time or 0,
-                kids = item.kids or {},
-                parent = item.parent or 0,
-                depth = depth,
-            }
-            comments[#comments + 1] = comment
+local function story_from_item(item)
+    return {
+        id = item.id or 0,
+        title = item.title or "",
+        url = item.url or "",
+        score = item.score or 0,
+        by = item.by or "",
+        time = item.time or 0,
+        descendants = item.descendants or 0,
+        kids = item.kids or {},
+        text = item.text or "",
+    }
+end
 
-            if #comment.kids > 0 and depth < max_depth then
-                local children = fetch_comments(comment.kids, depth + 1, max_depth)
-                for _, child in ipairs(children) do
-                    comments[#comments + 1] = child
-                end
-            end
-        end
+-- Fetch a list of item ids in one batch; calls done(items) with a table
+-- indexed like `ids` (missing/failed entries are nil) once all responded.
+-- `is_live()` lets a superseded load drop its late responses.
+local function fetch_items(ids, is_live, done)
+    local n = #ids
+    if n == 0 then done({}) return end
+    local items, completed = {}, 0
+    for i = 1, n do
+        request(item_url(ids[i]), function(resp)
+            if not is_live() then return end
+            items[i] = decode(resp)
+            completed = completed + 1
+            if completed >= n then done(items) end
+        end)
     end
-    return comments
 end
 
 -- ── Story List Screen ────────────────────────────────────────────────────────
@@ -275,15 +253,36 @@ local function load_stories()
     state.loading = true
     state.error_msg = ""
     local tab_id = state.tab_ids[state.active_tab]
+    state.list_gen = state.list_gen + 1
+    local gen = state.list_gen
+    local function live() return gen == state.list_gen end
 
-    local ids = fetch_story_ids(tab_id)
-    if #ids > 0 then
-        local stories = fetch_stories(ids)
-        state.stories[tab_id] = stories
-    else
-        state.error_msg = "Failed to load stories"
-    end
-    state.loading = false
+    local url_map = {
+        top = BASE_URL .. "/topstories.json",
+        new = BASE_URL .. "/newstories.json",
+        best = BASE_URL .. "/beststories.json",
+    }
+    request(url_map[tab_id], function(resp)
+        if not live() then return end
+        local all_ids = decode(resp)
+        if not all_ids or #all_ids == 0 then
+            state.error_msg = "Failed to load stories"
+            state.loading = false
+            return
+        end
+        local ids = {}
+        for i = 1, math.min(MAX_STORIES, #all_ids) do ids[i] = all_ids[i] end
+
+        fetch_items(ids, live, function(items)
+            local stories = {}
+            for i = 1, #ids do
+                if items[i] then stories[#stories + 1] = story_from_item(items[i]) end
+            end
+            state.stories[tab_id] = stories
+            if #stories == 0 then state.error_msg = "Failed to load stories" end
+            state.loading = false
+        end)
+    end)
 end
 
 local function draw_story_card(story, y, is_selected)
@@ -487,15 +486,41 @@ local function load_story_detail(story)
     state.detail_story = story
     state.detail_comments = {}
     state.detail_scroll = 0
-    state.detail_loading = true
     state.detail_lines = {}
     state.detail_needs_layout = true
+    state.detail_gen = state.detail_gen + 1
+    local gen = state.detail_gen
+    local function live() return gen == state.detail_gen end
 
-    if story.kids and #story.kids > 0 then
-        state.detail_comments = fetch_comments(story.kids, 0, 2)
+    -- Top-level comments only, capped, fetched as one batch.
+    local ids = {}
+    for i = 1, math.min(MAX_COMMENTS, #(story.kids or {})) do ids[i] = story.kids[i] end
+    if #ids == 0 then
+        state.detail_loading = false
+        return
     end
 
-    state.detail_loading = false
+    state.detail_loading = true
+    fetch_items(ids, live, function(items)
+        local comments = {}
+        for i = 1, #ids do
+            local item = items[i]
+            if item and not item.deleted and not item.dead then
+                comments[#comments + 1] = {
+                    id = item.id or 0,
+                    by = item.by or "[deleted]",
+                    text = strip_html(item.text or ""),
+                    time = item.time or 0,
+                    kids = item.kids or {},
+                    parent = item.parent or 0,
+                    depth = 0,
+                }
+            end
+        end
+        state.detail_comments = comments
+        state.detail_needs_layout = true
+        state.detail_loading = false
+    end)
 end
 
 local function draw_story_detail()
@@ -627,15 +652,19 @@ local function load_reader(url)
     state.reader_scroll = 0
     state.reader_loading = true
     state.reader_domain = get_domain(url)
+    state.reader_gen = state.reader_gen + 1
+    local gen = state.reader_gen
 
-    local ok, resp = pcall(http.get, url)
-    if ok and resp.ok then
-        state.reader_raw_body = strip_html_body(resp.body or "")
-        state.reader_needs_layout = true
-    else
-        state.reader_lines = {"Failed to load article."}
-    end
-    state.reader_loading = false
+    request(url, function(resp)
+        if gen ~= state.reader_gen then return end
+        if resp and resp.ok then
+            state.reader_raw_body = strip_html_body(resp.body or "")
+            state.reader_needs_layout = true
+        else
+            state.reader_lines = {"Failed to load article."}
+        end
+        state.reader_loading = false
+    end)
 end
 
 local function draw_reader()
@@ -691,21 +720,18 @@ end
 -- ── Lifecycle Callbacks ──────────────────────────────────────────────────────
 
 function on_init()
-    state.loading = true
+    load_stories()
 end
 
 function on_update(dt)
-    -- Wait until at least one frame has rendered before blocking on HTTP
-    if state.ready_to_load then
-        state.ready_to_load = false
-        load_stories()
-    end
-
-    -- Deferred article loading (triggered from on_input)
-    if state.reader_url_to_load then
-        local url = state.reader_url_to_load
-        state.reader_url_to_load = nil
-        load_reader(url)
+    -- Dispatch completed HTTP responses to their handlers. The runtime
+    -- marks the frame dirty whenever poll() delivers something.
+    for _, resp in ipairs(http.poll()) do
+        local handler = state.pending[resp.id]
+        if handler then
+            state.pending[resp.id] = nil
+            handler(resp)
+        end
     end
 end
 
@@ -758,14 +784,12 @@ function on_input(button, action)
     elseif current == "detail" then
         if button == "b" then
             state.screen_stack[#state.screen_stack] = nil
+            state.detail_gen = state.detail_gen + 1  -- drop in-flight comment fetches
+            state.detail_loading = false
         elseif button == "x" then
             if state.detail_story and state.detail_story.url ~= "" then
                 state.screen_stack[#state.screen_stack + 1] = "reader"
-                state.reader_lines = {}
-                state.reader_scroll = 0
-                state.reader_loading = true
-                state.reader_domain = get_domain(state.detail_story.url)
-                state.reader_url_to_load = state.detail_story.url
+                load_reader(state.detail_story.url)
             end
         elseif button == "dpad_up" then
             state.detail_scroll = math.max(0, state.detail_scroll - 1)
@@ -780,6 +804,8 @@ function on_input(button, action)
     elseif current == "reader" then
         if button == "b" then
             state.screen_stack[#state.screen_stack] = nil
+            state.reader_gen = state.reader_gen + 1  -- drop an in-flight article fetch
+            state.reader_loading = false
         elseif button == "dpad_up" then
             state.reader_scroll = math.max(0, state.reader_scroll - 1)
         elseif button == "dpad_down" then
@@ -794,12 +820,6 @@ end
 
 function on_render()
     screen.clear(theme.bg.r, theme.bg.g, theme.bg.b)
-
-    -- After first frame renders "Loading...", allow on_update to fetch data
-    if state.needs_initial_load then
-        state.needs_initial_load = false
-        state.ready_to_load = true
-    end
 
     local current = state.screen_stack[#state.screen_stack]
     if current == "list" then
