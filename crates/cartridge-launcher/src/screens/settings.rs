@@ -635,7 +635,7 @@ impl LauncherScreen for SettingsScreen {
 
             screen.draw_text("About CartridgeOS", 24, y + 8, Some(theme.text), 14, true, None);
             screen.draw_text(
-                "CartridgeOS v0.5.3 -- A cyberdeck OS for Linux handhelds",
+                concat!("CartridgeOS v", env!("CARGO_PKG_VERSION"), " -- A cyberdeck OS for Linux handhelds"),
                 24,
                 y + 30,
                 Some(theme.text_dim),

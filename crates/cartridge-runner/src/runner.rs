@@ -221,7 +221,7 @@ pub fn run_demo(assets_dir: &Path) -> Result<(), String> {
 
                 // Version + author
                 screen.draw_text(
-                    "v0.5.3  CartridgeOS",
+                    concat!("v", env!("CARGO_PKG_VERSION"), "  CartridgeOS"),
                     24,
                     y + 46,
                     Some(theme.text_dim),

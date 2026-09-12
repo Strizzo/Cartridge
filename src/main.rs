@@ -26,6 +26,9 @@ fn main() {
         Some("help") | Some("--help") | Some("-h") => {
             print_usage();
         }
+        Some("version") | Some("--version") | Some("-V") => {
+            println!("cartridge {}", env!("CARGO_PKG_VERSION"));
+        }
         Some(unknown) => {
             eprintln!("Unknown command: {unknown}");
             print_usage();
@@ -100,6 +103,7 @@ fn print_usage() {
     eprintln!("  (default)          Launch the CartridgeOS home screen");
     eprintln!("  run --path <dir>   Run a Lua cartridge app");
     eprintln!("  demo               Run the built-in demo screen");
+    eprintln!("  --version          Print the version and exit");
     eprintln!("  help               Show this help message");
 }
 
