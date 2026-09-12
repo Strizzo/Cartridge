@@ -122,9 +122,7 @@ impl Theme {
 }
 
 fn user_theme_id() -> Option<String> {
-    let home = std::env::var("HOME").ok()?;
-    let path = std::path::Path::new(&home)
-        .join(".cartridges")
+    let path = crate::paths::cartridges_dir()
         .join("cartridge-launcher")
         .join("data")
         .join("settings.json");

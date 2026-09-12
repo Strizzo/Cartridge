@@ -457,36 +457,25 @@ fn capture_frame_to_png(
 /// 1. `lua_cartridges/{name}/` relative to the binary (bundled — preferred, always up to date)
 /// 2. `~/.cartridges/apps/{name}/` (user-installed from store)
 fn resolve_app_dir(app_id: &str, _assets_dir: &Path) -> PathBuf {
-    let home = std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."));
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
-    let cwd = std::env::current_dir().unwrap_or_default();
+    let bundled_dir = cartridge_core::paths::bundled_cartridges_dir();
+    let installed_dir = cartridge_core::paths::installed_apps_dir();
     let variants = crate::ui_constants::name_variants(app_id);
 
-    // First pass: check ALL bundled paths (next to binary + cwd) for ALL variants
+    // First pass: bundled cartridges (next to binary, else cwd) for ALL variants
     for name in &variants {
-        if let Some(ref dir) = exe_dir {
-            let bundled = dir.join("lua_cartridges").join(name);
-            if bundled.exists() {
-                return bundled;
-            }
-        }
-        let dev_path = cwd.join("lua_cartridges").join(name);
-        if dev_path.exists() {
-            return dev_path;
+        let bundled = bundled_dir.join(name);
+        if bundled.exists() {
+            return bundled;
         }
     }
 
     // Second pass: fall back to user-installed paths
     for name in &variants {
-        let installed_path = home.join(".cartridges/apps").join(name);
+        let installed_path = installed_dir.join(name);
         if installed_path.exists() {
             return installed_path;
         }
     }
 
-    home.join(".cartridges/apps").join(app_id)
+    installed_dir.join(app_id)
 }

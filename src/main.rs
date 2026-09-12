@@ -103,27 +103,7 @@ fn print_usage() {
     eprintln!("  help               Show this help message");
 }
 
+/// Honors CARTRIDGE_ASSETS, then probes cwd / exe dir (see cartridge_core::paths).
 fn find_assets_dir() -> PathBuf {
-    let cwd = std::env::current_dir().unwrap_or_default();
-    let cwd_assets = cwd.join("assets");
-    if cwd_assets.join("fonts").exists() {
-        return cwd_assets;
-    }
-
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(exe_dir) = exe.parent()
-    {
-        let exe_assets = exe_dir.join("assets");
-        if exe_assets.join("fonts").exists() {
-            return exe_assets;
-        }
-        if let Some(parent) = exe_dir.parent() {
-            let parent_assets = parent.join("assets");
-            if parent_assets.join("fonts").exists() {
-                return parent_assets;
-            }
-        }
-    }
-
-    cwd_assets
+    cartridge_core::paths::assets_dir()
 }

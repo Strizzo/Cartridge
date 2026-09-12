@@ -36,9 +36,7 @@ impl Default for BootState {
 }
 
 fn state_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home)
-        .join(".cartridges")
+    cartridge_core::paths::cartridges_dir()
         .join("boot")
         .join("state.json")
 }
@@ -112,31 +110,11 @@ impl BootChoice {
 const OPTIONS: [BootChoice; 2] = [BootChoice::Cartridge, BootChoice::EmulationStation];
 
 // ---------------------------------------------------------------------------
-// Asset directory lookup (shared pattern with main binary)
+// Asset directory lookup (shared with main binary via cartridge_core::paths)
 // ---------------------------------------------------------------------------
 
 fn find_assets_dir() -> PathBuf {
-    let cwd = std::env::current_dir().unwrap_or_default();
-    let cwd_assets = cwd.join("assets");
-    if cwd_assets.join("fonts").exists() {
-        return cwd_assets;
-    }
-
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(exe_dir) = exe.parent() {
-            let exe_assets = exe_dir.join("assets");
-            if exe_assets.join("fonts").exists() {
-                return exe_assets;
-            }
-            if let Some(parent) = exe_dir.parent() {
-                let parent_assets = parent.join("assets");
-                if parent_assets.join("fonts").exists() {
-                    return parent_assets;
-                }
-            }
-        }
-
-    cwd_assets
+    cartridge_core::paths::assets_dir()
 }
 
 // ---------------------------------------------------------------------------

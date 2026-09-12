@@ -803,9 +803,7 @@ pub fn register_http_api(lua: &Lua, app_id: &str) -> LuaResult<()> {
     use std::sync::{Arc, Mutex};
     use std::thread;
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let cache_dir = PathBuf::from(home)
-        .join(".cartridges")
+    let cache_dir = cartridge_core::paths::cartridges_dir()
         .join(app_id)
         .join("cache")
         .join("http");

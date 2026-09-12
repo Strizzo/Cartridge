@@ -3,6 +3,7 @@ pub mod device;
 pub mod font;
 pub mod image_cache;
 pub mod input;
+pub mod paths;
 pub mod screen;
 pub mod storage;
 pub mod sysinfo;

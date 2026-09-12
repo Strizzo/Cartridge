@@ -1,5 +1,4 @@
 use sdl2::pixels::Color;
-use std::path::PathBuf;
 
 /// Category color mapping for app store pills and strips.
 pub fn category_color(category: &str) -> Color {
@@ -101,31 +100,20 @@ pub fn invalidate_icon_path(app_id: &str) {
 }
 
 fn resolve_icon_path_uncached(app_id: &str) -> Option<String> {
-    let home = std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."));
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
-    let cwd = std::env::current_dir().unwrap_or_default();
+    let bundled_dir = cartridge_core::paths::bundled_cartridges_dir();
+    let installed_dir = cartridge_core::paths::installed_apps_dir();
 
     let variants = name_variants(app_id);
 
     for name in &variants {
-        if let Some(ref dir) = exe_dir {
-            let bundled_icon = dir.join("lua_cartridges").join(name).join("icon.png");
-            if bundled_icon.exists() {
-                return Some(bundled_icon.to_string_lossy().to_string());
-            }
-        }
-        let dev_icon = cwd.join("lua_cartridges").join(name).join("icon.png");
-        if dev_icon.exists() {
-            return Some(dev_icon.to_string_lossy().to_string());
+        let bundled_icon = bundled_dir.join(name).join("icon.png");
+        if bundled_icon.exists() {
+            return Some(bundled_icon.to_string_lossy().to_string());
         }
     }
 
     for name in &variants {
-        let installed_icon = home.join(".cartridges/apps").join(name).join("icon.png");
+        let installed_icon = installed_dir.join(name).join("icon.png");
         if installed_icon.exists() {
             return Some(installed_icon.to_string_lossy().to_string());
         }
