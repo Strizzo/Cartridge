@@ -210,6 +210,121 @@ fn draw_option_card(
 }
 
 // ---------------------------------------------------------------------------
+// Neo-Tokyo boot selector
+// ---------------------------------------------------------------------------
+
+/// 26px square button capsule with a display-face letter.
+fn neo_capsule(screen: &mut Screen, label: &str, x: i32, y: i32, red: bool) -> i32 {
+    let theme = screen.theme;
+    if label.len() == 1 {
+        screen.fill(Rect::new(x, y, 26, 26), if red { theme.accent } else { theme.text });
+        let w = screen.display_text_width(label, 19) as i32;
+        let ascent = screen.display_ascent(19);
+        screen.draw_display_text(label, x + (26 - w) / 2, y + (26 - ascent) / 2 + 1, theme.bg, 19);
+        26
+    } else {
+        let tw = screen.get_text_width(label, 11, false) as i32;
+        screen.draw_outline(Rect::new(x, y + 1, (tw + 18) as u32, 24), theme.text_dim, 1);
+        let lh = screen.get_line_height(11, false) as i32;
+        screen.draw_text(label, x + 9, y + 1 + (24 - lh) / 2, Some(theme.text), 11, false, None);
+        tw + 18
+    }
+}
+
+fn neo_hint(screen: &mut Screen, label: &str, action: &str, x: i32, y: i32, red: bool) -> i32 {
+    let w = neo_capsule(screen, label, x, y, red);
+    let lh = screen.get_line_height(11, false) as i32;
+    let color = screen.theme.text;
+    let aw = screen.draw_text(action, x + w + 9, y + (26 - lh) / 2, Some(color), 11, false, None) as i32;
+    w + 9 + aw + 26
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_neo(
+    screen: &mut Screen,
+    selected: usize,
+    last_choice: BootChoice,
+    auto_boot_cancelled: bool,
+    elapsed: f64,
+) {
+    let theme = screen.theme;
+    let cx = WIDTH as i32 / 2;
+
+    // Title block: big display title over the red bar.
+    let title = "CARTRIDGE";
+    let tw = screen.display_text_width(title, 84) as i32;
+    let ascent = screen.display_ascent(84);
+    screen.draw_display_text(title, cx - tw / 2, 200 - ascent, theme.text, 84);
+    screen.fill(Rect::new(0, 214, WIDTH - 150, 6), theme.accent);
+    screen.draw_hazard_stripes(Rect::new(WIDTH as i32 - 150, 214, 150, 6), theme.accent, theme.bg, 20);
+    let sub = "SELECT BOOT ENVIRONMENT";
+    let sw = screen.get_text_width(sub, 11, false) as i32;
+    screen.draw_text(sub, cx - sw / 2, 236, Some(theme.text_dim), 11, false, None);
+
+    // Options.
+    let row_w: u32 = 440;
+    let row_h: i32 = 72;
+    let gap: i32 = 12;
+    let rows_x = cx - row_w as i32 / 2;
+    let rows_y = 292;
+    for (i, &choice) in OPTIONS.iter().enumerate() {
+        let y = rows_y + i as i32 * (row_h + gap);
+        let rect = Rect::new(rows_x, y, row_w, row_h as u32);
+        let is_sel = i == selected;
+        let (fg, dim) = if is_sel {
+            screen.fill(rect, theme.accent);
+            (theme.bg, theme.bg)
+        } else {
+            screen.draw_outline(rect, theme.border, 1);
+            (theme.text, theme.text_dim)
+        };
+        let label = choice.label().to_uppercase();
+        let la = screen.display_ascent(28);
+        screen.draw_display_text(&label, rows_x + 20, y + 14 + (28 - la).max(0), fg, 28);
+        screen.draw_text(choice.description(), rows_x + 20, y + 46, Some(dim), 11, false, None);
+        if choice == last_choice {
+            let tag = "LAST USED";
+            let tw = screen.get_text_width(tag, 11, false) as i32;
+            screen.draw_text(tag, rows_x + row_w as i32 - 20 - tw, y + 14, Some(dim), 11, false, None);
+            screen.fill(Rect::new(rows_x + row_w as i32 - 20 - tw - 16, y + 17, 8, 8), fg);
+        }
+    }
+
+    // Auto-boot countdown.
+    if !auto_boot_cancelled {
+        let remaining = (AUTO_BOOT_SECONDS - elapsed).ceil().max(1.0) as i32;
+        let text = format!("AUTO-STARTING {} IN {}", last_choice.label().to_uppercase(), remaining);
+        let tw = screen.get_text_width(&text, 11, false) as i32;
+        let y = rows_y + OPTIONS.len() as i32 * (row_h + gap) + 26;
+        screen.draw_text(&text, cx - tw / 2, y, Some(theme.text), 11, false, None);
+        let bar_w: u32 = 200;
+        let bar_y = y + 24;
+        screen.fill(Rect::new(cx - bar_w as i32 / 2, bar_y, bar_w, 3), theme.border);
+        let progress = (elapsed / AUTO_BOOT_SECONDS).clamp(0.0, 1.0) as f32;
+        let fill_w = (bar_w as f32 * progress) as u32;
+        if fill_w > 0 {
+            screen.fill(Rect::new(cx - bar_w as i32 / 2, bar_y, fill_w, 3), theme.accent);
+        }
+        let cancel = "PRESS ANY BUTTON TO CANCEL";
+        let cw = screen.get_text_width(cancel, 11, false) as i32;
+        screen.draw_text(cancel, cx - cw / 2, bar_y + 14, Some(theme.text_dim), 11, false, None);
+    }
+
+    // Footer.
+    let footer_y = HEIGHT as i32 - 48;
+    screen.fill(Rect::new(0, footer_y, WIDTH, 1), theme.border);
+    let cy = footer_y + 11;
+    let mut hx = 18;
+    hx += neo_hint(screen, "A", "SELECT", hx, cy, false);
+    hx += neo_hint(screen, "B", "LAST USED", hx, cy, true);
+    neo_hint(screen, "D-PAD", "NAVIGATE", hx, cy, false);
+    let version = format!("V{}", env!("CARGO_PKG_VERSION"));
+    let vw = screen.get_text_width(&version, 11, false) as i32;
+    let lh = screen.get_line_height(11, false) as i32;
+    screen.draw_text(&version, WIDTH as i32 - 18 - vw, cy + (26 - lh) / 2, Some(theme.text_dim), 11, false, None);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -264,12 +379,14 @@ fn run_boot_selector(assets_dir: &Path) -> Result<BootChoice, String> {
         .map_err(|e| e.to_string())?;
 
     let texture_creator = canvas.texture_creator();
+    let theme = Theme::default();
     let mut fonts = FontCache::new(assets_dir)?;
+    fonts.set_family(theme.font_regular, theme.font_bold);
+    fonts.set_display(theme.font_display);
     fonts.prewarm();
     let mut images = ImageCache::new(&texture_creator)?;
     let mut text_cache = TextCache::new(&texture_creator);
-
-    let theme = Theme::default();
+    let neo = theme.ui == cartridge_core::theme::UiStyle::Neo;
     let mut input_manager = InputManager::new();
     if !_controllers.is_empty() {
         input_manager.set_ignore_joystick(true);
@@ -367,6 +484,19 @@ fn run_boot_selector(assets_dir: &Path) -> Result<BootChoice, String> {
 
             // Atmospheric background (grid, corner markers)
             atmosphere.draw_background(&mut screen);
+
+            if neo {
+                let elapsed = now.duration_since(start_time).as_secs_f64();
+                render_neo(&mut screen, selected, last_choice, auto_boot_cancelled, elapsed);
+                drop(screen);
+                canvas.present();
+                let frame_time = Instant::now().duration_since(now);
+                let target_time = std::time::Duration::from_secs_f64(1.0 / TARGET_FPS as f64);
+                if frame_time < target_time {
+                    std::thread::sleep(target_time - frame_time);
+                }
+                continue;
+            }
 
             // Title with glow
             let center_x = WIDTH as i32 / 2;
