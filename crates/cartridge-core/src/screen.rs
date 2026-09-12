@@ -582,4 +582,89 @@ impl<'a> Screen<'a> {
         self.canvas.copy(texture, src_rect, dst).ok();
         true
     }
+
+    // ── Display face and flat-UI helpers ────────────────────────────────
+    //
+    // Used by the Neo-Tokyo launcher screens. Display text goes through
+    // FontCache's own texture cache (see font.rs), so titles and the clock
+    // cost one blit per frame like every other cached string.
+
+    /// Draw text in the theme's display face. Returns the rendered width.
+    pub fn draw_display_text(&mut self, text: &str, x: i32, y: i32, color: Color, size: u16) -> u32 {
+        self.fonts
+            .draw_display(self.canvas, self.texture_creator, text, x, y, color, size)
+    }
+
+    /// Width of `text` in the display face at `size`.
+    pub fn display_text_width(&mut self, text: &str, size: u16) -> u32 {
+        self.fonts.display_width(text, size)
+    }
+
+    /// Line height of the display face at `size`.
+    pub fn display_line_height(&mut self, size: u16) -> u32 {
+        self.fonts.get(FontStyle::Display, size).height() as u32
+    }
+
+    /// Ascent of the display face at `size` -- distance from the top of the
+    /// rendered texture to the baseline, for baseline-aligning display and
+    /// body text.
+    pub fn display_ascent(&mut self, size: u16) -> i32 {
+        self.fonts.get(FontStyle::Display, size).ascent()
+    }
+
+    /// Ascent of the body face at `size`.
+    pub fn text_ascent(&mut self, size: u16, bold: bool) -> i32 {
+        let style = if bold { FontStyle::MonoBold } else { FontStyle::Mono };
+        self.fonts.get(style, size).ascent()
+    }
+
+    /// Fill `rect` with `bg`, then lay 45° diagonal stripes of `fg` across
+    /// it (`period` px apart, stripes `period / 2` wide). Cheap: one
+    /// fill_rect per stripe per row.
+    pub fn draw_hazard_stripes(&mut self, rect: Rect, fg: Color, bg: Color, period: i32) {
+        let period = period.max(2);
+        let stripe_w = (period / 2).max(1) as u32;
+        self.canvas.set_draw_color(bg);
+        self.canvas.fill_rect(rect).ok();
+        self.canvas.set_draw_color(fg);
+        let right = rect.x() + rect.width() as i32;
+        for row in 0..rect.height() as i32 {
+            let y = rect.y() + row;
+            // Shift each row by one pixel so the stripe leans at 45°.
+            let mut sx = rect.x() - period + (row % period);
+            while sx < right {
+                let x0 = sx.max(rect.x());
+                let x1 = (sx + stripe_w as i32).min(right);
+                if x1 > x0 {
+                    self.canvas.fill_rect(Rect::new(x0, y, (x1 - x0) as u32, 1)).ok();
+                }
+                sx += period;
+            }
+        }
+    }
+
+    /// Draw a 1px outline of `rect` in `color`, `thickness` pixels wide,
+    /// inside the rect. (`draw_rect` ignores its line-width argument.)
+    pub fn draw_outline(&mut self, rect: Rect, color: Color, thickness: u32) {
+        let t = thickness.max(1);
+        let (x, y, w, h) = (rect.x(), rect.y(), rect.width(), rect.height());
+        if w == 0 || h == 0 {
+            return;
+        }
+        self.canvas.set_draw_color(color);
+        self.canvas.fill_rect(Rect::new(x, y, w, t.min(h))).ok();
+        self.canvas
+            .fill_rect(Rect::new(x, y + h as i32 - t.min(h) as i32, w, t.min(h)))
+            .ok();
+        self.canvas.fill_rect(Rect::new(x, y, t.min(w), h)).ok();
+        self.canvas
+            .fill_rect(Rect::new(x + w as i32 - t.min(w) as i32, y, t.min(w), h))
+            .ok();
+    }
+
+    /// Solid filled rectangle in `color` (no radius, no theme fallback).
+    pub fn fill(&mut self, rect: Rect, color: Color) {
+        self.canvas.set_draw_color(color);
+        self.canvas.fill_rect(rect).ok();
+    }
 }

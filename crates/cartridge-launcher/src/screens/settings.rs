@@ -6,8 +6,12 @@ use cartridge_core::screen::Screen;
 use cartridge_core::theme::THEME_PRESETS;
 use sdl2::rect::Rect;
 
+use crate::neo::{self, Chip, Hint};
 use crate::ui_constants::*;
 use super::{LauncherScreen, ScreenAction, ScreenContext, ScreenId};
+
+const NEO_ROW_H: i32 = 50;
+const NEO_LIST_Y: i32 = neo::CONTENT_Y + 12;
 
 const CACHE_OPTIONS: &[u32] = &[15, 30, 60, 120, 360];
 const SETTINGS_ROWS: usize = 11;
@@ -206,6 +210,11 @@ impl LauncherScreen for SettingsScreen {
     }
 
     fn render(&mut self, screen: &mut Screen, ctx: &ScreenContext) {
+        if neo::is_neo(screen.theme) {
+            self.render_neo(screen, ctx);
+            return;
+        }
+
         let theme = screen.theme;
 
         // -- Header (semi-transparent, atmosphere bleeds through) --
@@ -647,6 +656,109 @@ impl LauncherScreen for SettingsScreen {
 
         // -- Footer --
         draw_settings_footer(screen);
+    }
+}
+
+/// What a settings row shows on its right-hand side.
+enum RowValue {
+    Toggle(bool),
+    /// A cycling value with < > arrows.
+    Cycle(String),
+    /// 0..=100 slider.
+    Slider(u8),
+    /// Static text.
+    Text(String),
+    /// Navigates into a sub-screen.
+    Chevron,
+}
+
+impl SettingsScreen {
+    fn render_neo(&self, screen: &mut Screen, ctx: &ScreenContext) {
+        let theme = screen.theme;
+        neo::draw_header(screen, "SETTINGS", "", Some(&ctx.sysinfo));
+        neo::draw_bar(screen);
+
+        let wifi_status = match &ctx.sysinfo.wifi_ssid {
+            Some(ssid) => format!("Connected to {ssid}"),
+            None => "Not connected".to_string(),
+        };
+        let rows: [(&str, String, RowValue); SETTINGS_ROWS] = [
+            ("Registry URL", ctx.settings.registry_url.clone(), RowValue::Text(String::new())),
+            ("Auto Refresh", "Refresh the registry on launch".into(), RowValue::Toggle(ctx.settings.auto_refresh)),
+            ("Cache Duration", "How long to keep registry data".into(), RowValue::Cycle(format_cache_duration(ctx.settings.cache_duration_mins))),
+            ("Process Panel", "Show top processes on the home screen".into(), RowValue::Toggle(ctx.settings.show_processes)),
+            ("Theme", "Visual style for the launcher".into(), RowValue::Cycle(theme_display_name(&ctx.settings.theme_id).to_string())),
+            ("Animations", "Moving theme effects".into(), RowValue::Toggle(ctx.settings.animations_enabled)),
+            ("Sounds", "Click feedback on navigation and launch".into(), RowValue::Toggle(ctx.settings.sounds_enabled)),
+            ("WiFi", wifi_status, RowValue::Chevron),
+            ("Brightness", "Left / right to adjust".into(), RowValue::Slider(get_brightness_percent())),
+            ("Volume", "Left / right to adjust".into(), RowValue::Slider(get_volume_percent())),
+            ("About", format!("CartridgeOS {} · a pocket OS for Linux handhelds", neo::os_version()), RowValue::Text(String::new())),
+        ];
+
+        let right = SCREEN_WIDTH as i32 - neo::MARGIN_X;
+        let sub_lh = screen.get_line_height(neo::LABEL_SIZE, false) as i32;
+
+        for (i, (title, subtitle, value)) in rows.iter().enumerate() {
+            let y = NEO_LIST_Y + i as i32 * NEO_ROW_H;
+            let is_sel = i == self.selected_row;
+            if is_sel {
+                screen.fill(Rect::new(neo::MARGIN_X, y, SCREEN_WIDTH - neo::MARGIN_X as u32 * 2, NEO_ROW_H as u32), theme.card_bg);
+                screen.fill(Rect::new(neo::MARGIN_X, y, 4, NEO_ROW_H as u32), theme.accent);
+            }
+            screen.fill(Rect::new(neo::MARGIN_X, y + NEO_ROW_H - 1, SCREEN_WIDTH - neo::MARGIN_X as u32 * 2, 1), theme.border);
+
+            let tx = neo::MARGIN_X + 16;
+            let title_color = if is_sel { theme.text } else { theme.text_dim };
+            screen.draw_text(&title.to_uppercase(), tx, y + 8, Some(title_color), 14, true, None);
+            screen.draw_text(subtitle, tx, y + NEO_ROW_H - 8 - sub_lh, Some(theme.text_dim), neo::LABEL_SIZE, false, Some(400));
+
+            match value {
+                RowValue::Toggle(on) => {
+                    let label = if *on { "On" } else { "Off" };
+                    let w = screen.get_text_width(&label.to_uppercase(), neo::LABEL_SIZE, false) as i32 + 16;
+                    let kind = if *on { Chip::FilledRed } else { Chip::OutlineDim };
+                    neo::draw_chip(screen, label, right - w, y + 15, kind);
+                }
+                RowValue::Cycle(text) => {
+                    let label = text.to_uppercase();
+                    let w = screen.display_text_width(&label, 22) as i32;
+                    let color = if is_sel { theme.text } else { theme.text_dim };
+                    let arrow_pad = if is_sel { 22 } else { 0 };
+                    neo::display_at_baseline(screen, &label, right - arrow_pad - w, y + 32, color, 22);
+                    if is_sel {
+                        screen.draw_text(">", right - 12, y + 18, Some(theme.accent), 14, true, None);
+                        screen.draw_text("<", right - arrow_pad - w - 18, y + 18, Some(theme.accent), 14, true, None);
+                    }
+                }
+                RowValue::Slider(pct) => {
+                    let bar_w = 180u32;
+                    let bar_x = right - bar_w as i32;
+                    let bar_y = y + NEO_ROW_H / 2 - 2;
+                    screen.fill(Rect::new(bar_x, bar_y, bar_w, 3), theme.border);
+                    let fill_w = (bar_w as f32 * (*pct as f32 / 100.0)) as u32;
+                    if fill_w > 0 {
+                        screen.fill(Rect::new(bar_x, bar_y, fill_w, 3), if is_sel { theme.accent } else { theme.text });
+                    }
+                    let pct_label = format!("{pct}%");
+                    neo::text_right(screen, &pct_label, bar_x - 12, bar_y + 6, theme.text_dim, neo::LABEL_SIZE, false);
+                }
+                RowValue::Text(t) => {
+                    if !t.is_empty() {
+                        neo::text_right(screen, t, right, y + 30, theme.text_dim, neo::LABEL_SIZE, false);
+                    }
+                }
+                RowValue::Chevron => {
+                    let color = if is_sel { theme.accent } else { theme.text_muted };
+                    screen.draw_text(">", right - 10, y + 18, Some(color), 14, true, None);
+                }
+            }
+        }
+
+        neo::draw_footer(
+            screen,
+            &[Hint::a("Toggle"), Hint::b("Back"), Hint::wide("D-PAD", "Navigate")],
+        );
     }
 }
 
