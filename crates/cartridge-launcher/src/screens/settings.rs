@@ -697,7 +697,6 @@ impl SettingsScreen {
         ];
 
         let right = SCREEN_WIDTH as i32 - neo::MARGIN_X;
-        let title_lh = screen.get_line_height(14, true) as i32;
         let sub_lh = screen.get_line_height(neo::LABEL_SIZE, false) as i32;
 
         for (i, (title, subtitle, value)) in rows.iter().enumerate() {
@@ -712,7 +711,6 @@ impl SettingsScreen {
             let tx = neo::MARGIN_X + 16;
             let title_color = if is_sel { theme.text } else { theme.text_dim };
             screen.draw_text(&title.to_uppercase(), tx, y + 8, Some(title_color), 14, true, None);
-            let _ = title_lh;
             screen.draw_text(subtitle, tx, y + NEO_ROW_H - 8 - sub_lh, Some(theme.text_dim), neo::LABEL_SIZE, false, Some(400));
 
             match value {

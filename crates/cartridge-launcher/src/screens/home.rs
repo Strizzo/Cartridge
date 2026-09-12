@@ -5,7 +5,7 @@ use cartridge_core::theme::{style_of, UiStyle};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 
-use crate::neo::{self, Cap, Chip, Hint};
+use crate::neo::{self, Chip, Hint};
 use crate::ui_constants::*;
 use super::{LauncherScreen, ScreenAction, ScreenContext, ScreenId};
 

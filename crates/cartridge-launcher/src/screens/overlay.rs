@@ -3,7 +3,7 @@ use cartridge_core::screen::Screen;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 
-use crate::neo::{self, Cap, Chip};
+use crate::neo::{self, Cap};
 use crate::ui_constants::*;
 
 /// Boot selector overlay result.
@@ -353,7 +353,6 @@ impl BootOverlay {
             let lw = screen.display_text_width(label, 22) as i32;
             neo::display_at_baseline(screen, label, bx + (btn_w as i32 - lw) / 2, by + 26, fg, 22);
         }
-        let _ = Chip::OutlineDim;
     }
 
     fn render_confirm(&self, screen: &mut Screen) {
