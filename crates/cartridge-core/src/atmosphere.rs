@@ -18,6 +18,10 @@ pub struct Atmosphere {
     sweep_y: f32,
     sweep_color: Color,
     sweep_enabled: bool,
+    /// False for themes with `atmosphere: false`: every draw call becomes
+    /// a plain clear (background) or a no-op (overlays, sweep).
+    enabled: bool,
+    bg_color: Color,
 }
 
 /// Vertical speed of the animated sweep line in pixels per second.
@@ -37,6 +41,8 @@ impl Atmosphere {
             sweep_y: 0.0,
             sweep_color: Color::RGBA(255, 255, 255, 0),
             sweep_enabled: false,
+            enabled: true,
+            bg_color: Color::RGB(0, 0, 0),
         }
     }
 
@@ -50,6 +56,14 @@ impl Atmosphere {
         images: &mut ImageCache,
         theme: &Theme,
     ) {
+        self.enabled = theme.atmosphere;
+        self.bg_color = theme.bg;
+        if !theme.atmosphere {
+            self.background = None;
+            self.overlay = None;
+            self.sweep_enabled = false;
+            return;
+        }
         self.background = build_background(canvas, texture_creator, images, theme);
         self.overlay = build_overlay(canvas, texture_creator, images, theme.scanline_strength);
         self.sweep_color = theme.sweep_line;
@@ -104,6 +118,10 @@ impl Atmosphere {
     /// Draw the atmospheric background: a single cached blit.
     /// Falls back to immediate-mode rendering if pre-composition failed.
     pub fn draw_background(&self, screen: &mut Screen) {
+        if !self.enabled {
+            screen.clear(Some(self.bg_color));
+            return;
+        }
         if let Some(tex) = &self.background {
             screen.canvas.copy(tex, None, None).ok();
         } else {
@@ -113,6 +131,9 @@ impl Atmosphere {
 
     /// Draw overlays on top of content: a single cached blit.
     pub fn draw_overlays(&self, screen: &mut Screen) {
+        if !self.enabled {
+            return;
+        }
         if let Some(tex) = &self.overlay {
             screen.canvas.copy(tex, None, None).ok();
         } else {
