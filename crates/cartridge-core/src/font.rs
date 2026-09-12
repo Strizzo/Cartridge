@@ -16,6 +16,10 @@ pub struct FontCache {
     assets_dir: PathBuf,
     regular_path: PathBuf,
     bold_path: PathBuf,
+    /// True when the bold face resolves to the same file as the regular
+    /// one (several themes ship a single weight). Caches use this to
+    /// avoid storing identical glyph runs twice.
+    same_family: bool,
 }
 
 const DEFAULT_FAMILY: &str = "ShareTechMono-Regular";
@@ -30,13 +34,21 @@ impl FontCache {
             return Err(format!("Font not found: {}", regular_path.display()));
         }
 
+        let same_family = regular_path == bold_path;
         Ok(Self {
             ttf_context,
             fonts: HashMap::new(),
             assets_dir: assets_dir.to_path_buf(),
             regular_path,
             bold_path,
+            same_family,
         })
+    }
+
+    /// True if `FontStyle::MonoBold` and `FontStyle::Mono` load the same
+    /// file, i.e. bold rendering is pixel-identical to regular.
+    pub fn bold_is_regular(&self) -> bool {
+        self.same_family
     }
 
     /// Swap to a different font family. Filenames are without ".ttf"
@@ -57,6 +69,7 @@ impl FontCache {
             font_path(&self.assets_dir, DEFAULT_FAMILY)
         };
         let unchanged = regular_path == self.regular_path && bold_path == self.bold_path;
+        self.same_family = regular_path == bold_path;
         self.regular_path = regular_path;
         self.bold_path = bold_path;
         if !unchanged {

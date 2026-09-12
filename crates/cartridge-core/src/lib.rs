@@ -1,8 +1,10 @@
 pub mod atmosphere;
 pub mod device;
 pub mod font;
+pub mod gradient_cache;
 pub mod image_cache;
 pub mod input;
+pub mod perf;
 pub mod screen;
 pub mod storage;
 pub mod sysinfo;
