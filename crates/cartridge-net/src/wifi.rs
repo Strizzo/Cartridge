@@ -90,9 +90,13 @@ wifi-sec.psk-flags=0\n";
         }
         #[cfg(not(target_os = "linux"))]
         {
-            WifiStatus::Connected {
-                ssid: "MockNetwork".to_string(),
-                signal: 75,
+            // Simulated device profile (cartridge_core::sim).
+            match cartridge_core::sim::wifi_status() {
+                Some((ssid, rssi)) => WifiStatus::Connected {
+                    ssid,
+                    signal: cartridge_core::sim::rssi_to_percent(rssi),
+                },
+                None => WifiStatus::Disconnected,
             }
         }
     }
@@ -144,12 +148,17 @@ wifi-sec.psk-flags=0\n";
         }
         #[cfg(not(target_os = "linux"))]
         {
-            vec![
-                WifiNetwork { ssid: "HomeNetwork".into(), signal: 85, security: "WPA2".into(), is_saved: true },
-                WifiNetwork { ssid: "Neighbor5G".into(), signal: 45, security: "WPA3".into(), is_saved: false },
-                WifiNetwork { ssid: "CoffeeShop".into(), signal: 60, security: "WPA2".into(), is_saved: true },
-                WifiNetwork { ssid: "OpenWifi".into(), signal: 30, security: "--".into(), is_saved: false },
-            ]
+            let mut networks: Vec<WifiNetwork> = cartridge_core::sim::wifi_networks()
+                .into_iter()
+                .map(|n| WifiNetwork {
+                    ssid: n.ssid,
+                    signal: n.signal,
+                    security: n.security,
+                    is_saved: n.saved,
+                })
+                .collect();
+            networks.sort_by(|a, b| b.signal.cmp(&a.signal));
+            networks
         }
     }
 
@@ -175,7 +184,7 @@ wifi-sec.psk-flags=0\n";
         }
         #[cfg(not(target_os = "linux"))]
         {
-            vec!["HomeNetwork".to_string(), "CoffeeShop".to_string()]
+            cartridge_core::sim::wifi_saved()
         }
     }
 
@@ -192,8 +201,11 @@ wifi-sec.psk-flags=0\n";
         }
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = ssid;
-            Ok(())
+            if cartridge_core::sim::wifi_saved().iter().any(|s| s == ssid) {
+                cartridge_core::sim::wifi_connect(ssid)
+            } else {
+                Err("No saved password for this network".to_string())
+            }
         }
     }
 
@@ -254,8 +266,8 @@ wifi-sec.psk-flags=0\n";
         }
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = (ssid, password);
-            Ok(())
+            let _ = password;
+            cartridge_core::sim::wifi_connect(ssid)
         }
     }
 
@@ -488,6 +500,7 @@ method=auto\n");
         }
         #[cfg(not(target_os = "linux"))]
         {
+            cartridge_core::sim::wifi_disconnect();
             Ok(())
         }
     }

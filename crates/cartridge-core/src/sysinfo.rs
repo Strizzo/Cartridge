@@ -108,12 +108,9 @@ impl SystemInfo {
         }
         #[cfg(not(target_os = "linux"))]
         {
-            std::process::Command::new("hostname")
-                .output()
-                .ok()
-                .and_then(|o| String::from_utf8(o.stdout).ok())
-                .map(|s| s.trim().to_string())
-                .unwrap_or_else(|| "cartridge".to_string())
+            // Simulated profile (CARTRIDGE_SIM_PROFILE / CARTRIDGE_SIM_HOSTNAME),
+            // else the host machine's hostname.
+            crate::sim::hostname()
         }
     }
 
@@ -432,26 +429,30 @@ impl SystemInfo {
     }
 
     // -----------------------------------------------------------------------
-    // macOS / fallback: simulated data with gentle sine-wave variation
+    // macOS / fallback: simulated data driven by the device profile in
+    // `crate::sim` (CARTRIDGE_SIM_PROFILE + CARTRIDGE_SIM_* overrides), with
+    // gentle sine-wave variation so graphs are not flat lines.
     // -----------------------------------------------------------------------
     #[cfg(not(target_os = "linux"))]
     fn poll_simulated(&mut self, dt: f32) {
+        let profile = crate::sim::profile();
         self.sim_time += dt;
         let t = self.sim_time;
 
-        // CPU: oscillate between 10-60%
-        self.cpu_percent = 25.0 + 20.0 * (t * 0.3).sin() + 10.0 * (t * 1.1).cos();
-        self.cpu_percent = self.cpu_percent.clamp(5.0, 95.0);
+        // CPU: wobble around the profile baseline
+        let base = profile.cpu_percent;
+        self.cpu_percent = base + 12.0 * (t * 0.3).sin() + 6.0 * (t * 1.1).cos();
+        self.cpu_percent = self.cpu_percent.clamp(2.0, 98.0);
 
-        // Memory: slowly vary around 40%
-        self.mem_total_mb = 1024;
+        // Memory: slowly vary around 40% of the profile total
+        self.mem_total_mb = profile.mem_total_mb.max(1);
         let mem_pct = 0.38 + 0.08 * (t * 0.15).sin();
         self.mem_used_mb = (self.mem_total_mb as f32 * mem_pct) as u64;
         self.mem_percent = mem_pct * 100.0;
 
-        // Disk: static-ish
-        self.disk_total_gb = 32.0;
-        self.disk_used_gb = 12.4 + 0.3 * (t * 0.05).sin();
+        // Disk: from the profile, static
+        self.disk_total_gb = profile.disk.total_gb;
+        self.disk_used_gb = profile.disk.used_gb.min(profile.disk.total_gb);
 
         // Uptime: real uptime via sysctl or just count up
         self.uptime_secs += dt as u64;
@@ -484,12 +485,21 @@ impl SystemInfo {
         // Processes: use real ps on macOS
         self.poll_top_processes_macos();
 
-        // WiFi: try real macOS airport command
-        self.poll_wifi_macos();
+        // WiFi: live simulated state (connect/disconnect in Settings update it)
+        match crate::sim::wifi_status() {
+            Some((ssid, rssi)) => {
+                self.wifi_ssid = Some(ssid);
+                self.wifi_signal = rssi;
+            }
+            None => {
+                self.wifi_ssid = None;
+                self.wifi_signal = 0;
+            }
+        }
 
-        // Battery: simulated
-        self.battery_percent = 72;
-        self.battery_charging = false;
+        // Battery: from the profile
+        self.battery_percent = profile.battery.percent.clamp(0, 100);
+        self.battery_charging = profile.battery.charging;
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -530,30 +540,6 @@ impl SystemInfo {
                 }
             }
             self.process_count = count;
-        }
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    fn poll_wifi_macos(&mut self) {
-        // Try the macOS airport command for real WiFi info
-        let airport = "/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport";
-        if let Ok(output) = std::process::Command::new(airport).arg("-I").output() {
-            let text = String::from_utf8_lossy(&output.stdout);
-            let mut ssid = None;
-            let mut rssi = 0i32;
-            for line in text.lines() {
-                let line = line.trim();
-                if let Some(val) = line.strip_prefix("SSID:") {
-                    ssid = Some(val.trim().to_string());
-                } else if let Some(val) = line.strip_prefix("agrCtlRSSI:") {
-                    rssi = val.trim().parse().unwrap_or(0);
-                }
-            }
-            self.wifi_ssid = ssid;
-            self.wifi_signal = rssi;
-        } else {
-            self.wifi_ssid = Some("HomeNet".to_string());
-            self.wifi_signal = -55;
         }
     }
 

@@ -1,9 +1,10 @@
 //! Device hardware controls: backlight brightness and audio volume.
 //!
 //! On Linux, reads/writes /sys/class/backlight/ and shells out to amixer
-//! for volume. On macOS, no-ops (returns reasonable mock values) so the
-//! UI still works during desktop development.
+//! for volume. Off-Linux, values live in the in-memory simulated device
+//! profile (`crate::sim`) so settings changes persist for the process.
 
+#[cfg(target_os = "linux")]
 use std::path::PathBuf;
 
 // ---------------------------------------------------------------------------
@@ -44,7 +45,7 @@ pub fn get_brightness_percent() -> u8 {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        100
+        crate::sim::brightness()
     }
 }
 
@@ -66,7 +67,7 @@ pub fn set_brightness_percent(pct: u8) {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = pct;
+        crate::sim::set_brightness(pct);
     }
 }
 
@@ -97,7 +98,7 @@ pub fn get_volume_percent() -> u8 {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        50
+        crate::sim::volume()
     }
 }
 
@@ -112,6 +113,6 @@ pub fn set_volume_percent(pct: u8) {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = pct;
+        crate::sim::set_volume(pct);
     }
 }
