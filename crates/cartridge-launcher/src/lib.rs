@@ -1,5 +1,6 @@
 pub mod app;
 pub mod data;
+pub mod neo;
 pub mod screens;
 pub mod ui_constants;
 pub mod ui_sounds;
@@ -143,6 +144,7 @@ pub fn run_launcher_with_config(
     let mut theme_id = launcher.theme_id().to_string();
     let mut theme = Theme::by_id(&theme_id);
     fonts.set_family(theme.font_regular, theme.font_bold);
+    fonts.set_display(theme.font_display);
     fonts.prewarm();
     let mut atmosphere = Atmosphere::new();
     atmosphere.precompose(&mut canvas, &texture_creator, &mut images, &theme);
@@ -275,6 +277,7 @@ pub fn run_launcher_with_config(
             theme_id = launcher.theme_id().to_string();
             theme = Theme::by_id(&theme_id);
             fonts.set_family(theme.font_regular, theme.font_bold);
+            fonts.set_display(theme.font_display);
             text_cache.clear();
             atmosphere.precompose(&mut canvas, &texture_creator, &mut images, &theme);
             dirty = true;

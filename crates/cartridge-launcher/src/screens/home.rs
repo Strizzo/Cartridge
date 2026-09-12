@@ -1,11 +1,26 @@
 use cartridge_core::input::{Button, InputAction, InputEvent};
 use cartridge_core::screen::Screen;
 use cartridge_core::sysinfo::SystemInfo;
+use cartridge_core::theme::{style_of, UiStyle};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 
+use crate::neo::{self, Cap, Chip, Hint};
 use crate::ui_constants::*;
 use super::{LauncherScreen, ScreenAction, ScreenContext, ScreenId};
+
+// Neo-Tokyo home: a 3x3 grid of icon tiles, paged with L1/R1.
+const NEO_COLS: usize = 3;
+const NEO_ROWS: usize = 3;
+const NEO_PER_PAGE: usize = NEO_COLS * NEO_ROWS;
+const NEO_GRID_Y: i32 = neo::CONTENT_Y + 14;
+const NEO_TILE_H: i32 = 128;
+const NEO_TILE_GAP: i32 = 10;
+const NEO_TILE_W: i32 = (SCREEN_WIDTH as i32 - neo::MARGIN_X * 2 - NEO_TILE_GAP * (NEO_COLS as i32 - 1)) / NEO_COLS as i32;
+const NEO_ICON_SZ: u32 = 68;
+const NEO_DETAIL_Y: i32 = NEO_GRID_Y + NEO_ROWS as i32 * NEO_TILE_H + (NEO_ROWS as i32 - 1) * NEO_TILE_GAP + 12;
+/// Recent rows shown in the right-hand panel.
+const NEO_RECENT_MAX: usize = 3;
 
 // Dashboard layout constants (720x720 square screen)
 const HEADER_H: i32 = 36;
@@ -50,8 +65,148 @@ impl HomeScreen {
     }
 }
 
+impl HomeScreen {
+    /// Launch / remove / navigation shared by both layouts.
+    fn launch_focused(&mut self, ctx: &mut ScreenContext) -> ScreenAction {
+        let installed_count = ctx.installed_apps().len() as i32;
+        let recent_count = ctx.recents.len() as i32;
+        if self.zone == HomeZone::Dock && installed_count > 0 {
+            let apps = ctx.installed_apps();
+            if let Some(app) = apps.get(self.dock_index as usize) {
+                let app_id = app.id.clone();
+                let app_name = app.name.clone();
+                record_recent(ctx, &app_id, &app_name);
+                return ScreenAction::LaunchApp(app_id);
+            }
+        } else if self.zone == HomeZone::Recent
+            && recent_count > 0
+            && let Some(recent) = ctx.recents.get(self.recent_index as usize)
+        {
+            let app_id = recent.app_id.clone();
+            let app_name = recent.name.clone();
+            if ctx.installed.is_installed(&app_id) {
+                record_recent(ctx, &app_id, &app_name);
+                return ScreenAction::LaunchApp(app_id);
+            }
+        }
+        ScreenAction::None
+    }
+
+    fn remove_focused(&mut self, ctx: &mut ScreenContext) {
+        if self.zone != HomeZone::Dock {
+            return;
+        }
+        let apps = ctx.installed_apps();
+        let Some(app) = apps.get(self.dock_index as usize) else { return };
+        let app_id = app.id.clone();
+        if let Some(installer) = &ctx.installer {
+            log::info!("Removing {} from disk...", app_id);
+            match installer.remove(&app_id) {
+                Ok(()) => log::info!("Removed {} from disk", app_id),
+                Err(e) => log::warn!("Disk removal failed: {e}"),
+            }
+        }
+        ctx.installed.remove(&app_id);
+        ctx.save_installed();
+        let new_count = ctx.installed_apps().len() as i32;
+        if self.dock_index >= new_count && new_count > 0 {
+            self.dock_index = new_count - 1;
+        } else if new_count == 0 {
+            self.dock_index = 0;
+        }
+    }
+
+    /// Input for the Neo-Tokyo grid: left/right step, up/down move a row,
+    /// L1/R1 page; down past the last row (or right from the last column)
+    /// enters the Recent panel.
+    fn handle_input_neo(&mut self, events: &[InputEvent], ctx: &mut ScreenContext) -> ScreenAction {
+        let installed_count = ctx.installed_apps().len() as i32;
+        let recent_count = (ctx.recents.len().min(NEO_RECENT_MAX)) as i32;
+        let cols = NEO_COLS as i32;
+        let per_page = NEO_PER_PAGE as i32;
+
+        for ie in events {
+            if ie.action != InputAction::Press && ie.action != InputAction::Repeat {
+                continue;
+            }
+            match ie.button {
+                Button::DpadLeft => match self.zone {
+                    HomeZone::Dock if installed_count > 0 => {
+                        self.dock_index = (self.dock_index - 1).max(0);
+                    }
+                    HomeZone::Recent => self.zone = HomeZone::Dock,
+                    _ => {}
+                },
+                Button::DpadRight => match self.zone {
+                    HomeZone::Dock if installed_count > 0 => {
+                        self.dock_index = (self.dock_index + 1).min(installed_count - 1);
+                    }
+                    _ => {}
+                },
+                Button::DpadDown => match self.zone {
+                    HomeZone::Dock if installed_count > 0 => {
+                        let next = self.dock_index + cols;
+                        if next < installed_count && (next % per_page) > (self.dock_index % per_page) {
+                            self.dock_index = next;
+                        } else if recent_count > 0 {
+                            self.zone = HomeZone::Recent;
+                            self.recent_index = 0;
+                        }
+                    }
+                    HomeZone::Recent if recent_count > 0 => {
+                        self.recent_index = (self.recent_index + 1).min(recent_count - 1);
+                    }
+                    _ => {}
+                },
+                Button::DpadUp => match self.zone {
+                    HomeZone::Dock if installed_count > 0 => {
+                        let prev = self.dock_index - cols;
+                        if prev >= 0 && (prev / per_page) == (self.dock_index / per_page) {
+                            self.dock_index = prev;
+                        }
+                    }
+                    HomeZone::Recent => {
+                        if self.recent_index > 0 {
+                            self.recent_index -= 1;
+                        } else {
+                            self.zone = HomeZone::Dock;
+                        }
+                    }
+                    _ => {}
+                },
+                Button::L1 => {
+                    if self.zone == HomeZone::Dock && installed_count > 0 {
+                        self.dock_index = (self.dock_index - per_page).max(0);
+                    }
+                }
+                Button::R1 => {
+                    if self.zone == HomeZone::Dock && installed_count > 0 {
+                        self.dock_index = (self.dock_index + per_page).min(installed_count - 1);
+                    }
+                }
+                Button::A => {
+                    let action = self.launch_focused(ctx);
+                    if !matches!(action, ScreenAction::None) {
+                        return action;
+                    }
+                }
+                Button::Y => return ScreenAction::Push(ScreenId::Store),
+                Button::X => self.remove_focused(ctx),
+                Button::Start => return ScreenAction::Push(ScreenId::Settings),
+                Button::Select => return ScreenAction::ShowOverlay,
+                _ => {}
+            }
+        }
+        ScreenAction::None
+    }
+}
+
 impl LauncherScreen for HomeScreen {
     fn handle_input(&mut self, events: &[InputEvent], ctx: &mut ScreenContext) -> ScreenAction {
+        if style_of(&ctx.settings.theme_id) == UiStyle::Neo {
+            return self.handle_input_neo(events, ctx);
+        }
+
         let installed = ctx.installed_apps();
         let installed_count = installed.len() as i32;
         let recent_count = ctx.recents.len() as i32;
@@ -159,6 +314,11 @@ impl LauncherScreen for HomeScreen {
     }
 
     fn render(&mut self, screen: &mut Screen, ctx: &ScreenContext) {
+        if neo::is_neo(screen.theme) {
+            render_neo(screen, ctx, self.dock_index, self.recent_index, self.zone);
+            return;
+        }
+
         let theme = screen.theme;
         let installed_apps = ctx.installed_apps();
         let sysinfo = &ctx.sysinfo;
@@ -934,6 +1094,215 @@ fn draw_footer(screen: &mut Screen) {
 }
 
 // ---------------------------------------------------------------------------
+// Neo-Tokyo layout
+// ---------------------------------------------------------------------------
+
+fn render_neo(screen: &mut Screen, ctx: &ScreenContext, dock_index: i32, recent_index: i32, zone: HomeZone) {
+    let theme = screen.theme;
+    let installed_apps = ctx.installed_apps();
+    let sysinfo = &ctx.sysinfo;
+
+    let subtitle = format!("OS {} · {}", neo::os_version(), sysinfo.hostname);
+    neo::draw_header(screen, "CARTRIDGE", &subtitle, Some(sysinfo));
+    neo::draw_bar(screen);
+
+    let focused = if zone == HomeZone::Dock { Some(dock_index as usize) } else { None };
+    if installed_apps.is_empty() {
+        let msg = "NO CARTRIDGES";
+        let w = screen.display_text_width(msg, 40) as i32;
+        let cy = NEO_GRID_Y + (NEO_ROWS as i32 * NEO_TILE_H) / 2;
+        neo::display_at_baseline(screen, msg, (SCREEN_WIDTH as i32 - w) / 2, cy, theme.text_muted, 40);
+        let hint = "PRESS Y TO OPEN THE STORE";
+        let hw = screen.get_text_width(hint, neo::LABEL_SIZE, false) as i32;
+        screen.draw_text(hint, (SCREEN_WIDTH as i32 - hw) / 2, cy + 12, Some(theme.text_dim), neo::LABEL_SIZE, false, None);
+    } else {
+        draw_neo_grid(screen, ctx, &installed_apps, dock_index as usize, focused);
+    }
+
+    draw_neo_detail(screen, ctx, &installed_apps, dock_index as usize, zone, recent_index);
+    neo::draw_readout(screen, sysinfo);
+    neo::draw_footer(
+        screen,
+        &[Hint::a("Open"), Hint::y("Store"), Hint::x("Remove"), Hint::start("Settings")],
+    );
+}
+
+fn has_update(ctx: &ScreenContext, app: &crate::data::AppEntry) -> bool {
+    ctx.installer
+        .as_ref()
+        .map_or(false, |inst| inst.installed_version(&app.id).as_deref() != Some(&app.version))
+}
+
+fn draw_neo_grid(
+    screen: &mut Screen,
+    ctx: &ScreenContext,
+    apps: &[&crate::data::AppEntry],
+    dock_index: usize,
+    focused: Option<usize>,
+) {
+    let theme = screen.theme;
+    let page = dock_index / NEO_PER_PAGE;
+    let start = page * NEO_PER_PAGE;
+
+    for (slot, app_i) in (start..apps.len().min(start + NEO_PER_PAGE)).enumerate() {
+        let app = apps[app_i];
+        let col = (slot % NEO_COLS) as i32;
+        let row = (slot / NEO_COLS) as i32;
+        let x = neo::MARGIN_X + col * (NEO_TILE_W + NEO_TILE_GAP);
+        let y = NEO_GRID_Y + row * (NEO_TILE_H + NEO_TILE_GAP);
+        let rect = Rect::new(x, y, NEO_TILE_W as u32, NEO_TILE_H as u32);
+        let is_focused = focused == Some(app_i);
+
+        let (fg, num_color, label_color) = if is_focused {
+            screen.fill(rect, theme.accent);
+            (theme.bg, theme.bg, theme.bg)
+        } else {
+            screen.fill(rect, theme.card_bg);
+            screen.draw_outline(rect, theme.border, 1);
+            (theme.text, theme.text_muted, theme.text_dim)
+        };
+
+        // Index numeral, top-left.
+        screen.draw_display_text(&neo::index_label(app_i), x + 10, y + 7, num_color, 16);
+
+        // Update badge: a square in the top-right corner.
+        if has_update(ctx, app) {
+            let badge = if is_focused { theme.bg } else { theme.accent };
+            screen.fill(Rect::new(x + NEO_TILE_W - 12, y, 12, 12), badge);
+        }
+
+        // Icon, centred; the red tile gets the inverted variant if it exists.
+        let icon_x = x + (NEO_TILE_W - NEO_ICON_SZ as i32) / 2;
+        let icon_y = y + 28;
+        let icon_path = if is_focused {
+            crate::ui_constants::resolve_icon_file(&app.id, "icon_focused.png")
+                .or_else(|| crate::ui_constants::resolve_icon_path(&app.id))
+        } else {
+            crate::ui_constants::resolve_icon_path(&app.id)
+        };
+        let drew = icon_path
+            .map(|p| screen.draw_image(&p, icon_x, icon_y, Some((NEO_ICON_SZ, NEO_ICON_SZ)), None))
+            .unwrap_or(false);
+        if !drew {
+            let abbr: String = app.name.chars().take(2).collect::<String>().to_uppercase();
+            let w = screen.display_text_width(&abbr, 44) as i32;
+            screen.draw_display_text(&abbr, x + (NEO_TILE_W - w) / 2, icon_y + 10, fg, 44);
+        }
+
+        // Label, centred at the bottom.
+        let label = app.name.to_uppercase();
+        let lw = screen.get_text_width(&label, neo::LABEL_SIZE, is_focused) as i32;
+        let lh = screen.get_line_height(neo::LABEL_SIZE, is_focused) as i32;
+        screen.draw_text(
+            &label,
+            x + (NEO_TILE_W - lw) / 2,
+            y + NEO_TILE_H - 10 - lh,
+            Some(label_color),
+            neo::LABEL_SIZE,
+            is_focused,
+            Some((NEO_TILE_W - 16) as u32),
+        );
+    }
+}
+
+fn draw_neo_detail(
+    screen: &mut Screen,
+    ctx: &ScreenContext,
+    apps: &[&crate::data::AppEntry],
+    dock_index: usize,
+    zone: HomeZone,
+    recent_index: i32,
+) {
+    let theme = screen.theme;
+    let top = NEO_DETAIL_Y;
+    let bottom = neo::READOUT_Y - 8;
+    neo::rule(screen, top);
+
+    let split_x = neo::MARGIN_X + 400;
+    screen.fill(Rect::new(split_x, top + 12, 1, (bottom - top - 12).max(0) as u32), theme.border);
+
+    // Left: the selected app.
+    if let Some(app) = apps.get(dock_index) {
+        let name = app.name.to_uppercase();
+        let name_baseline = top + 44;
+        let nw = neo::display_at_baseline(screen, &name, neo::MARGIN_X, name_baseline, theme.text, 34) as i32;
+        let ver = format!("V{}", app.version);
+        neo::text_at_baseline(screen, &ver, neo::MARGIN_X + nw + 12, name_baseline - 2, theme.text_dim, neo::LABEL_SIZE, false);
+
+        let max_w = (split_x - neo::MARGIN_X - 18) as u32;
+        let lines = neo::wrap_lines(screen, &app.description, 12, false, max_w, 2);
+        let mut ly = name_baseline + 12;
+        for line in &lines {
+            screen.draw_text(line, neo::MARGIN_X, ly, Some(theme.text), 12, false, None);
+            ly += 18;
+        }
+
+        let mut chips: Vec<(String, Chip)> = Vec::new();
+        if has_update(ctx, app) {
+            chips.push(("Update".to_string(), Chip::FilledRed));
+        }
+        if !app.category.is_empty() {
+            chips.push((app.category.clone(), Chip::OutlineWhite));
+        }
+        if !app.permissions.is_empty() {
+            chips.push((app.permissions.join(" · "), Chip::OutlineDim));
+        }
+        let chip_y = (ly + 6).min(bottom - 22);
+        neo::draw_chip_row(screen, &chips, neo::MARGIN_X, chip_y, 8, split_x - 12);
+    }
+
+    // Page indicator when the grid is paged.
+    let pages = apps.len().div_ceil(NEO_PER_PAGE);
+    if pages > 1 {
+        let label = format!("PAGE {}/{} · L1 R1", dock_index / NEO_PER_PAGE + 1, pages);
+        neo::text_right(screen, &label, split_x - 14, top + 26, theme.text_muted, neo::LABEL_SIZE, false);
+    }
+
+    // Right: recent launches, or the top processes when the panel is on.
+    let rx = split_x + 18;
+    let right_edge = SCREEN_WIDTH as i32 - neo::MARGIN_X;
+    let lh = screen.get_line_height(neo::LABEL_SIZE, false) as i32;
+    if ctx.settings.show_processes {
+        screen.draw_text("PROCESSES", rx, top + 14, Some(theme.text_dim), neo::LABEL_SIZE, false, None);
+        let mut ry = top + 14 + lh + 10;
+        for proc in ctx.sysinfo.top_processes.iter().take(4) {
+            if ry + lh > bottom {
+                break;
+            }
+            screen.draw_text(&proc.name, rx, ry, Some(theme.text), neo::LABEL_SIZE, false, Some((right_edge - rx - 60) as u32));
+            let cpu = format!("{:.0}%", proc.cpu_percent);
+            neo::text_right(screen, &cpu, right_edge, ry + lh - 3, theme.text_dim, neo::LABEL_SIZE, false);
+            ry += lh + 9;
+        }
+        return;
+    }
+
+    screen.draw_text("RECENT", rx, top + 14, Some(theme.text_dim), neo::LABEL_SIZE, false, None);
+    let mut ry = top + 14 + lh + 10;
+    for (ri, recent) in ctx.recents.iter().take(NEO_RECENT_MAX).enumerate() {
+        if ry + lh > bottom {
+            break;
+        }
+        let is_focused = zone == HomeZone::Recent && ri == recent_index as usize;
+        if is_focused {
+            screen.fill(Rect::new(rx - 8, ry - 3, 3, (lh + 6) as u32), theme.accent);
+        }
+        let color = if is_focused { theme.text } else { theme.text_dim };
+        let mut tx = rx;
+        if let Some(icon) = crate::ui_constants::resolve_icon_path(&recent.app_id) {
+            if screen.draw_image(&icon, rx, ry - 1, Some((16, 16)), None) {
+                tx += 24;
+            }
+        }
+        let name = recent.name.to_uppercase();
+        screen.draw_text(&name, tx, ry, Some(color), neo::LABEL_SIZE, is_focused, Some((right_edge - tx - 40) as u32));
+        let elapsed = format_elapsed(recent.timestamp_secs).to_uppercase();
+        neo::text_right(screen, &elapsed, right_edge, ry + lh - 3, theme.text_dim, neo::LABEL_SIZE, false);
+        ry += lh + 9;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -977,7 +1346,7 @@ fn format_elapsed(timestamp_secs: u64) -> String {
 
 /// Local timezone offset in seconds, computed once at first call.
 /// Reads `date +%z` -> "+HHMM" or "-HHMM". Falls back to UTC on failure.
-fn local_tz_offset_secs() -> i64 {
+pub(crate) fn local_tz_offset_secs() -> i64 {
     use std::sync::OnceLock;
     static OFFSET: OnceLock<i64> = OnceLock::new();
     *OFFSET.get_or_init(|| {
