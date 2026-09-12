@@ -372,8 +372,9 @@ install_to_device() {
     echo ""
     read -rp "Proceed? [Y/n] " answer
     answer="${answer:-y}"
+    answer_lc="$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')"
 
-    if [[ "${answer,,}" != "y" && "${answer,,}" != "yes" ]]; then
+    if [[ "$answer_lc" != "y" && "$answer_lc" != "yes" ]]; then
         echo "Cancelled."
         exit 0
     fi
