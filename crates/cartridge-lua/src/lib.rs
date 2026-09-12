@@ -157,6 +157,13 @@ pub fn run_lua_app(app_dir: &Path, assets_dir: &Path) -> Result<(), String> {
         if raw_select || (raw_start && raw_select) {
             break 'running;
         }
+        // Screenshot (F12 / SIGUSR1): reads back the last presented frame.
+        // Best-effort on accelerated renderers; exact with CARTRIDGE_SOFTWARE=1.
+        if cartridge_core::screenshot::requested(&events) {
+            if let Err(e) = cartridge_core::screenshot::save_now(&canvas) {
+                log::warn!("Screenshot failed: {e}");
+            }
+        }
 
         // Process input
         let input_events = input_manager.process_events(&events);

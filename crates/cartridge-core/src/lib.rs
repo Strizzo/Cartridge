@@ -5,6 +5,7 @@ pub mod image_cache;
 pub mod input;
 pub mod paths;
 pub mod screen;
+pub mod screenshot;
 pub mod sim;
 pub mod storage;
 pub mod sysinfo;

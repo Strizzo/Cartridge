@@ -51,8 +51,22 @@ pub struct InputManager {
     ignore_joystick: bool,
 }
 
+/// One-line keyboard cheat sheet, printed to stderr once per process when
+/// `CARTRIDGE_SIM=1`. Keep in sync with the keyboard map below.
+pub const KEYBOARD_CHEAT_SHEET: &str = "sim keys: arrows=D-pad  Z=A  X=B  C=X  V=Y  A=L1  S=R1  Q=L2  W=R2  Enter=Start  Space=Select  Esc=quit  F12=screenshot";
+
+fn print_cheat_sheet_once() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        if crate::sim::is_sim() {
+            eprintln!("{KEYBOARD_CHEAT_SHEET}");
+        }
+    });
+}
+
 impl InputManager {
     pub fn new() -> Self {
+        print_cheat_sheet_once();
         let mut keyboard_map = HashMap::new();
         keyboard_map.insert(Keycode::Up, Button::DpadUp);
         keyboard_map.insert(Keycode::Down, Button::DpadDown);
@@ -353,6 +367,7 @@ pub fn open_all_joysticks(
 pub fn open_all_controllers(
     subsystem: &sdl2::GameControllerSubsystem,
 ) -> Vec<sdl2::controller::GameController> {
+    load_controller_mappings(subsystem);
     let mut controllers = Vec::new();
     let n = subsystem.num_joysticks().unwrap_or(0);
     for i in 0..n {
@@ -369,5 +384,19 @@ pub fn open_all_controllers(
         }
     }
     controllers
+}
+
+/// Load `assets/gamecontrollerdb.txt` (SDL community mapping DB format) if
+/// present, so desktop pads are recognized by the GameController API with
+/// the same layout as the device. Missing file is not an error.
+pub fn load_controller_mappings(subsystem: &sdl2::GameControllerSubsystem) {
+    let path = crate::paths::assets_dir().join("gamecontrollerdb.txt");
+    if !path.is_file() {
+        return;
+    }
+    match subsystem.load_mappings(&path) {
+        Ok(n) => log::info!("Loaded {} controller mappings from {}", n, path.display()),
+        Err(e) => log::warn!("Failed to load controller mappings {}: {}", path.display(), e),
+    }
 }
 

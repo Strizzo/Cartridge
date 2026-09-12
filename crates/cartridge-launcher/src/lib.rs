@@ -192,6 +192,13 @@ pub fn run_launcher_with_config(
             }
         }
 
+        // Screenshot hotkey (F12) or SIGUSR1: force a render this frame and
+        // capture it just before present.
+        let screenshot_requested = cartridge_core::screenshot::requested(&events);
+        if screenshot_requested {
+            dirty = true;
+        }
+
         // Process input
         let mut input_events = input_manager.process_events(&events);
 
@@ -299,6 +306,11 @@ pub fn run_launcher_with_config(
                     } else {
                         log::info!("Captured frame {frame_count} to {}", path.display());
                     }
+                }
+            }
+            if screenshot_requested {
+                if let Err(e) = cartridge_core::screenshot::save_now(&canvas) {
+                    log::warn!("Screenshot failed: {e}");
                 }
             }
 
@@ -431,24 +443,13 @@ fn print_stats_summary(stats: &LauncherStats) {
     println!();
 }
 
-/// Capture the current canvas contents as a PNG file.
+/// Capture the current canvas contents as a PNG file (shared implementation
+/// in cartridge_core; handles scaled / HiDPI windows).
 fn capture_frame_to_png(
     canvas: &sdl2::render::Canvas<sdl2::video::Window>,
     path: &Path,
 ) -> Result<(), String> {
-    let pixel_format = sdl2::pixels::PixelFormatEnum::RGBA32;
-    let pixels = canvas
-        .read_pixels(None, pixel_format)
-        .map_err(|e| format!("read_pixels failed: {e}"))?;
-
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).ok();
-    }
-
-    let img = image::RgbaImage::from_raw(WIDTH, HEIGHT, pixels)
-        .ok_or_else(|| "buffer size mismatch".to_string())?;
-    img.save(path).map_err(|e| format!("PNG save failed: {e}"))?;
-    Ok(())
+    cartridge_core::screenshot::capture_frame_to_png(canvas, path)
 }
 
 /// Resolve the directory for an installed app given its id.

@@ -287,6 +287,9 @@ fn run_boot_selector(assets_dir: &Path) -> Result<BootChoice, String> {
             }
         }
 
+        // Screenshot hotkey (F12) or SIGUSR1: captured just before present.
+        let screenshot_requested = cartridge_core::screenshot::requested(&events);
+
         // Process input
         let input_events = input_manager.process_events(&events);
         for ie in &input_events {
@@ -473,6 +476,12 @@ fn run_boot_selector(assets_dir: &Path) -> Result<BootChoice, String> {
 
             // Atmosphere overlays on top of everything
             atmosphere.draw_overlays(&mut screen);
+        }
+
+        if screenshot_requested {
+            if let Err(e) = cartridge_core::screenshot::save_now(&canvas) {
+                log::warn!("Screenshot failed: {e}");
+            }
         }
 
         canvas.present();
