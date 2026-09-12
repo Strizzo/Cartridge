@@ -1,12 +1,19 @@
 use cartridge_core::input::{Button, InputAction, InputEvent};
 use cartridge_core::screen::Screen;
+use cartridge_core::theme::{style_of, UiStyle};
 use cartridge_core::ui::text_input::{TextInput, TextInputResult};
 use cartridge_net::wifi::{WifiNetwork, WifiStatus};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 
+use crate::neo::{self, Chip, Hint};
 use crate::ui_constants::*;
 use super::{LauncherScreen, ScreenAction, ScreenContext};
+
+const NEO_STATUS_H: i32 = 60;
+const NEO_NET_ROW_H: i32 = 48;
+const NEO_LIST_Y: i32 = neo::CONTENT_Y + 12 + NEO_STATUS_H + 34;
+const NEO_VISIBLE: usize = ((neo::FOOTER_Y - 30 - NEO_LIST_Y) / NEO_NET_ROW_H) as usize;
 
 pub struct WifiScreen {
     selected_row: usize,
@@ -172,7 +179,11 @@ impl LauncherScreen for WifiScreen {
             // Calculate how many network rows fit
             let list_start = CONTENT_TOP + 12 + STATUS_ROW_H + MARGIN + 20;
             let available = CONTENT_BOTTOM - 28 - list_start;
-            let visible_count = (available / (NET_ROW_H + MARGIN)).max(1) as usize;
+            let visible_count = if style_of(&ctx.settings.theme_id) == UiStyle::Neo {
+                NEO_VISIBLE.max(1)
+            } else {
+                (available / (NET_ROW_H + MARGIN)).max(1) as usize
+            };
 
             if net_idx >= self.scroll_offset + visible_count {
                 self.scroll_offset = net_idx + 1 - visible_count;
@@ -187,7 +198,7 @@ impl LauncherScreen for WifiScreen {
         ScreenAction::None
     }
 
-    fn render(&mut self, screen: &mut Screen, _ctx: &ScreenContext) {
+    fn render(&mut self, screen: &mut Screen, ctx: &ScreenContext) {
         let theme = screen.theme;
 
         // Clear status message after 3 seconds
@@ -196,6 +207,11 @@ impl LauncherScreen for WifiScreen {
                 self.status_message = None;
                 self.message_time = None;
             }
+        }
+
+        if neo::is_neo(theme) {
+            self.render_neo(screen, ctx);
+            return;
         }
 
         // -- Header --
@@ -477,6 +493,93 @@ impl LauncherScreen for WifiScreen {
         screen.draw_button_hint("Y", "Rescan", fx, footer_y + 8, Some(theme.btn_y), 12);
 
         // -- Password input overlay (drawn on top of everything) --
+        self.password_input.draw(screen);
+    }
+}
+
+impl WifiScreen {
+    fn render_neo(&self, screen: &mut Screen, ctx: &ScreenContext) {
+        let theme = screen.theme;
+        neo::draw_header(screen, "WIFI", "", Some(&ctx.sysinfo));
+        neo::draw_bar(screen);
+
+        let right = SCREEN_WIDTH as i32 - neo::MARGIN_X;
+        let width = SCREEN_WIDTH - neo::MARGIN_X as u32 * 2;
+
+        // Status row.
+        let y = neo::CONTENT_Y + 12;
+        let is_sel = self.selected_row == 0;
+        if is_sel {
+            screen.fill(Rect::new(neo::MARGIN_X, y, width, NEO_STATUS_H as u32), theme.card_bg);
+            screen.fill(Rect::new(neo::MARGIN_X, y, 4, NEO_STATUS_H as u32), theme.accent);
+        }
+        screen.fill(Rect::new(neo::MARGIN_X, y + NEO_STATUS_H - 1, width, 1), theme.border);
+        let tx = neo::MARGIN_X + 16;
+        let (title, sub, dot) = match &self.status {
+            WifiStatus::Connected { ssid, signal } => (ssid.to_uppercase(), format!("Connected · signal {signal}%"), Some(theme.text)),
+            WifiStatus::Disconnected => ("DISCONNECTED".to_string(), "Select a network below to connect".to_string(), Some(theme.accent)),
+            WifiStatus::Unknown => ("WIFI STATUS UNKNOWN".to_string(), String::new(), None),
+        };
+        neo::display_at_baseline(screen, &title, tx, y + 30, theme.text, 26);
+        screen.draw_text(&sub, tx, y + 36, Some(theme.text_dim), neo::LABEL_SIZE, false, Some(width - 80));
+        if let Some(c) = dot {
+            screen.fill(Rect::new(right - 24, y + NEO_STATUS_H / 2 - 5, 10, 10), c);
+        }
+
+        // Section label.
+        let label_y = y + NEO_STATUS_H + 12;
+        screen.draw_text("AVAILABLE NETWORKS", neo::MARGIN_X, label_y, Some(theme.text_dim), neo::LABEL_SIZE, false, None);
+
+        // Network rows.
+        for (vi, i) in (self.scroll_offset..).take(NEO_VISIBLE.max(1)).enumerate() {
+            if i >= self.networks.len() {
+                break;
+            }
+            let network = &self.networks[i];
+            let ry = NEO_LIST_Y + vi as i32 * NEO_NET_ROW_H;
+            let is_sel = self.selected_row == i + 1;
+            if is_sel {
+                screen.fill(Rect::new(neo::MARGIN_X, ry, width, NEO_NET_ROW_H as u32), theme.card_bg);
+                screen.fill(Rect::new(neo::MARGIN_X, ry, 4, NEO_NET_ROW_H as u32), theme.accent);
+            }
+            screen.fill(Rect::new(neo::MARGIN_X, ry + NEO_NET_ROW_H - 1, width, 1), theme.border);
+
+            let color = if is_sel { theme.text } else { theme.text_dim };
+            screen.draw_text(&network.ssid, tx, ry + 8, Some(color), 14, is_sel, Some(300));
+            let sec = if network.security == "--" || network.security.is_empty() { "OPEN".to_string() } else { network.security.to_uppercase() };
+            let info = format!("{sec} · SIGNAL {}%", network.signal);
+            screen.draw_text(&info, tx, ry + 28, Some(theme.text_dim), neo::LABEL_SIZE, false, None);
+
+            // Signal: four bars, filled by strength.
+            let bars = ((network.signal as i32 + 24) / 25).clamp(0, 4);
+            for b in 0..4 {
+                let bh = 4 + b * 4;
+                let bx = right - 4 * 8 + b * 8;
+                let c = if b < bars { theme.text } else { theme.border };
+                screen.fill(Rect::new(bx, ry + NEO_NET_ROW_H / 2 + 8 - bh, 5, bh as u32), c);
+            }
+            if network.is_saved {
+                let w = screen.get_text_width("SAVED", neo::LABEL_SIZE, false) as i32 + 16;
+                neo::draw_chip(screen, "Saved", right - 40 - w, ry + 14, Chip::OutlineDim);
+            }
+        }
+
+        if self.scroll_offset + NEO_VISIBLE < self.networks.len() {
+            let more = format!("{} MORE", self.networks.len() - self.scroll_offset - NEO_VISIBLE);
+            neo::text_right(screen, &more, right, neo::FOOTER_Y - 16, theme.text_muted, neo::LABEL_SIZE, false);
+        }
+
+        if let Some(msg) = &self.status_message {
+            screen.draw_text(&msg.to_uppercase(), neo::MARGIN_X, neo::FOOTER_Y - 26, Some(theme.accent), neo::LABEL_SIZE, false, Some(width - 120));
+        }
+
+        let a_hint = if self.selected_row == 0 {
+            if matches!(self.status, WifiStatus::Connected { .. }) { "Disconnect" } else { "---" }
+        } else {
+            "Connect"
+        };
+        neo::draw_footer(screen, &[Hint::a(a_hint), Hint::b("Back"), Hint::y("Rescan")]);
+
         self.password_input.draw(screen);
     }
 }

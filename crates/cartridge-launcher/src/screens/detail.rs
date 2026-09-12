@@ -3,6 +3,7 @@ use cartridge_core::screen::Screen;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 
+use crate::neo::{self, Chip, Hint};
 use crate::ui_constants::*;
 use super::{LauncherScreen, ScreenAction, ScreenContext};
 
@@ -182,6 +183,12 @@ impl LauncherScreen for DetailScreen {
         let has_update = is_installed && ctx.installer.as_ref().map_or(false, |inst| {
             inst.installed_version(&app.id).as_deref() != Some(&app.version)
         });
+
+        if neo::is_neo(theme) {
+            self.render_neo(screen, ctx, app, is_installed, has_update);
+            return;
+        }
+
         let cat_color = category_color(&app.category);
 
         // -- Header (semi-transparent, atmosphere bleeds through) --
@@ -439,6 +446,106 @@ impl LauncherScreen for DetailScreen {
 
         // -- Footer --
         draw_detail_footer(screen, is_installed, has_update);
+    }
+}
+
+impl DetailScreen {
+    fn render_neo(
+        &self,
+        screen: &mut Screen,
+        ctx: &ScreenContext,
+        app: &crate::data::AppEntry,
+        is_installed: bool,
+        has_update: bool,
+    ) {
+        let theme = screen.theme;
+        let subtitle = format!("V{} · {}", app.version, app.author);
+        neo::draw_header(screen, &app.name.to_uppercase(), &subtitle, Some(&ctx.sysinfo));
+        neo::draw_bar(screen);
+
+        // Icon tile + description.
+        let top = neo::CONTENT_Y + 20;
+        let tile = Rect::new(neo::MARGIN_X, top, 96, 96);
+        screen.fill(tile, theme.card_bg);
+        screen.draw_outline(tile, theme.border, 1);
+        let drew = crate::ui_constants::resolve_icon_path(&app.id)
+            .map(|p| screen.draw_image(&p, tile.x() + 14, tile.y() + 14, Some((68, 68)), None))
+            .unwrap_or(false);
+        if !drew {
+            let abbr: String = app.name.chars().take(2).collect::<String>().to_uppercase();
+            let w = screen.display_text_width(&abbr, 44) as i32;
+            screen.draw_display_text(&abbr, tile.x() + (96 - w) / 2, tile.y() + 24, theme.text, 44);
+        }
+
+        let text_x = neo::MARGIN_X + 96 + 20;
+        let text_w = (SCREEN_WIDTH as i32 - neo::MARGIN_X - text_x) as u32;
+        let lines = neo::wrap_lines(screen, &app.description, 13, false, text_w, 4);
+        let mut ly = top + 2;
+        for line in &lines {
+            screen.draw_text(line, text_x, ly, Some(theme.text), 13, false, None);
+            ly += 20;
+        }
+
+        // State, category, permissions.
+        let mut chips: Vec<(String, Chip)> = Vec::new();
+        if has_update {
+            chips.push(("Update available".to_string(), Chip::FilledRed));
+        } else if is_installed {
+            chips.push(("Installed".to_string(), Chip::OutlineWhite));
+        } else {
+            chips.push(("Not installed".to_string(), Chip::OutlineDim));
+        }
+        if !app.category.is_empty() {
+            chips.push((app.category.clone(), Chip::OutlineWhite));
+        }
+        for perm in &app.permissions {
+            chips.push((perm.clone(), Chip::OutlineDim));
+        }
+        let chip_y = (ly + 8).max(top + 104);
+        neo::draw_chip_row(screen, &chips, neo::MARGIN_X, chip_y, 8, SCREEN_WIDTH as i32 - neo::MARGIN_X);
+
+        // Tags.
+        let mut y = chip_y + 44;
+        neo::rule(screen, y);
+        y += 14;
+        screen.draw_text("TAGS", neo::MARGIN_X, y, Some(theme.text_dim), neo::LABEL_SIZE, false, None);
+        y += 20;
+        if app.tags.is_empty() {
+            screen.draw_text("NONE", neo::MARGIN_X, y + 3, Some(theme.text_muted), neo::LABEL_SIZE, false, None);
+        } else {
+            let tags: Vec<(String, Chip)> = app.tags.iter().map(|t| (t.clone(), Chip::OutlineDim)).collect();
+            neo::draw_chip_row(screen, &tags, neo::MARGIN_X, y, 8, SCREEN_WIDTH as i32 - neo::MARGIN_X);
+        }
+
+        // Source.
+        y += 44;
+        neo::rule(screen, y);
+        y += 14;
+        screen.draw_text("SOURCE", neo::MARGIN_X, y, Some(theme.text_dim), neo::LABEL_SIZE, false, None);
+        y += 18;
+        let source = if app.repo_url.is_empty() { "Bundled with CartridgeOS".to_string() } else { app.repo_url.clone() };
+        screen.draw_text(&source, neo::MARGIN_X, y, Some(theme.text), 12, false, Some(SCREEN_WIDTH - neo::MARGIN_X as u32 * 2));
+
+        // Status message, above the footer.
+        if let Some((ref msg, when, is_error)) = self.status_msg {
+            if when.elapsed().as_secs_f32() < 5.0 {
+                let color = if is_error { theme.accent } else { theme.text };
+                let my = neo::FOOTER_Y - 30;
+                if is_error {
+                    screen.fill(Rect::new(neo::MARGIN_X, my - 2, 3, 18), theme.accent);
+                }
+                screen.draw_text(&msg.to_uppercase(), neo::MARGIN_X + 12, my, Some(color), neo::LABEL_SIZE, false, Some(SCREEN_WIDTH - 60));
+            }
+        }
+
+        let mut hints = vec![Hint::a(if is_installed { "Launch" } else { "Install" }), Hint::b("Back")];
+        if is_installed {
+            hints.push(Hint::x("Remove"));
+            if has_update {
+                hints.push(Hint::y("Update"));
+            }
+        }
+        neo::draw_footer(screen, &hints);
     }
 }
 

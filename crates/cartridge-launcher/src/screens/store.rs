@@ -1,11 +1,19 @@
 use cartridge_core::input::{Button, InputAction, InputEvent};
 use cartridge_core::screen::Screen;
+use cartridge_core::theme::{style_of, UiStyle};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 
 use crate::data::CATEGORIES;
+use crate::neo::{self, Chip, Hint};
 use crate::ui_constants::*;
 use super::{LauncherScreen, ScreenAction, ScreenContext, ScreenId};
+
+// Neo-Tokyo store: tab row under the bar, then 76px numbered rows.
+const NEO_TAB_H: i32 = 40;
+const NEO_LIST_Y: i32 = neo::CONTENT_Y + NEO_TAB_H;
+const NEO_ROW_H: i32 = 76;
+const NEO_VISIBLE_ROWS: i32 = (neo::FOOTER_Y - NEO_LIST_Y) / NEO_ROW_H;
 
 pub struct StoreScreen {
     category_index: usize,
@@ -102,7 +110,11 @@ impl LauncherScreen for StoreScreen {
         }
 
         // Adjust scroll to keep selection visible
-        let visible_cards = (CONTENT_HEIGHT - TAB_HEIGHT - MARGIN) / (STORE_CARD_HEIGHT + STORE_CARD_GAP);
+        let visible_cards = if style_of(&ctx.settings.theme_id) == UiStyle::Neo {
+            NEO_VISIBLE_ROWS
+        } else {
+            (CONTENT_HEIGHT - TAB_HEIGHT - MARGIN) / (STORE_CARD_HEIGHT + STORE_CARD_GAP)
+        };
         if self.selected_index < self.scroll_offset {
             self.scroll_offset = self.selected_index;
         }
@@ -114,6 +126,11 @@ impl LauncherScreen for StoreScreen {
     }
 
     fn render(&mut self, screen: &mut Screen, ctx: &ScreenContext) {
+        if neo::is_neo(screen.theme) {
+            self.render_neo(screen, ctx);
+            return;
+        }
+
         let theme = screen.theme;
         let filtered = self.filtered_indices(ctx);
 
@@ -337,6 +354,127 @@ impl LauncherScreen for StoreScreen {
 
         // -- Footer --
         draw_store_footer(screen);
+    }
+}
+
+impl StoreScreen {
+    fn render_neo(&self, screen: &mut Screen, ctx: &ScreenContext) {
+        let theme = screen.theme;
+        let filtered = self.filtered_indices(ctx);
+
+        let subtitle = format!("{} apps", ctx.registry.apps.len());
+        neo::draw_header(screen, "STORE", &subtitle, Some(&ctx.sysinfo));
+        neo::draw_bar(screen);
+
+        // -- Tab row --
+        let tab_y = neo::CONTENT_Y;
+        let lh = screen.get_line_height(neo::LABEL_SIZE, false) as i32;
+        let ty = tab_y + (NEO_TAB_H - lh) / 2;
+        let left = neo::MARGIN_X;
+        let right = SCREEN_WIDTH as i32 - neo::MARGIN_X;
+        let lw = screen.draw_text("< L1", left, ty, Some(theme.text_dim), neo::LABEL_SIZE, false, None) as i32;
+        let rw = screen.get_text_width("R1 >", neo::LABEL_SIZE, false) as i32;
+        screen.draw_text("R1 >", right - rw, ty, Some(theme.text_dim), neo::LABEL_SIZE, false, None);
+        let mut tab_x = left + lw + 18;
+        for (i, cat) in CATEGORIES.iter().enumerate() {
+            let is_active = i == self.category_index;
+            let label = cat.to_uppercase();
+            let w = screen.get_text_width(&label, neo::LABEL_SIZE, is_active) as i32;
+            if tab_x + w > right - rw - 18 {
+                break;
+            }
+            let color = if is_active { theme.text } else { theme.text_dim };
+            screen.draw_text(&label, tab_x, ty, Some(color), neo::LABEL_SIZE, is_active, None);
+            if is_active {
+                screen.fill(Rect::new(tab_x, tab_y + NEO_TAB_H - 3, w as u32, 3), theme.accent);
+            }
+            tab_x += w + 22;
+        }
+        screen.fill(Rect::new(0, tab_y + NEO_TAB_H - 1, SCREEN_WIDTH, 1), theme.border);
+
+        // -- Rows --
+        if filtered.is_empty() {
+            let msg = "NOTHING HERE";
+            let w = screen.display_text_width(msg, 40) as i32;
+            neo::display_at_baseline(screen, msg, (SCREEN_WIDTH as i32 - w) / 2, NEO_LIST_Y + 120, theme.text_muted, 40);
+        }
+
+        for (vis_i, &reg_i) in filtered.iter().enumerate() {
+            let row = vis_i as i32 - self.scroll_offset;
+            if row < 0 {
+                continue;
+            }
+            if row >= NEO_VISIBLE_ROWS {
+                break;
+            }
+            let y = NEO_LIST_Y + row * NEO_ROW_H;
+            let is_selected = vis_i as i32 == self.selected_index;
+            let app = &ctx.registry.apps[reg_i];
+            let installed = ctx.installed.is_installed(&app.id);
+            let has_update = installed
+                && ctx.installer.as_ref().map_or(false, |inst| {
+                    inst.installed_version(&app.id).as_deref() != Some(&app.version)
+                });
+
+            let (fg, dim, num) = if is_selected {
+                screen.fill(Rect::new(0, y, SCREEN_WIDTH, NEO_ROW_H as u32), theme.accent);
+                (theme.bg, theme.bg, theme.bg)
+            } else {
+                screen.fill(Rect::new(neo::MARGIN_X, y + NEO_ROW_H - 1, SCREEN_WIDTH - neo::MARGIN_X as u32 * 2, 1), theme.border);
+                (theme.text, theme.text_dim, theme.text_muted)
+            };
+
+            // Index numeral.
+            neo::display_at_baseline(screen, &neo::index_label(vis_i), neo::MARGIN_X, y + 46, num, 22);
+
+            // Icon tile.
+            let tile = Rect::new(neo::MARGIN_X + 40, y + 14, 48, 48);
+            if is_selected {
+                screen.fill(tile, theme.bg);
+            } else {
+                screen.fill(tile, theme.card_bg);
+                screen.draw_outline(tile, theme.border, 1);
+            }
+            let drew = crate::ui_constants::resolve_icon_path(&app.id)
+                .map(|p| screen.draw_image(&p, tile.x() + 9, tile.y() + 9, Some((30, 30)), None))
+                .unwrap_or(false);
+            if !drew {
+                let abbr: String = app.name.chars().take(2).collect::<String>().to_uppercase();
+                let w = screen.display_text_width(&abbr, 22) as i32;
+                screen.draw_display_text(&abbr, tile.x() + (48 - w) / 2, tile.y() + 12, theme.text, 22);
+            }
+
+            // Chips on the right: state + category.
+            let mut chips: Vec<(String, Chip)> = Vec::new();
+            if has_update {
+                chips.push(("Update".to_string(), if is_selected { Chip::FilledBlack } else { Chip::FilledRed }));
+            } else if installed {
+                chips.push(("Installed".to_string(), if is_selected { Chip::OutlineBlack } else { Chip::OutlineWhite }));
+            }
+            if !app.category.is_empty() {
+                chips.push((app.category.clone(), if is_selected { Chip::OutlineBlack } else { Chip::OutlineDim }));
+            }
+            let chips_w: i32 = chips
+                .iter()
+                .map(|(t, _)| screen.get_text_width(&t.to_uppercase(), neo::LABEL_SIZE, false) as i32 + 16 + 8)
+                .sum::<i32>()
+                - if chips.is_empty() { 0 } else { 8 };
+            let chips_x = SCREEN_WIDTH as i32 - neo::MARGIN_X - chips_w;
+            neo::draw_chip_row(screen, &chips, chips_x, y + 28, 8, SCREEN_WIDTH as i32);
+
+            // Name, description, meta.
+            let text_x = neo::MARGIN_X + 104;
+            let text_w = (chips_x - 12 - text_x).max(80) as u32;
+            neo::display_at_baseline(screen, &app.name.to_uppercase(), text_x, y + 30, fg, 24);
+            screen.draw_text(&app.description, text_x, y + 36, Some(fg), 12, is_selected, Some(text_w));
+            let meta = format!("{} · V{}", app.author, app.version).to_uppercase();
+            screen.draw_text(&meta, text_x, y + 55, Some(dim), neo::LABEL_SIZE, false, Some(text_w));
+        }
+
+        neo::draw_footer(
+            screen,
+            &[Hint::wide("L1 / R1", "Category"), Hint::a("Detail"), Hint::b("Back")],
+        );
     }
 }
 
