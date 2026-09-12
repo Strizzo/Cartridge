@@ -23,3 +23,8 @@ Cargo.lock
 # Simulator scratch home and F12/SIGUSR1 screenshots
 /.sim/
 /screenshots/
+
+# Simulator + device tooling
+.sim/
+screenshots/
+deploy/wifi/.device

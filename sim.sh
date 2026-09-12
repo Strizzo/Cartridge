@@ -164,8 +164,8 @@ echo "sim: home=$CARTRIDGE_HOME profile=${CARTRIDGE_SIM_PROFILE:-<defaults>} bat
 echo
 
 case "$MODE" in
-    launcher) exec cargo run -q "${CARGO_FLAGS[@]}" --bin cartridge -- "${PASS[@]}" ;;
-    app)      exec cargo run -q "${CARGO_FLAGS[@]}" --bin cartridge -- run --path "$APP_DIR" "${PASS[@]}" ;;
-    demo)     exec cargo run -q "${CARGO_FLAGS[@]}" --bin cartridge -- demo "${PASS[@]}" ;;
-    boot)     exec cargo run -q "${CARGO_FLAGS[@]}" -p cartridge-boot --bin cartridge-boot -- "${PASS[@]}" ;;
+    launcher) exec cargo run -q ${CARGO_FLAGS[@]+"${CARGO_FLAGS[@]}"} --bin cartridge -- ${PASS[@]+"${PASS[@]}"} ;;
+    app)      exec cargo run -q ${CARGO_FLAGS[@]+"${CARGO_FLAGS[@]}"} --bin cartridge -- run --path "$APP_DIR" ${PASS[@]+"${PASS[@]}"} ;;
+    demo)     exec cargo run -q ${CARGO_FLAGS[@]+"${CARGO_FLAGS[@]}"} --bin cartridge -- demo ${PASS[@]+"${PASS[@]}"} ;;
+    boot)     exec cargo run -q ${CARGO_FLAGS[@]+"${CARGO_FLAGS[@]}"} -p cartridge-boot --bin cartridge-boot -- ${PASS[@]+"${PASS[@]}"} ;;
 esac
