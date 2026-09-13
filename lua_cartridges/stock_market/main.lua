@@ -113,8 +113,11 @@ local state = {
     browse_sector_idx = 1,
     browse_cursor = 1,
     browse_stocks = {},
-    needs_initial_load = false,
-    ready_to_load = false,
+    -- Async HTTP bookkeeping: request id -> handler(resp). Generations let
+    -- a superseded load drop its late responses.
+    pending = {},
+    quotes_gen = 0,
+    detail_gen = 0,
 }
 
 local CARD_RADIUS = 6
@@ -235,11 +238,25 @@ end
 
 local YAHOO_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/"
 
-local function fetch_chart(symbol, range)
+local function chart_url(symbol, range)
     local interval = PERIOD_INTERVALS[range] or "1d"
-    local url = YAHOO_BASE .. symbol .. "?range=" .. range .. "&interval=" .. interval .. "&events="
-    local ok, resp = pcall(http.get_cached, url, 120)
-    if not ok or not resp.ok then return nil end
+    return YAHOO_BASE .. symbol .. "?range=" .. range .. "&interval=" .. interval .. "&events="
+end
+
+-- Async plumbing: every call goes through http.get_async; on_update drains
+-- http.poll() and dispatches to the handler registered here.
+local function request(url, handler)
+    local ok, id = pcall(http.get_async, url)
+    if ok and id then
+        state.pending[id] = handler
+        return id
+    end
+    handler(nil)
+    return nil
+end
+
+local function chart_from_resp(resp)
+    if not resp or not resp.ok then return nil end
     local dok, data = pcall(json.decode, resp.body)
     if not dok or not data then return nil end
     local result = data.chart and data.chart.result
@@ -247,10 +264,7 @@ local function fetch_chart(symbol, range)
     return result[1]
 end
 
-local function fetch_quote_from_chart(symbol, range)
-    local chart = fetch_chart(symbol, range)
-    if not chart then return nil, {} end
-
+local function quote_from_chart(symbol, chart)
     local meta = chart.meta or {}
     local price = meta.regularMarketPrice or 0
     local prev_close = meta.chartPreviousClose or meta.previousClose or price
@@ -308,16 +322,55 @@ local function load_quotes()
     end
 
     local range = PERIODS[state.list_period_idx][2]
-    local quotes = {}
-    for _, sym in ipairs(symbols) do
-        local q, closes = fetch_quote_from_chart(sym, range)
-        if q then
-            quotes[#quotes + 1] = q
-            state.sparklines[sym] = closes
-        end
+    state.quotes_gen = state.quotes_gen + 1
+    local gen = state.quotes_gen
+    local n = #symbols
+    if n == 0 then
+        state.quotes[tab_id] = {}
+        state.loading = false
+        return
     end
-    state.quotes[tab_id] = quotes
-    state.loading = false
+
+    -- One request per symbol, issued as a batch; results are assembled in
+    -- symbol order once the last one arrives.
+    local results, completed = {}, 0
+    for i, sym in ipairs(symbols) do
+        request(chart_url(sym, range), function(resp)
+            if gen ~= state.quotes_gen then return end
+            local chart = chart_from_resp(resp)
+            if chart then
+                local q, closes = quote_from_chart(sym, chart)
+                results[i] = q
+                state.sparklines[sym] = closes
+            end
+            completed = completed + 1
+            if completed >= n then
+                local quotes = {}
+                for k = 1, n do
+                    if results[k] then quotes[#quotes + 1] = results[k] end
+                end
+                state.quotes[tab_id] = quotes
+                state.loading = false
+            end
+        end)
+    end
+end
+
+-- Re-fetch the detail chart for a new period without blocking input.
+local function load_detail_chart(symbol, range)
+    state.detail_loading = true
+    state.detail_gen = state.detail_gen + 1
+    local gen = state.detail_gen
+    request(chart_url(symbol, range), function(resp)
+        if gen ~= state.detail_gen then return end
+        local chart = chart_from_resp(resp)
+        if chart then
+            local q, closes = quote_from_chart(symbol, chart)
+            state.detail_quote = q
+            state.sparklines[symbol] = closes
+        end
+        state.detail_loading = false
+    end)
 end
 
 -- ── Watchlist Screen Drawing ─────────────────────────────────────────────────
@@ -394,7 +447,9 @@ local function draw_watchlist_screen()
     local footer_y = 684
     local content_h = footer_y - content_y
 
-    if state.loading then
+    -- While a refresh is in flight keep showing the previous quotes (the
+    -- header says "Loading..."); only show the placeholder when empty.
+    if state.loading and n == 0 then
         local tw = screen.get_text_width("Fetching quotes...", 16, false)
         screen.draw_text("Fetching quotes...", (720 - tw) / 2, content_y + content_h / 2 - 8, {color=theme.text_dim, size=16})
     elseif n > 0 then
@@ -514,7 +569,10 @@ local function draw_detail_screen()
     screen.draw_card(8, chart_y, 704, chart_h, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
 
     local spark_data = state.sparklines[q.symbol]
-    if spark_data and #spark_data >= 2 then
+    if state.detail_loading then
+        local tw = screen.get_text_width("Loading chart...", 13, false)
+        screen.draw_text("Loading chart...", (720 - tw) / 2, chart_y + chart_h / 2 - 8, {color=theme.text_dim, size=13})
+    elseif spark_data and #spark_data >= 2 then
         screen.draw_sparkline(spark_data, 16, chart_y + 8, 688, chart_h - 16, {color=change_color})
     else
         local tw = screen.get_text_width("No chart data", 13, false)
@@ -669,21 +727,27 @@ end
 function on_init()
     state.watchlist = load_watchlist()
     update_browse_stocks()
-    state.loading = true
-    state.needs_initial_load = true
+    load_quotes()
 end
 
 function on_update(dt)
-    if state.ready_to_load then
-        state.ready_to_load = false
-        load_quotes()
+    -- Dispatch completed HTTP responses. The runtime marks the frame dirty
+    -- whenever poll() delivers something.
+    for _, resp in ipairs(http.poll()) do
+        local handler = state.pending[resp.id]
+        if handler then
+            state.pending[resp.id] = nil
+            handler(resp)
+        end
     end
 
     if state.screen_stack[#state.screen_stack] == "watchlist" then
         state.refresh_timer = state.refresh_timer + dt
         if state.refresh_timer >= state.refresh_interval then
             state.refresh_timer = 0
-            load_quotes()
+            if not state.loading then
+                load_quotes()
+            end
         end
     end
 end
@@ -744,23 +808,15 @@ function on_input(button, action)
     elseif current == "detail" then
         if button == "b" then
             state.screen_stack[#state.screen_stack] = nil
+            state.detail_gen = state.detail_gen + 1  -- drop an in-flight chart fetch
+            state.detail_loading = false
         elseif button == "l1" then
             state.detail_period_idx = math.max(1, state.detail_period_idx - 1)
-            -- Refresh chart for new period
-            local range = PERIODS[state.detail_period_idx][2]
-            local q, closes = fetch_quote_from_chart(state.detail_quote.symbol, range)
-            if q then
-                state.detail_quote = q
-                state.sparklines[q.symbol] = closes
-            end
+            -- Refresh chart for new period (async; shows "Loading chart...")
+            load_detail_chart(state.detail_quote.symbol, PERIODS[state.detail_period_idx][2])
         elseif button == "r1" then
             state.detail_period_idx = math.min(#PERIODS, state.detail_period_idx + 1)
-            local range = PERIODS[state.detail_period_idx][2]
-            local q, closes = fetch_quote_from_chart(state.detail_quote.symbol, range)
-            if q then
-                state.detail_quote = q
-                state.sparklines[q.symbol] = closes
-            end
+            load_detail_chart(state.detail_quote.symbol, PERIODS[state.detail_period_idx][2])
         end
 
     elseif current == "browse" then
@@ -807,12 +863,6 @@ end
 
 function on_render()
     screen.clear(theme.bg.r, theme.bg.g, theme.bg.b)
-
-    -- After first frame renders, allow on_update to fetch data
-    if state.needs_initial_load then
-        state.needs_initial_load = false
-        state.ready_to_load = true
-    end
 
     local current = state.screen_stack[#state.screen_stack]
     if current == "watchlist" then

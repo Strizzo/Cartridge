@@ -316,15 +316,13 @@ fn load_registry_from_file(assets_dir: &Path) -> Registry {
 
 /// Resolve the user's home directory.
 fn home_dir() -> PathBuf {
-    std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."))
+    cartridge_core::paths::home_dir()
 }
 
-/// Scan lua_cartridges/ for bundled apps and mark them as installed.
+/// Scan lua_cartridges/ (next to the binary, else cwd) for bundled apps
+/// and mark them as installed.
 fn discover_bundled_cartridges(installed: &mut InstalledApps, registry: &Registry) {
-    let cwd = std::env::current_dir().unwrap_or_default();
-    let lua_dir = cwd.join("lua_cartridges");
+    let lua_dir = cartridge_core::paths::bundled_cartridges_dir();
     let entries = match std::fs::read_dir(&lua_dir) {
         Ok(e) => e,
         Err(_) => return,

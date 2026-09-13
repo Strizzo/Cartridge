@@ -38,8 +38,23 @@ fi
 # Set working directory so binaries can find assets/ and lua_cartridges/
 cd "${CARTRIDGE_DIR}"
 
+# Skip the 5 s selector and go straight to Cartridge when either
+# CARTRIDGE_SKIP_SELECTOR=1 is set, or the one-shot flag file exists
+# (written by deploy/wifi/deploy-wifi.sh before `systemctl restart`).
+# The flag is consumed so the next real boot shows the selector again.
+SKIP_FLAG="/tmp/.cartridge_skip_selector"
+SKIP_SELECTOR="${CARTRIDGE_SKIP_SELECTOR:-0}"
+if [[ -f "$SKIP_FLAG" ]]; then
+    SKIP_SELECTOR=1
+    rm -f "$SKIP_FLAG"
+fi
+
 # Run the graphical boot selector (if available)
-if [[ -f "$BOOT_BIN" ]]; then
+if [[ "$SKIP_SELECTOR" == "1" ]]; then
+    echo "[cartridge-boot] Skipping boot selector (CARTRIDGE_SKIP_SELECTOR)"
+    echo "cartridge" > "${CHOICE_FILE}" 2>/dev/null || true
+    EXIT_CODE=0
+elif [[ -f "$BOOT_BIN" ]]; then
     "$BOOT_BIN"
     EXIT_CODE=$?
 else

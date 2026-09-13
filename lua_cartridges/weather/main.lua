@@ -2,7 +2,6 @@
 -- Current weather and 5-day forecast using Open-Meteo API
 
 local API_BASE = "https://api.open-meteo.com/v1/forecast"
-local CACHE_TTL = 300
 
 -- ── Cities ───────────────────────────────────────────────────────────────────
 
@@ -127,6 +126,10 @@ local state = {
     settings_scroll = 0,
     -- Animation
     tick = 0,
+    -- Async HTTP bookkeeping: request id -> handler(resp). Generations let
+    -- a superseded load (city change) drop its late responses.
+    pending = {},
+    load_gen = 0,
 }
 
 -- ── Drawing Helpers ──────────────────────────────────────────────────────────
@@ -172,12 +175,32 @@ local function draw_tab_indicator(active)
     screen.draw_line(0, tab_y + 28, 720, tab_y + 28, {color=theme.border})
 end
 
--- ── API Functions ────────────────────────────────────────────────────────────
+-- ── API Functions (async) ────────────────────────────────────────────────────
+-- Requests go through http.get_async; on_update drains http.poll() and
+-- dispatches each response to the handler registered here.
+
+local function request(url, handler)
+    local ok, id = pcall(http.get_async, url)
+    if ok and id then
+        state.pending[id] = handler
+        return id
+    end
+    handler(nil)
+    return nil
+end
+
+local function decode(resp)
+    if not resp or not resp.ok then return nil end
+    local ok, data = pcall(json.decode, resp.body)
+    if ok then return data end
+    return nil
+end
 
 local function fetch_current()
     local city = CITIES[state.city_idx]
     state.current_loading = true
     state.current_error = false
+    local gen = state.load_gen
 
     local url = API_BASE
         .. "?latitude=" .. city.lat .. "&longitude=" .. city.lon
@@ -186,10 +209,10 @@ local function fetch_current()
         .. "&daily=sunrise,sunset"
         .. "&timezone=auto&forecast_days=1"
 
-    local net_ok, resp = pcall(http.get_cached, url, CACHE_TTL)
-    if net_ok and resp.ok then
-        local dok, data = pcall(json.decode, resp.body)
-        if dok and data and data.current then
+    request(url, function(resp)
+        if gen ~= state.load_gen then return end
+        local data = decode(resp)
+        if data and data.current then
             local cur = data.current
             local hourly = data.hourly and data.hourly.temperature_2m or {}
             local daily = data.daily or {}
@@ -213,26 +236,25 @@ local function fetch_current()
         else
             state.current_error = true
         end
-    else
-        state.current_error = true
-    end
-    state.current_loading = false
+        state.current_loading = false
+    end)
 end
 
 local function fetch_forecast()
     local city = CITIES[state.city_idx]
     state.forecast_loading = true
     state.forecast_error = false
+    local gen = state.load_gen
 
     local url = API_BASE
         .. "?latitude=" .. city.lat .. "&longitude=" .. city.lon
         .. "&daily=weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,sunrise,sunset,precipitation_sum,wind_speed_10m_max"
         .. "&timezone=auto"
 
-    local net_ok, resp = pcall(http.get_cached, url, CACHE_TTL)
-    if net_ok and resp.ok then
-        local dok, data = pcall(json.decode, resp.body)
-        if not dok or not data or not data.daily then
+    request(url, function(resp)
+        if gen ~= state.load_gen then return end
+        local data = decode(resp)
+        if not data or not data.daily then
             state.forecast_error = true
             state.forecast_loading = false
             return
@@ -270,13 +292,13 @@ local function fetch_forecast()
                 sunset = sunset_str,
             }
         end
-    else
-        state.forecast_error = true
-    end
-    state.forecast_loading = false
+        state.forecast_loading = false
+    end)
 end
 
 local function load_all()
+    -- New generation: responses from a previous city are ignored.
+    state.load_gen = state.load_gen + 1
     fetch_current()
     fetch_forecast()
 end
@@ -563,15 +585,19 @@ function on_init()
         end
     end
     state.settings_cursor = state.city_idx
-    state.current_loading = true
-    state.forecast_loading = true
-    state._needs_initial_load = true
+    load_all()
 end
 
 function on_update(dt)
-    if state._ready_to_load then
-        state._ready_to_load = false
-        load_all()
+    state.tick = state.tick + 1
+    -- Dispatch completed HTTP responses. The runtime marks the frame dirty
+    -- whenever poll() delivers something.
+    for _, resp in ipairs(http.poll()) do
+        local handler = state.pending[resp.id]
+        if handler then
+            state.pending[resp.id] = nil
+            handler(resp)
+        end
     end
 end
 
@@ -617,17 +643,8 @@ function on_input(button, action)
     end
 end
 
-function on_update(dt)
-    state.tick = state.tick + 1
-end
-
 function on_render()
     screen.clear(theme.bg.r, theme.bg.g, theme.bg.b)
-
-    if state._needs_initial_load then
-        state._needs_initial_load = false
-        state._ready_to_load = true
-    end
 
     if state.tab_index == 1 then
         draw_current_screen()

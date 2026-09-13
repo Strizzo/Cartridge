@@ -7,9 +7,10 @@ use cartridge_core::theme::Theme;
 use mlua::prelude::*;
 
 use crate::api::{
-    new_screen_handle, new_text_input, register_audio_api, register_http_api,
-    register_json_api, register_screen_api, register_ssh_api, register_storage_api,
-    register_system_api, register_text_input_api, register_theme_api,
+    new_app_control, new_screen_handle, new_text_input, register_app_api,
+    register_audio_api, register_http_api, register_json_api, register_screen_api,
+    register_ssh_api, register_storage_api, register_system_api,
+    register_text_input_api, register_theme_api, Phase, SharedAppControl,
     SharedScreenHandle, SharedTextInput,
 };
 
@@ -18,6 +19,7 @@ pub struct LuaAppRunner {
     lua: Lua,
     screen_handle: SharedScreenHandle,
     pub text_input: SharedTextInput,
+    control: SharedAppControl,
     has_error: Option<String>,
 }
 
@@ -37,6 +39,7 @@ impl LuaAppRunner {
         let lua = Lua::new();
         let screen_handle = new_screen_handle();
         let text_input = new_text_input();
+        let control = new_app_control();
 
         // Sandbox: remove dangerous functions
         Self::sandbox(&lua).map_err(|e| format!("Failed to sandbox Lua: {e}"))?;
@@ -53,6 +56,8 @@ impl LuaAppRunner {
             .map_err(|e| format!("Failed to register text_input API: {e}"))?;
         register_json_api(&lua)
             .map_err(|e| format!("Failed to register JSON API: {e}"))?;
+        register_app_api(&lua, control.clone())
+            .map_err(|e| format!("Failed to register app API: {e}"))?;
 
         // Permission-gated APIs.
         if has("storage") {
@@ -61,7 +66,7 @@ impl LuaAppRunner {
                 .map_err(|e| format!("Failed to register storage API: {e}"))?;
         }
         if has("network") {
-            register_http_api(&lua, app_id)
+            register_http_api(&lua, app_id, control.clone())
                 .map_err(|e| format!("Failed to register HTTP API: {e}"))?;
         }
         if has("ssh") {
@@ -114,8 +119,14 @@ impl LuaAppRunner {
             lua,
             screen_handle,
             text_input,
+            control,
             has_error: None,
         })
+    }
+
+    /// Shared redraw / idle-fps / phase state used by the frame loop.
+    pub fn control(&self) -> &SharedAppControl {
+        &self.control
     }
 
     /// True if the text input widget is currently visible. Callers should
@@ -233,17 +244,25 @@ impl LuaAppRunner {
         Ok(())
     }
 
+    /// Look up a lifecycle callback. `Option` so a missing callback is a
+    /// plain `None` rather than an error value built every frame.
+    fn callback(&self, name: &str) -> LuaResult<Option<LuaFunction>> {
+        self.lua.globals().raw_get::<Option<LuaFunction>>(name)
+    }
+
     /// Call on_init() if defined.
     pub fn call_init(&mut self) {
-        if let Err(e) = self.try_call_init() {
+        self.control.set_phase(Phase::Init);
+        let r = self.try_call_init();
+        self.control.set_phase(Phase::Idle);
+        if let Err(e) = r {
             log::error!("Lua on_init error: {e}");
             self.has_error = Some(format!("on_init error: {e}"));
         }
     }
 
     fn try_call_init(&self) -> LuaResult<()> {
-        let globals = self.lua.globals();
-        if let Ok(func) = globals.get::<LuaFunction>("on_init") {
+        if let Some(func) = self.callback("on_init")? {
             func.call::<()>(())?;
         }
         Ok(())
@@ -251,17 +270,21 @@ impl LuaAppRunner {
 
     /// Call on_input(button, action) for each input event.
     pub fn call_input(&mut self, events: &[InputEvent]) {
+        if events.is_empty() {
+            return;
+        }
+        self.control.set_phase(Phase::Input);
         for event in events {
             if let Err(e) = self.try_call_input(event) {
                 log::error!("Lua on_input error: {e}");
                 self.has_error = Some(format!("on_input error: {e}"));
             }
         }
+        self.control.set_phase(Phase::Idle);
     }
 
     fn try_call_input(&self, event: &InputEvent) -> LuaResult<()> {
-        let globals = self.lua.globals();
-        if let Ok(func) = globals.get::<LuaFunction>("on_input") {
+        if let Some(func) = self.callback("on_input")? {
             let button_str = button_to_str(event.button);
             let action_str = action_to_str(event.action);
             func.call::<()>((button_str, action_str))?;
@@ -269,39 +292,49 @@ impl LuaAppRunner {
         Ok(())
     }
 
-    /// Call on_update(dt) with delta time in seconds.
-    pub fn call_update(&mut self, dt: f32) {
-        if let Err(e) = self.try_call_update(dt) {
-            log::error!("Lua on_update error: {e}");
-            self.has_error = Some(format!("on_update error: {e}"));
+    /// Call on_update(dt) with delta time in seconds. Returns true if the
+    /// app asked for a redraw by returning a truthy value.
+    pub fn call_update(&mut self, dt: f32) -> bool {
+        self.control.set_phase(Phase::Update);
+        let r = self.try_call_update(dt);
+        self.control.set_phase(Phase::Idle);
+        match r {
+            Ok(dirty) => dirty,
+            Err(e) => {
+                log::error!("Lua on_update error: {e}");
+                self.has_error = Some(format!("on_update error: {e}"));
+                true
+            }
         }
     }
 
-    fn try_call_update(&self, dt: f32) -> LuaResult<()> {
-        let globals = self.lua.globals();
-        if let Ok(func) = globals.get::<LuaFunction>("on_update") {
-            func.call::<()>(dt)?;
+    fn try_call_update(&self, dt: f32) -> LuaResult<bool> {
+        if let Some(func) = self.callback("on_update")? {
+            let v: LuaValue = func.call(dt)?;
+            // Lua truthiness: anything but nil/false means "dirty".
+            return Ok(!matches!(v, LuaValue::Nil | LuaValue::Boolean(false)));
         }
-        Ok(())
+        Ok(false)
     }
 
     /// Call on_render() with the screen handle active.
     pub fn call_render(&mut self, screen: &mut Screen<'_>) {
         // Set the screen pointer so Lua screen.* calls work
         self.screen_handle.borrow_mut().set_screen(screen);
+        self.control.set_phase(Phase::Render);
 
         if let Err(e) = self.try_call_render() {
             log::error!("Lua on_render error: {e}");
             self.has_error = Some(format!("on_render error: {e}"));
         }
 
+        self.control.set_phase(Phase::Idle);
         // Clear the screen pointer — it's no longer valid after this frame
         self.screen_handle.borrow_mut().clear_screen();
     }
 
     fn try_call_render(&self) -> LuaResult<()> {
-        let globals = self.lua.globals();
-        if let Ok(func) = globals.get::<LuaFunction>("on_render") {
+        if let Some(func) = self.callback("on_render")? {
             func.call::<()>(())?;
         }
         Ok(())
@@ -309,14 +342,15 @@ impl LuaAppRunner {
 
     /// Call on_destroy() if defined.
     pub fn call_destroy(&mut self) {
+        self.control.set_phase(Phase::Destroy);
         if let Err(e) = self.try_call_destroy() {
             log::error!("Lua on_destroy error: {e}");
         }
+        self.control.set_phase(Phase::Idle);
     }
 
     fn try_call_destroy(&self) -> LuaResult<()> {
-        let globals = self.lua.globals();
-        if let Ok(func) = globals.get::<LuaFunction>("on_destroy") {
+        if let Some(func) = self.callback("on_destroy")? {
             func.call::<()>(())?;
         }
         Ok(())
