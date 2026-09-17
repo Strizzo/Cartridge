@@ -1,0 +1,20 @@
+{
+  "hostname": "r36s-plus",
+  "battery": { "percent": 72, "charging": false },
+  "wifi": {
+    "connected": true,
+    "ssid": "HomeNet",
+    "rssi": -55,
+    "networks": [
+      { "ssid": "HomeNet",    "signal": 85, "security": "WPA2", "saved": true },
+      { "ssid": "Neighbor5G", "signal": 45, "security": "WPA3", "saved": false },
+      { "ssid": "CoffeeShop", "signal": 60, "security": "WPA2", "saved": true },
+      { "ssid": "OpenWifi",   "signal": 30, "security": "--",   "saved": false }
+    ]
+  },
+  "mem_total_mb": 1024,
+  "disk": { "total_gb": 29.7, "used_gb": 12.4 },
+  "cpu_percent": 25,
+  "brightness": 80,
+  "volume": 60
+}

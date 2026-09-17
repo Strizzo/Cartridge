@@ -8,9 +8,11 @@
 //!     cargo run --bin perf-bench --release [-- <scenario>]
 //!
 //! Scenarios:
-//!     home       - Idle on home screen for 600 frames (~20s @ 30fps)
-//!     navigate   - Walk dock left/right/up/down, open a few screens
-//!     store      - Open store, scroll through apps
+//!     home         - Idle on home screen for 600 frames (~20s @ 30fps)
+//!     navigate     - Walk dock left/right/up/down, open a few screens
+//!     store        - Open store, scroll through apps
+//!     app [path]   - Run a Lua cartridge hidden + uncapped for 600 frames
+//!                    (default path: lua_cartridges/bench)
 //!
 //! Outputs frame timing percentiles, FPS, and text cache hit rate.
 //! Exits with non-zero status if frame_ms_p95 exceeds the threshold.
@@ -20,20 +22,15 @@ use std::time::Instant;
 
 use cartridge_core::input::Button;
 use cartridge_launcher::{run_launcher_with_config, LauncherConfig, LauncherStats, ScriptStep};
+use cartridge_lua::{run_lua_app_with_config, LuaAppConfig};
 
 fn assets_dir() -> PathBuf {
-    // Try ./assets first, then next to binary.
-    let cwd = std::env::current_dir().unwrap_or_default();
-    let candidates = [
-        cwd.join("assets"),
-        cwd.join("../assets"),
-    ];
-    for c in &candidates {
-        if c.join("fonts").exists() {
-            return c.clone();
-        }
+    // CARTRIDGE_ASSETS, then ./assets, then next to the binary.
+    let dir = cartridge_core::paths::assets_dir();
+    if !dir.join("fonts").exists() {
+        panic!("Could not find assets directory (tried {})", dir.display());
     }
-    panic!("Could not find assets directory");
+    dir
 }
 
 fn main() -> Result<(), String> {
@@ -55,6 +52,7 @@ fn main() -> Result<(), String> {
         "home" => run_idle_home(&assets)?,
         "navigate" => run_navigate(&assets)?,
         "store" => run_store(&assets)?,
+        "app" => run_app(&assets, std::env::args().nth(2))?,
         s => return Err(format!("unknown scenario: {s}")),
     };
 
@@ -137,6 +135,27 @@ fn run_store(assets: &PathBuf) -> Result<LauncherStats, String> {
     };
     let (_, stats) = run_launcher_with_config(assets, config)?;
     Ok(stats)
+}
+
+/// Run a Lua cartridge through the real `run_lua_app` loop, hidden and
+/// uncapped, for 600 frames. The bundled `lua_cartridges/bench` cartridge
+/// draws a synthetic heavy frame and forces a redraw every frame.
+fn run_app(assets: &PathBuf, path: Option<String>) -> Result<LauncherStats, String> {
+    let app_dir = PathBuf::from(path.unwrap_or_else(|| "lua_cartridges/bench".to_string()));
+    if !app_dir.join("cartridge.json").exists() {
+        return Err(format!("no cartridge.json in {}", app_dir.display()));
+    }
+    // CARTRIDGE_BENCH_CAPTURE=<dir> dumps frame 30 as a PNG for eyeballing.
+    let capture_dir = std::env::var("CARTRIDGE_BENCH_CAPTURE").ok().map(PathBuf::from);
+    let config = LuaAppConfig {
+        hidden: std::env::var("CARTRIDGE_BENCH_VISIBLE").as_deref() != Ok("1"),
+        uncapped: true,
+        max_frames: Some(600),
+        print_stats: true,
+        capture_frames: if capture_dir.is_some() { vec![30] } else { vec![] },
+        capture_dir,
+    };
+    run_lua_app_with_config(&app_dir, assets, config)
 }
 
 fn print_summary(scenario: &str, stats: &LauncherStats, wall_secs: f32) {

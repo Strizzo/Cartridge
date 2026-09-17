@@ -12,6 +12,12 @@ use crate::theme::Theme;
 pub const WIDTH: u32 = 720;
 pub const HEIGHT: u32 = 720;
 
+thread_local! {
+    /// Reused by `draw_sparkline`, which runs once per visible row per frame.
+    static SPARK_POINTS: std::cell::RefCell<Vec<sdl2::rect::Point>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
 /// High-level drawing surface for Cartridge apps.
 pub struct Screen<'a> {
     pub canvas: &'a mut Canvas<Window>,
@@ -48,24 +54,11 @@ impl<'a> Screen<'a> {
         let color = color.unwrap_or(self.theme.text);
 
         // Truncate to max_width if needed. We use the cache's measure() which
-        // checks any cached entry first to avoid font metric lookups.
+        // checks the width index first to avoid font metric lookups.
         let display_text = if let Some(max_w) = max_width {
             let full_w = self.text_cache.measure(self.fonts, text, font_size, bold);
             if full_w > max_w {
-                let mut s = text.to_string();
-                while !s.is_empty() {
-                    let candidate = format!("{s}..");
-                    let w = self.text_cache.measure(self.fonts, &candidate, font_size, bold);
-                    if w <= max_w {
-                        s = candidate;
-                        break;
-                    }
-                    s.pop();
-                }
-                if s.is_empty() {
-                    s = "..".to_string();
-                }
-                s
+                self.truncate_with_ellipsis(text, max_w, font_size, bold)
             } else {
                 // No truncation needed; avoid the allocation.
                 return self.text_cache.render(
@@ -81,6 +74,45 @@ impl<'a> Screen<'a> {
         self.text_cache.render(
             self.canvas, self.fonts, &display_text, x, y, color, font_size, bold,
         )
+    }
+
+    /// Longest prefix of `text` (in whole chars) such that `prefix..` fits
+    /// in `max_w`. Width grows monotonically with the prefix length, so a
+    /// binary search over the char count needs only ~log2(n) measures
+    /// instead of one per popped character.
+    fn truncate_with_ellipsis(&mut self, text: &str, max_w: u32, font_size: u16, bold: bool) -> String {
+        let boundaries: Vec<usize> = text.char_indices().map(|(i, _)| i).collect();
+        let n = boundaries.len();
+        let mut candidate = String::with_capacity(text.len() + 2);
+
+        // Search k in [1, n-1]: the full string (k == n) is known not to fit.
+        let mut lo = 1usize;
+        let mut hi = n.saturating_sub(1);
+        let mut best = 0usize;
+        while lo <= hi {
+            let mid = lo + (hi - lo) / 2;
+            candidate.clear();
+            candidate.push_str(&text[..boundaries[mid]]);
+            candidate.push_str("..");
+            let w = self.text_cache.measure(self.fonts, &candidate, font_size, bold);
+            if w <= max_w {
+                best = mid;
+                lo = mid + 1;
+            } else if mid == 0 {
+                break;
+            } else {
+                hi = mid - 1;
+            }
+        }
+
+        if best == 0 {
+            "..".to_string()
+        } else {
+            candidate.clear();
+            candidate.push_str(&text[..boundaries[best]]);
+            candidate.push_str("..");
+            candidate
+        }
     }
 
     pub fn draw_rect(
@@ -196,10 +228,22 @@ impl<'a> Screen<'a> {
         color_bottom: Color,
     ) {
         let h = rect.height() as i32;
-        if h <= 0 {
+        if h <= 0 || rect.width() == 0 {
             return;
         }
 
+        // Fast path: blit a cached texture. Every cartridge draws a header
+        // gradient each frame; rasterizing 40-70 scanlines per call adds up.
+        if let Some(tex) = self
+            .images
+            .gradients
+            .get(rect.width(), rect.height(), color_top, color_bottom)
+        {
+            self.canvas.copy(tex, None, rect).ok();
+            return;
+        }
+
+        // Fallback (texture creation failed): one line per scanline.
         for y_off in 0..h {
             let t = y_off as f32 / (h - 1).max(1) as f32;
             let r = (color_top.r as f32 + (color_bottom.r as f32 - color_top.r as f32) * t) as u8;
@@ -226,9 +270,10 @@ impl<'a> Screen<'a> {
         text_color: Color,
         font_size: u16,
     ) -> u32 {
-        let style = FontStyle::MonoBold;
-        let font = self.fonts.get(style, font_size);
-        let (text_w, text_h) = font.size_of(text).unwrap_or((0, 0));
+        // Width via the cache's index (O(1) after first use); height is a
+        // per-font constant, so no per-string metric query is needed.
+        let text_w = self.text_cache.measure(self.fonts, text, font_size, true);
+        let text_h = self.fonts.get(FontStyle::MonoBold, font_size).height() as u32;
 
         let pill_w = text_w + 12;
         let pill_h = text_h + 4;
@@ -262,8 +307,8 @@ impl<'a> Screen<'a> {
         let dark_text = Color::RGB(20, 20, 30);
 
         // Button badge
-        let font = self.fonts.get(FontStyle::MonoBold, font_size);
-        let (label_w, label_h) = font.size_of(label).unwrap_or((0, 0));
+        let label_w = self.text_cache.measure(self.fonts, label, font_size, true);
+        let label_h = self.fonts.get(FontStyle::MonoBold, font_size).height() as u32;
 
         let badge_w = label_w + 10;
         let badge_h = label_h + 4;
@@ -280,8 +325,7 @@ impl<'a> Screen<'a> {
         self.draw_text(label, x + 5, y + 2, Some(dark_text), font_size, true, None);
 
         // Action text
-        let font = self.fonts.get(FontStyle::Mono, font_size);
-        let (action_w, _) = font.size_of(action).unwrap_or((0, 0));
+        let action_w = self.text_cache.measure(self.fonts, action, font_size, false);
 
         self.draw_text(
             action,
@@ -348,18 +392,6 @@ impl<'a> Screen<'a> {
             1.0
         };
 
-        let points: Vec<(i32, i32)> = data
-            .iter()
-            .enumerate()
-            .map(|(i, &v)| {
-                let px =
-                    rect.x() + (i as f32 / (data.len() - 1) as f32 * (rect.width() - 1) as f32) as i32;
-                let py = rect.y() + rect.height() as i32 - 1
-                    - (((v - mn) / rng) * (rect.height() - 1) as f32) as i32;
-                (px, py)
-            })
-            .collect();
-
         if let Some(bl_color) = baseline_color {
             let mid_y = rect.y() + rect.height() as i32 / 2;
             self.canvas.set_draw_color(bl_color);
@@ -371,17 +403,37 @@ impl<'a> Screen<'a> {
                 .ok();
         }
 
-        for window in points.windows(2) {
-            let (x1, y1) = window[0];
-            let (x2, y2) = window[1];
+        // One point per horizontal pixel at most: a 130-sample series in a
+        // 100px rect used to emit 130 segments into 100 columns. Longer series
+        // are averaged per column, which keeps the shape without the aliasing
+        // of plain stride sampling.
+        let cols = (rect.width() as usize).min(data.len());
+        let last_col = (cols - 1).max(1) as f32;
+        let span_x = (rect.width() - 1) as f32;
+        let span_y = (rect.height() - 1) as f32;
+        let bottom = rect.y() + rect.height() as i32 - 1;
+
+        SPARK_POINTS.with(|scratch| {
+            let mut points = scratch.borrow_mut();
+            points.clear();
+            points.reserve(cols);
+
+            for c in 0..cols {
+                let start = c * data.len() / cols;
+                let end = ((c + 1) * data.len() / cols).max(start + 1);
+                let bucket = &data[start..end.min(data.len())];
+                let v = bucket.iter().sum::<f32>() / bucket.len() as f32;
+
+                let px = rect.x() + (c as f32 / last_col * span_x) as i32;
+                let py = bottom - (((v - mn) / rng) * span_y) as i32;
+                points.push(sdl2::rect::Point::new(px, py));
+            }
+
+            // One color set and one draw call for the whole polyline, instead
+            // of a set_draw_color + draw_line pair per segment.
             self.canvas.set_draw_color(color);
-            self.canvas
-                .draw_line(
-                    sdl2::rect::Point::new(x1, y1),
-                    sdl2::rect::Point::new(x2, y2),
-                )
-                .ok();
-        }
+            self.canvas.draw_lines(&points[..]).ok();
+        });
     }
 
     /// Draw text with a 4-offset glow halo behind it.
@@ -543,5 +595,90 @@ impl<'a> Screen<'a> {
 
         self.canvas.copy(texture, src_rect, dst).ok();
         true
+    }
+
+    // ── Display face and flat-UI helpers ────────────────────────────────
+    //
+    // Used by the Neo-Tokyo launcher screens. Display text goes through
+    // FontCache's own texture cache (see font.rs), so titles and the clock
+    // cost one blit per frame like every other cached string.
+
+    /// Draw text in the theme's display face. Returns the rendered width.
+    pub fn draw_display_text(&mut self, text: &str, x: i32, y: i32, color: Color, size: u16) -> u32 {
+        self.fonts
+            .draw_display(self.canvas, self.texture_creator, text, x, y, color, size)
+    }
+
+    /// Width of `text` in the display face at `size`.
+    pub fn display_text_width(&mut self, text: &str, size: u16) -> u32 {
+        self.fonts.display_width(text, size)
+    }
+
+    /// Line height of the display face at `size`.
+    pub fn display_line_height(&mut self, size: u16) -> u32 {
+        self.fonts.get(FontStyle::Display, size).height() as u32
+    }
+
+    /// Ascent of the display face at `size` -- distance from the top of the
+    /// rendered texture to the baseline, for baseline-aligning display and
+    /// body text.
+    pub fn display_ascent(&mut self, size: u16) -> i32 {
+        self.fonts.get(FontStyle::Display, size).ascent()
+    }
+
+    /// Ascent of the body face at `size`.
+    pub fn text_ascent(&mut self, size: u16, bold: bool) -> i32 {
+        let style = if bold { FontStyle::MonoBold } else { FontStyle::Mono };
+        self.fonts.get(style, size).ascent()
+    }
+
+    /// Fill `rect` with `bg`, then lay 45° diagonal stripes of `fg` across
+    /// it (`period` px apart, stripes `period / 2` wide). Cheap: one
+    /// fill_rect per stripe per row.
+    pub fn draw_hazard_stripes(&mut self, rect: Rect, fg: Color, bg: Color, period: i32) {
+        let period = period.max(2);
+        let stripe_w = (period / 2).max(1) as u32;
+        self.canvas.set_draw_color(bg);
+        self.canvas.fill_rect(rect).ok();
+        self.canvas.set_draw_color(fg);
+        let right = rect.x() + rect.width() as i32;
+        for row in 0..rect.height() as i32 {
+            let y = rect.y() + row;
+            // Shift each row by one pixel so the stripe leans at 45°.
+            let mut sx = rect.x() - period + (row % period);
+            while sx < right {
+                let x0 = sx.max(rect.x());
+                let x1 = (sx + stripe_w as i32).min(right);
+                if x1 > x0 {
+                    self.canvas.fill_rect(Rect::new(x0, y, (x1 - x0) as u32, 1)).ok();
+                }
+                sx += period;
+            }
+        }
+    }
+
+    /// Draw a 1px outline of `rect` in `color`, `thickness` pixels wide,
+    /// inside the rect. (`draw_rect` ignores its line-width argument.)
+    pub fn draw_outline(&mut self, rect: Rect, color: Color, thickness: u32) {
+        let t = thickness.max(1);
+        let (x, y, w, h) = (rect.x(), rect.y(), rect.width(), rect.height());
+        if w == 0 || h == 0 {
+            return;
+        }
+        self.canvas.set_draw_color(color);
+        self.canvas.fill_rect(Rect::new(x, y, w, t.min(h))).ok();
+        self.canvas
+            .fill_rect(Rect::new(x, y + h as i32 - t.min(h) as i32, w, t.min(h)))
+            .ok();
+        self.canvas.fill_rect(Rect::new(x, y, t.min(w), h)).ok();
+        self.canvas
+            .fill_rect(Rect::new(x + w as i32 - t.min(w) as i32, y, t.min(w), h))
+            .ok();
+    }
+
+    /// Solid filled rectangle in `color` (no radius, no theme fallback).
+    pub fn fill(&mut self, rect: Rect, color: Color) {
+        self.canvas.set_draw_color(color);
+        self.canvas.fill_rect(rect).ok();
     }
 }

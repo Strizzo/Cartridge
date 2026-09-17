@@ -1,5 +1,6 @@
 pub mod app;
 pub mod data;
+pub mod neo;
 pub mod screens;
 pub mod ui_constants;
 pub mod ui_sounds;
@@ -37,25 +38,8 @@ pub enum LauncherResult {
 }
 
 /// Stats collected during a launcher run -- used by perf benches and tests.
-#[derive(Debug, Clone, Default)]
-pub struct LauncherStats {
-    pub frames: u64,
-    pub elapsed_secs: f32,
-    /// Min frame time in milliseconds.
-    pub frame_ms_min: f32,
-    pub frame_ms_max: f32,
-    pub frame_ms_avg: f32,
-    pub frame_ms_p95: f32,
-    pub cache_hits: u64,
-    pub cache_misses: u64,
-    pub cache_entries: usize,
-}
-
-impl LauncherStats {
-    pub fn fps_avg(&self) -> f32 {
-        if self.frame_ms_avg > 0.0 { 1000.0 / self.frame_ms_avg } else { 0.0 }
-    }
-}
+/// Shared with the Lua loop via `cartridge_core::perf::FrameStats`.
+pub type LauncherStats = cartridge_core::perf::FrameStats;
 
 /// One scripted input frame: a list of button presses to inject and how
 /// many frames to run before the next entry.
@@ -101,29 +85,15 @@ pub fn run_launcher_with_config(
     let game_controller_subsystem = sdl_context.game_controller()?;
     let _controllers = cartridge_core::input::open_all_controllers(&game_controller_subsystem);
 
-    // Hidden window for headless capture (perf benches, snapshot tool).
-    let hidden = std::env::var("CARTRIDGE_HIDDEN").as_deref() == Ok("1");
-    let mut window_builder = video_subsystem.window("CartridgeOS", WIDTH, HEIGHT);
-    window_builder.position_centered();
-    if hidden {
-        window_builder.hidden();
-    }
-    let window = window_builder.build().map_err(|e| e.to_string())?;
-
-    // Note: present_vsync() is unreliable on RK3326's fbdev/DRM path and
-    // would compound with the sleep-based frame cap below. Rely on the
-    // sleep cap alone for predictable timing.
-    //
-    // Software rendering when CARTRIDGE_SOFTWARE=1 (for headless capture
-    // -- read_pixels is reliable on software renderers).
-    let software = std::env::var("CARTRIDGE_SOFTWARE").as_deref() == Ok("1");
-    let mut canvas_builder = window.into_canvas();
-    if software {
-        canvas_builder = canvas_builder.software();
-    } else {
-        canvas_builder = canvas_builder.accelerated();
-    }
-    let mut canvas = canvas_builder.build().map_err(|e| e.to_string())?;
+    // Window + canvas via the shared helper: honors CARTRIDGE_HIDDEN (headless
+    // capture), CARTRIDGE_SOFTWARE (reliable read_pixels), CARTRIDGE_SCALE and
+    // CARTRIDGE_FULLSCREEN (simulator). Never vsync (unreliable on RK3326;
+    // the sleep-based frame cap below provides timing).
+    let mut canvas = cartridge_core::window::create_canvas(
+        &video_subsystem,
+        "CartridgeOS",
+        cartridge_core::window::WindowOptions::default(),
+    )?;
 
     let texture_creator = canvas.texture_creator();
     let mut fonts = FontCache::new(assets_dir)?;
@@ -143,6 +113,7 @@ pub fn run_launcher_with_config(
     let mut theme_id = launcher.theme_id().to_string();
     let mut theme = Theme::by_id(&theme_id);
     fonts.set_family(theme.font_regular, theme.font_bold);
+    fonts.set_display(theme.font_display);
     fonts.prewarm();
     let mut atmosphere = Atmosphere::new();
     atmosphere.precompose(&mut canvas, &texture_creator, &mut images, &theme);
@@ -154,7 +125,7 @@ pub fn run_launcher_with_config(
 
     // Optional FPS / frametime overlay enabled via CARTRIDGE_FPS=1
     let show_fps = std::env::var("CARTRIDGE_FPS").ok().as_deref() == Some("1");
-    let mut frame_times: std::collections::VecDeque<f32> = std::collections::VecDeque::with_capacity(60);
+    let mut frame_times = cartridge_core::perf::FrameTimes::new();
     let mut last_stats_log = Instant::now();
 
     // Bench/test infrastructure
@@ -204,6 +175,13 @@ pub fn run_launcher_with_config(
                 }
                 _ => {}
             }
+        }
+
+        // Screenshot hotkey (F12) or SIGUSR1: force a render this frame and
+        // capture it just before present.
+        let screenshot_requested = cartridge_core::screenshot::requested(&events);
+        if screenshot_requested {
+            dirty = true;
         }
 
         // Process input
@@ -275,6 +253,7 @@ pub fn run_launcher_with_config(
             theme_id = launcher.theme_id().to_string();
             theme = Theme::by_id(&theme_id);
             fonts.set_family(theme.font_regular, theme.font_bold);
+            fonts.set_display(theme.font_display);
             text_cache.clear();
             atmosphere.precompose(&mut canvas, &texture_creator, &mut images, &theme);
             dirty = true;
@@ -300,7 +279,7 @@ pub fn run_launcher_with_config(
                 launcher.render(&mut screen, &atmosphere);
 
                 if show_fps {
-                    draw_fps_overlay(&mut screen, &frame_times);
+                    cartridge_core::perf::draw_overlay(&mut screen, &frame_times);
                 }
             }
 
@@ -313,6 +292,11 @@ pub fn run_launcher_with_config(
                     } else {
                         log::info!("Captured frame {frame_count} to {}", path.display());
                     }
+                }
+            }
+            if screenshot_requested {
+                if let Err(e) = cartridge_core::screenshot::save_now(&canvas) {
+                    log::warn!("Screenshot failed: {e}");
                 }
             }
 
@@ -348,17 +332,10 @@ pub fn run_launcher_with_config(
 
         // Track frametimes for the FPS overlay
         if show_fps {
-            if frame_times.len() >= 60 {
-                frame_times.pop_front();
-            }
-            frame_times.push_back(frame_time.as_secs_f32());
+            frame_times.push(frame_time.as_secs_f32());
             if last_stats_log.elapsed().as_secs() >= 5 {
                 let stats = build_stats(frame_count, &all_frame_ms, &text_cache, bench_start);
-                log::info!(
-                    "perf: fps={:.1} avg={:.1}ms p95={:.1}ms cache {}h/{}m ({})",
-                    stats.fps_avg(), stats.frame_ms_avg, stats.frame_ms_p95,
-                    stats.cache_hits, stats.cache_misses, stats.cache_entries,
-                );
+                log::info!("{}", stats.log_line());
                 last_stats_log = Instant::now();
             }
         }
@@ -379,90 +356,26 @@ pub fn run_launcher_with_config(
     }
 }
 
-fn draw_fps_overlay(screen: &mut Screen, frame_times: &std::collections::VecDeque<f32>) {
-    let last_ms = frame_times.back().copied().unwrap_or(0.0) * 1000.0;
-    let avg_ms = if frame_times.is_empty() {
-        0.0
-    } else {
-        frame_times.iter().sum::<f32>() / frame_times.len() as f32 * 1000.0
-    };
-    let max_ms = frame_times.iter().cloned().fold(0.0_f32, f32::max) * 1000.0;
-    let fps = if avg_ms > 0.0 { 1000.0 / avg_ms } else { 0.0 };
-    let stats = format!(
-        "fps {:.1} | last {:.0}ms | avg {:.0}ms | max {:.0}ms | cache {}h/{}m {}",
-        fps, last_ms, avg_ms, max_ms,
-        screen.text_cache.hits, screen.text_cache.misses,
-        screen.text_cache.entry_count(),
-    );
-    let bg = sdl2::pixels::Color::RGBA(0, 0, 0, 200);
-    screen.canvas.set_draw_color(bg);
-    screen.canvas.fill_rect(sdl2::rect::Rect::new(2, 2, 716, 16)).ok();
-    screen.draw_text(&stats, 6, 4, Some(sdl2::pixels::Color::RGB(0, 255, 100)), 11, false, None);
-}
-
 fn build_stats(
     frames: u64,
     frame_ms: &[f32],
     text_cache: &TextCache,
     start: Instant,
 ) -> LauncherStats {
-    let mut sorted: Vec<f32> = frame_ms.to_vec();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let avg = if frame_ms.is_empty() {
-        0.0
-    } else {
-        frame_ms.iter().sum::<f32>() / frame_ms.len() as f32
-    };
-    let p95 = if sorted.is_empty() {
-        0.0
-    } else {
-        sorted[(sorted.len() as f32 * 0.95) as usize - sorted.len().min(1)]
-    };
-    LauncherStats {
-        frames,
-        elapsed_secs: start.elapsed().as_secs_f32(),
-        frame_ms_min: sorted.first().copied().unwrap_or(0.0),
-        frame_ms_max: sorted.last().copied().unwrap_or(0.0),
-        frame_ms_avg: avg,
-        frame_ms_p95: p95,
-        cache_hits: text_cache.hits,
-        cache_misses: text_cache.misses,
-        cache_entries: text_cache.entry_count(),
-    }
+    LauncherStats::build(frames, frame_ms, text_cache, start)
 }
 
 fn print_stats_summary(stats: &LauncherStats) {
-    println!("\n=== Launcher Perf Stats ===");
-    println!("  frames    : {}", stats.frames);
-    println!("  elapsed   : {:.2}s", stats.elapsed_secs);
-    println!("  fps avg   : {:.1}", stats.fps_avg());
-    println!("  frame ms  : min={:.2} avg={:.2} p95={:.2} max={:.2}",
-        stats.frame_ms_min, stats.frame_ms_avg, stats.frame_ms_p95, stats.frame_ms_max);
-    let total = (stats.cache_hits + stats.cache_misses).max(1);
-    let hit_rate = stats.cache_hits as f64 / total as f64 * 100.0;
-    println!("  text cache: {} hits / {} misses ({:.1}% hit rate, {} entries)",
-        stats.cache_hits, stats.cache_misses, hit_rate, stats.cache_entries);
-    println!();
+    stats.print_summary("Launcher Perf Stats");
 }
 
-/// Capture the current canvas contents as a PNG file.
+/// Capture the current canvas contents as a PNG file (shared implementation
+/// in cartridge_core; handles scaled / HiDPI windows).
 fn capture_frame_to_png(
     canvas: &sdl2::render::Canvas<sdl2::video::Window>,
     path: &Path,
 ) -> Result<(), String> {
-    let pixel_format = sdl2::pixels::PixelFormatEnum::RGBA32;
-    let pixels = canvas
-        .read_pixels(None, pixel_format)
-        .map_err(|e| format!("read_pixels failed: {e}"))?;
-
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).ok();
-    }
-
-    let img = image::RgbaImage::from_raw(WIDTH, HEIGHT, pixels)
-        .ok_or_else(|| "buffer size mismatch".to_string())?;
-    img.save(path).map_err(|e| format!("PNG save failed: {e}"))?;
-    Ok(())
+    cartridge_core::screenshot::capture_frame_to_png(canvas, path)
 }
 
 /// Resolve the directory for an installed app given its id.
@@ -471,36 +384,25 @@ fn capture_frame_to_png(
 /// 1. `lua_cartridges/{name}/` relative to the binary (bundled — preferred, always up to date)
 /// 2. `~/.cartridges/apps/{name}/` (user-installed from store)
 fn resolve_app_dir(app_id: &str, _assets_dir: &Path) -> PathBuf {
-    let home = std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."));
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
-    let cwd = std::env::current_dir().unwrap_or_default();
+    let bundled_dir = cartridge_core::paths::bundled_cartridges_dir();
+    let installed_dir = cartridge_core::paths::installed_apps_dir();
     let variants = crate::ui_constants::name_variants(app_id);
 
-    // First pass: check ALL bundled paths (next to binary + cwd) for ALL variants
+    // First pass: bundled cartridges (next to binary, else cwd) for ALL variants
     for name in &variants {
-        if let Some(ref dir) = exe_dir {
-            let bundled = dir.join("lua_cartridges").join(name);
-            if bundled.exists() {
-                return bundled;
-            }
-        }
-        let dev_path = cwd.join("lua_cartridges").join(name);
-        if dev_path.exists() {
-            return dev_path;
+        let bundled = bundled_dir.join(name);
+        if bundled.exists() {
+            return bundled;
         }
     }
 
     // Second pass: fall back to user-installed paths
     for name in &variants {
-        let installed_path = home.join(".cartridges/apps").join(name);
+        let installed_path = installed_dir.join(name);
         if installed_path.exists() {
             return installed_path;
         }
     }
 
-    home.join(".cartridges/apps").join(app_id)
+    installed_dir.join(app_id)
 }

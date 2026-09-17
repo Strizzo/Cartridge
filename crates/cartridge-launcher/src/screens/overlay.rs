@@ -3,6 +3,7 @@ use cartridge_core::screen::Screen;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 
+use crate::neo::{self, Cap};
 use crate::ui_constants::*;
 
 /// Boot selector overlay result.
@@ -138,6 +139,11 @@ impl BootOverlay {
     }
 
     pub fn render(&self, screen: &mut Screen) {
+        if neo::is_neo(screen.theme) {
+            self.render_neo(screen);
+            return;
+        }
+
         let theme = screen.theme;
 
         // Semi-transparent dark backdrop.
@@ -242,6 +248,110 @@ impl BootOverlay {
         // Confirmation overlay -- drawn on top of everything else.
         if self.confirming != Confirming::None {
             self.render_confirm(screen);
+        }
+    }
+
+    fn render_neo(&self, screen: &mut Screen) {
+        let theme = screen.theme;
+        neo::scrim(screen, 210);
+
+        let panel_w = 360_u32;
+        let panel_h = 300_u32;
+        let px = (SCREEN_WIDTH as i32 - panel_w as i32) / 2;
+        let py = (SCREEN_HEIGHT as i32 - panel_h as i32) / 2;
+        let panel = Rect::new(px, py, panel_w, panel_h);
+        screen.fill(panel, theme.bg);
+        screen.draw_outline(panel, theme.border, 1);
+        screen.fill(Rect::new(px, py, panel_w - 60, 4), theme.accent);
+        screen.draw_hazard_stripes(Rect::new(px + panel_w as i32 - 60, py, 60, 4), theme.accent, theme.bg, 12);
+
+        neo::display_at_baseline(screen, "SYSTEM", px + 20, py + 46, theme.text, 30);
+        screen.fill(Rect::new(px + 20, py + 58, panel_w - 40, 1), theme.border);
+
+        let row_h = 44;
+        let rows_y = py + 70;
+        for (i, item) in ITEMS.iter().enumerate() {
+            let y = rows_y + i as i32 * row_h;
+            let is_sel = i == self.selected;
+            let label = match item {
+                Item::EmulationStation => "EMULATIONSTATION",
+                Item::CartridgeOS => "CARTRIDGE OS",
+                Item::Restart => "RESTART",
+                Item::Shutdown => "SHUT DOWN",
+            };
+            let (fg, marker) = if is_sel {
+                screen.fill(Rect::new(px + 20, y, panel_w - 40, row_h as u32 - 6), theme.accent);
+                (theme.bg, theme.bg)
+            } else {
+                (
+                    match item {
+                        Item::Shutdown | Item::Restart => theme.text_dim,
+                        _ => theme.text,
+                    },
+                    theme.text,
+                )
+            };
+            neo::display_at_baseline(screen, label, px + 34, y + 28, fg, 24);
+            if matches!(item, Item::CartridgeOS) {
+                // Active-environment marker.
+                screen.fill(Rect::new(px + panel_w as i32 - 44, y + 14, 10, 10), marker);
+            }
+        }
+
+        let hint_y = py + panel_h as i32 - 44;
+        let mut hx = px + 20;
+        neo::draw_capsule(screen, "A", hx, hint_y, Cap::White);
+        hx += 26 + 9;
+        let w = screen.draw_text("SELECT", hx, hint_y + 7, Some(theme.text), neo::LABEL_SIZE, false, None);
+        hx += w as i32 + 24;
+        neo::draw_capsule(screen, "B", hx, hint_y, Cap::Red);
+        screen.draw_text("CANCEL", hx + 26 + 9, hint_y + 7, Some(theme.text), neo::LABEL_SIZE, false, None);
+
+        if self.confirming != Confirming::None {
+            self.render_confirm_neo(screen);
+        }
+    }
+
+    fn render_confirm_neo(&self, screen: &mut Screen) {
+        let theme = screen.theme;
+        neo::scrim(screen, 160);
+
+        let panel_w = 320_u32;
+        let panel_h = 150_u32;
+        let px = (SCREEN_WIDTH as i32 - panel_w as i32) / 2;
+        let py = (SCREEN_HEIGHT as i32 - panel_h as i32) / 2;
+        let panel = Rect::new(px, py, panel_w, panel_h);
+        screen.fill(panel, theme.bg);
+        screen.draw_outline(panel, theme.accent, 1);
+        screen.fill(Rect::new(px, py, panel_w, 4), theme.accent);
+
+        let prompt = match self.confirming {
+            Confirming::Restart => "RESTART DEVICE?",
+            Confirming::Shutdown => "SHUT DOWN DEVICE?",
+            Confirming::None => "",
+        };
+        let pw = screen.display_text_width(prompt, 28) as i32;
+        neo::display_at_baseline(screen, prompt, px + (panel_w as i32 - pw) / 2, py + 56, theme.text, 28);
+
+        let labels = ["NO", "YES"];
+        let btn_w = 110_u32;
+        let btn_h = 36_u32;
+        let total_w = btn_w * 2 + 16;
+        let start_x = px + (panel_w as i32 - total_w as i32) / 2;
+        let by = py + panel_h as i32 - 56;
+        for (i, label) in labels.iter().enumerate() {
+            let bx = start_x + i as i32 * (btn_w as i32 + 16);
+            let rect = Rect::new(bx, by, btn_w, btn_h);
+            let is_sel = i == self.confirm_choice;
+            let fg = if is_sel {
+                screen.fill(rect, theme.accent);
+                theme.bg
+            } else {
+                screen.draw_outline(rect, theme.text_dim, 1);
+                theme.text
+            };
+            let lw = screen.display_text_width(label, 22) as i32;
+            neo::display_at_baseline(screen, label, bx + (btn_w as i32 - lw) / 2, by + 26, fg, 22);
         }
     }
 
