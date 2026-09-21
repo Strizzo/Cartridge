@@ -27,6 +27,11 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
+      - name: Test manual launcher
+        run: |
+          bash -n deploy/tools/Cartridge.sh
+          python3 tests/test_tools_launcher.py
+
       - name: Upload cartridge binary
         uses: actions/upload-artifact@v4
         with:

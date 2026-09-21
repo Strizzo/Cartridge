@@ -100,8 +100,12 @@ python3 scripts/generate_overlays.py
 - The `tools/Cartridge.sh` file must be at `roms/tools/Cartridge.sh`
 
 **Screen is black when launching Cartridge**
-- Run "Setup Cartridge Boot" from Tools first — it installs SDL2 libraries
-- If still black, the device may need SDL2 libs installed manually
+- Test from **Tools > Cartridge** while keeping EmulationStation as the boot launcher.
+- Check `Cartridge/launch.log` for the actual startup error. The manual launcher
+  saves output there even on systems with journald disabled.
+- If the log identifies a missing library or an SDL renderer error, resolve that
+  error before enabling boot integration. "Setup Cartridge Boot" configures
+  startup services; it does not install SDL2 libraries.
 
 **Boot selector doesn't appear after setup**
 - Make sure you ran "Setup Cartridge Boot" from the Tools menu
@@ -109,8 +113,9 @@ python3 scripts/generate_overlays.py
 
 **Want to go back to EmulationStation only**
 - Run "Undo Cartridge Boot" from the Tools menu
-- Or if you can't reach the Tools menu, remove the SD card and delete
-  `Cartridge/cartridge-boot.service` from the `roms/` folder
+- If you cannot reach Tools, the enabled service must be disabled on the Linux
+  root partition (after backing it up). Deleting the copy of the service file
+  from the ROMS partition does not change systemd's installed boot configuration.
 
 **Apps show text instead of icons**
 - This is normal if the app icons haven't been downloaded yet
