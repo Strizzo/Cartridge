@@ -1,0 +1,21 @@
+# SDL2 GameController mapping database for CartridgeOS.
+#
+# Loaded at startup by cartridge_core::input::open_all_controllers via
+# SDL_GameControllerAddMappingsFromFile. Any controller with a mapping here
+# is opened through the GameController API (Xbox layout, A/B swapped to
+# Nintendo layout in input.rs); everything else falls back to the raw
+# Joystick API with the R36S button indices hardcoded in input.rs.
+#
+# Format (one mapping per line):
+#   <GUID>,<name>,a:b0,b:b1,x:b2,y:b3,back:b12,start:b13,leftshoulder:b4,...,platform:<Linux|Mac OS X|Windows>
+#
+# Get the community database (thousands of desktop pads) from
+#   https://github.com/mdqinc/SDL_GameControllerDB
+# and append gamecontrollerdb.txt from that repo below this header.
+#
+# R36S Plus (ArkOS, "GO-Advance Gamepad"/"retrogame_joypad"): placeholder.
+# Find the GUID on the device with:  sdl2-jstest --list   or
+# SDL_GAMECONTROLLER_DEBUG=1 ./cartridge  (look for "Opened joystick 0" in
+# the journal), then fill in and uncomment:
+#
+#19000000010000000100000001010000,retrogame_joypad,a:b1,b:b0,x:b2,y:b3,back:b12,start:b13,leftshoulder:b4,rightshoulder:b5,lefttrigger:b6,righttrigger:b7,dpup:b8,dpdown:b9,dpleft:b10,dpright:b11,leftx:a0,lefty:a1,rightx:a2,righty:a3,platform:Linux,

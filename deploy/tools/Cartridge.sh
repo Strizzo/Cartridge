@@ -1,22 +1,15 @@
 #!/bin/bash
-# Launch CartridgeOS from EmulationStation Tools menu
-#
-# On first run, automatically sets up the boot selector service
-# so future boots show the Cartridge/EmulationStation choice screen.
+# Launch CartridgeOS from EmulationStation without changing boot services.
+# Boot setup is a separate, explicit action: Tools > Setup Cartridge Boot.
 
-# Detect active roms directory using ArkOS convention
+# Detect active roms directory using ArkOS convention.
 if [ -f "/opt/system/Advanced/Switch to main SD for Roms.sh" ]; then
     ROMS_DIR="/roms2"
 else
     ROMS_DIR="/roms"
 fi
-CARTRIDGE_DIR="${ROMS_DIR}/Cartridge"
-
-# Fix execute permissions (exFAT doesn't preserve Unix bits)
-chmod +x "${CARTRIDGE_DIR}/cartridge" 2>/dev/null
-chmod +x "${CARTRIDGE_DIR}/cartridge-boot" 2>/dev/null
-chmod +x "${CARTRIDGE_DIR}/cartridge-boot.sh" 2>/dev/null
-chmod +x "${CARTRIDGE_DIR}/autosetup.sh" 2>/dev/null
+# The override also lets the manual launch path be tested off-device.
+CARTRIDGE_DIR="${CARTRIDGE_DIR:-${ROMS_DIR}/Cartridge}"
 
 if [[ ! -f "${CARTRIDGE_DIR}/cartridge" ]]; then
     echo "CartridgeOS not found at ${CARTRIDGE_DIR}"
@@ -25,22 +18,33 @@ if [[ ! -f "${CARTRIDGE_DIR}/cartridge" ]]; then
     exit 1
 fi
 
-# ── Auto-setup boot selector on first run ────────────────────────────────────
-
-if ! systemctl is-enabled cartridge-boot.service &>/dev/null; then
-    echo ""
-    echo "First run detected - setting up CartridgeOS boot selector..."
-    echo ""
-
-    if [[ -f "${CARTRIDGE_DIR}/autosetup.sh" ]]; then
-        bash "${CARTRIDGE_DIR}/autosetup.sh" --no-reboot
-    fi
-fi
-
-# ── Launch CartridgeOS ────────────────────────────────────────────────────────
-
-cd "${CARTRIDGE_DIR}"
+# exFAT does not preserve Unix execute bits.
+chmod +x "${CARTRIDGE_DIR}/cartridge" 2>/dev/null
+cd "${CARTRIDGE_DIR}" || exit 1
 export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-kmsdrm}"
 export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-alsa}"
 export HOME="${HOME:-/root}"
-exec ./cartridge
+export CARTRIDGE_ASSETS="${CARTRIDGE_DIR}/assets"
+export RUST_LOG="${RUST_LOG:-cartridge=info,cartridge_launcher=info,cartridge_core=info,cartridge_lua=info}"
+
+# This handheld can have journald disabled; retain startup errors beside the
+# app so they remain accessible when the card is connected to a computer.
+LOG_FILE="${CARTRIDGE_DIR}/launch.log"
+if ! : >> "${LOG_FILE}"; then
+    echo "Cannot write Cartridge launch log: ${LOG_FILE}"
+    exit 1
+fi
+{
+    printf '\n=== Cartridge launch: %s ===\n' "$(date)"
+    printf 'Working directory: %s\nVideo driver: %s\n' "$PWD" "$SDL_VIDEODRIVER"
+    ./cartridge "$@"
+} >> "${LOG_FILE}" 2>&1
+STATUS=$?
+
+if [[ "$STATUS" -ne 0 ]]; then
+    echo "Cartridge exited with code ${STATUS}. Returning to EmulationStation."
+    echo "Details saved in ${LOG_FILE}:"
+    tail -n 12 "${LOG_FILE}"
+    sleep 5
+fi
+exit "$STATUS"

@@ -15,7 +15,9 @@ No build tools needed. Works from Windows, macOS, or Linux.
 5. Eject, put the SD card back, boot the device
 6. In EmulationStation, go to **Tools > Cartridge** to launch
 
-To make Cartridge the default at boot, run **Tools > Setup Cartridge Boot** from EmulationStation. You'll get a boot selector to choose between Cartridge and EmulationStation on every startup.
+Launching from Tools leaves your existing boot setup unchanged. Startup errors are saved to `Cartridge/launch.log`.
+
+To make Cartridge the default at boot, first verify it works from Tools, then run **Tools > Setup Cartridge Boot** from EmulationStation. You'll get a boot selector to choose between Cartridge and EmulationStation on every startup.
 
 See [INSTALL.md](INSTALL.md) for troubleshooting and build-from-source instructions.
 

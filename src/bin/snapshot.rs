@@ -16,14 +16,11 @@ use cartridge_core::input::Button;
 use cartridge_launcher::{run_launcher_with_config, LauncherConfig, ScriptStep};
 
 fn assets_dir() -> PathBuf {
-    let cwd = std::env::current_dir().unwrap_or_default();
-    let candidates = [cwd.join("assets"), cwd.join("../assets")];
-    for c in &candidates {
-        if c.join("fonts").exists() {
-            return c.clone();
-        }
+    let dir = cartridge_core::paths::assets_dir();
+    if !dir.join("fonts").exists() {
+        panic!("Could not find assets directory (tried {})", dir.display());
     }
-    panic!("Could not find assets directory");
+    dir
 }
 
 fn output_dir() -> PathBuf {

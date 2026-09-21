@@ -16,10 +16,7 @@ impl AppInstaller {
     /// Create a new installer. Apps will be placed under the default install
     /// directory (`~/.cartridges/apps`).
     pub fn new(http: HttpClient) -> Self {
-        let home = std::env::var("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("."));
-        let install_dir = home.join(".cartridges").join("apps");
+        let install_dir = cartridge_core::paths::installed_apps_dir();
         Self { http, install_dir }
     }
 

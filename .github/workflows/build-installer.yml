@@ -27,6 +27,11 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
+      - name: Test manual launcher
+        run: |
+          bash -n deploy/tools/Cartridge.sh
+          python3 tests/test_tools_launcher.py
+
       - name: Upload cartridge binary
         uses: actions/upload-artifact@v4
         with:
@@ -49,11 +54,14 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cross-rs
-        run: cargo install cross
+      - name: Build the device toolchain image
+        run: docker build -f docker/Dockerfile.device -t cartridge-device .
 
       - name: Cross-compile all binaries for aarch64
-        run: cross build --workspace --release --target aarch64-unknown-linux-gnu
+        run: |
+          docker run --rm -v "$PWD":/src -w /src cartridge-device \
+            cargo build --workspace --release --target aarch64-unknown-linux-gnu
+          sudo chown -R "$(id -u):$(id -g)" target
 
       - name: Generate overlay assets
         run: python3 scripts/generate_overlays.py

@@ -1,7 +1,21 @@
 use sdl2::pixels::Color;
 
+/// Which visual system the launcher screens draw with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiStyle {
+    /// The original cyberdeck look: cards, glows, atmosphere overlays.
+    Cyberdeck,
+    /// Neo-Tokyo: flat black, one red, display type, rules instead of cards.
+    Neo,
+}
+
 /// Visual style configuration for Cartridge apps.
 pub struct Theme {
+    /// Preset id (see THEME_PRESETS).
+    pub id: &'static str,
+    /// Which screen layouts the launcher uses for this theme.
+    pub ui: UiStyle,
+
     // Core palette
     pub bg: Color,
     pub bg_lighter: Color,
@@ -24,6 +38,8 @@ pub struct Theme {
     // Text
     pub text: Color,
     pub text_dim: Color,
+    /// Quieter than text_dim: unfocused numerals, rules-as-text.
+    pub text_muted: Color,
     pub text_accent: Color,
     pub text_error: Color,
     pub text_success: Color,
@@ -73,8 +89,13 @@ pub struct Theme {
     // FontCache appends ".ttf". Both files must exist or rendering fails.
     pub font_regular: &'static str,
     pub font_bold: &'static str,
+    /// Display face for titles, numerals and the clock.
+    pub font_display: &'static str,
 
     // Atmosphere style flags.
+    /// If false, the launcher draws no atmosphere at all: no grid, no
+    /// scanlines, no vignette, no corner markers, no sweep.
+    pub atmosphere: bool,
     /// 0..=255 alpha for the baked CRT scanline overlay. Higher = more
     /// pronounced retro stripes. Free at runtime (baked once).
     pub scanline_strength: u8,
@@ -91,21 +112,33 @@ pub struct ThemePreset {
 
 /// Built-in theme presets, in display order.
 pub const THEME_PRESETS: &[ThemePreset] = &[
+    ThemePreset { id: "neo",      name: "Neo-Tokyo" },
     ThemePreset { id: "midnight", name: "Midnight" },
     ThemePreset { id: "amber",    name: "Amber Terminal" },
     ThemePreset { id: "matrix",   name: "Matrix" },
 ];
 
 /// Default theme id used when no user choice is set.
-pub const DEFAULT_THEME_ID: &str = "midnight";
+pub const DEFAULT_THEME_ID: &str = "neo";
+
+/// Which UI style a preset id maps to, without building the palette.
+pub fn style_of(id: &str) -> UiStyle {
+    match id {
+        "neo" => UiStyle::Neo,
+        _ => UiStyle::Cyberdeck,
+    }
+}
 
 impl Theme {
-    /// Build a theme by preset id. Falls back to Midnight on unknown id.
+    /// Build a theme by preset id. Falls back to the default preset on an
+    /// unknown id.
     pub fn by_id(id: &str) -> Self {
         match id {
-            "amber"   => Self::amber(),
-            "matrix"  => Self::matrix(),
-            _         => Self::midnight(),
+            "neo"      => Self::neo(),
+            "midnight" => Self::midnight(),
+            "amber"    => Self::amber(),
+            "matrix"   => Self::matrix(),
+            _          => Self::by_id(DEFAULT_THEME_ID),
         }
     }
 
@@ -122,9 +155,7 @@ impl Theme {
 }
 
 fn user_theme_id() -> Option<String> {
-    let home = std::env::var("HOME").ok()?;
-    let path = std::path::Path::new(&home)
-        .join(".cartridges")
+    let path = crate::paths::cartridges_dir()
         .join("cartridge-launcher")
         .join("data")
         .join("settings.json");
@@ -135,6 +166,78 @@ fn user_theme_id() -> Option<String> {
 
 impl Theme {
 
+    /// Neo-Tokyo: near-black, warm white, one red. No atmosphere layer;
+    /// the character comes from type and composition alone.
+    pub fn neo() -> Self {
+        let black = Color::RGB(12, 12, 14);
+        let panel = Color::RGB(20, 20, 23);
+        let rule = Color::RGB(38, 38, 43);
+        let muted = Color::RGB(74, 74, 80);
+        let dim = Color::RGB(138, 134, 128);
+        let white = Color::RGB(242, 237, 228);
+        let red = Color::RGB(226, 61, 44);
+        let layout = LayoutDefaults {
+            border_radius: 0,
+            border_radius_small: 0,
+            font_regular: "JetBrainsMono-Regular",
+            font_bold: "JetBrainsMono-Bold",
+            font_display: "BebasNeue-Regular",
+            scanline_strength: 0,
+            animated_sweep: false,
+            atmosphere: false,
+            ..LayoutDefaults::default()
+        };
+        Self {
+            id: "neo",
+            ui: UiStyle::Neo,
+
+            bg: black,
+            bg_lighter: panel,
+            bg_selected: red,
+            bg_header: black,
+
+            card_bg: panel,
+            card_border: rule,
+            card_highlight: red,
+
+            shadow: black,
+            shadow_offset: 0,
+
+            header_gradient_top: black,
+            header_gradient_bottom: black,
+
+            text: white,
+            text_dim: dim,
+            text_muted: muted,
+            text_accent: red,
+            text_error: red,
+            text_success: white,
+            text_warning: red,
+
+            accent: red,
+            border: rule,
+
+            btn_a: white,
+            btn_b: red,
+            btn_x: red,
+            btn_y: white,
+            btn_l: dim,
+            btn_r: dim,
+
+            positive: white,
+            negative: red,
+            orange: red,
+
+            glow_primary: Color::RGBA(226, 61, 44, 0),
+            glow_secondary: Color::RGBA(226, 61, 44, 0),
+            corner_marker: Color::RGBA(0, 0, 0, 0),
+            sweep_line: Color::RGBA(0, 0, 0, 0),
+            data_readout: rule,
+
+            ..layout.into_theme_skeleton()
+        }
+    }
+
     /// Cyberdeck blue on near-black -- the original CartridgeOS look.
     pub fn midnight() -> Self {
         let layout = LayoutDefaults {
@@ -142,11 +245,15 @@ impl Theme {
             border_radius_small: 4,
             font_regular: "ShareTechMono-Regular",
             font_bold: "ShareTechMono-Regular",
+            font_display: "ShareTechMono-Regular",
             scanline_strength: 24,
             animated_sweep: false,
             ..LayoutDefaults::default()
         };
         Self {
+            id: "midnight",
+            ui: UiStyle::Cyberdeck,
+
             bg: Color::RGB(18, 18, 24),
             bg_lighter: Color::RGB(30, 30, 42),
             bg_selected: Color::RGB(40, 50, 80),
@@ -164,6 +271,7 @@ impl Theme {
 
             text: Color::RGB(220, 220, 230),
             text_dim: Color::RGB(120, 120, 140),
+            text_muted: Color::RGB(80, 80, 95),
             text_accent: Color::RGB(100, 180, 255),
             text_error: Color::RGB(255, 100, 100),
             text_success: Color::RGB(100, 220, 100),
@@ -200,11 +308,15 @@ impl Theme {
             border_radius_small: 2,
             font_regular: "CascadiaMono-Bold",
             font_bold: "CascadiaMono-Bold",
+            font_display: "CascadiaMono-Bold",
             scanline_strength: 90,
             animated_sweep: true,
             ..LayoutDefaults::default()
         };
         Self {
+            id: "amber",
+            ui: UiStyle::Cyberdeck,
+
             bg: Color::RGB(18, 12, 6),
             bg_lighter: Color::RGB(34, 24, 12),
             bg_selected: Color::RGB(80, 50, 14),
@@ -222,6 +334,7 @@ impl Theme {
 
             text: Color::RGB(255, 196, 96),
             text_dim: Color::RGB(160, 110, 50),
+            text_muted: Color::RGB(110, 75, 35),
             text_accent: Color::RGB(255, 220, 120),
             text_error: Color::RGB(255, 110, 70),
             text_success: Color::RGB(220, 220, 90),
@@ -258,11 +371,15 @@ impl Theme {
             border_radius_small: 0,
             font_regular: "CascadiaMono-Regular",
             font_bold: "CascadiaMono-Bold",
+            font_display: "CascadiaMono-Bold",
             scanline_strength: 130,
             animated_sweep: true,
             ..LayoutDefaults::default()
         };
         Self {
+            id: "matrix",
+            ui: UiStyle::Cyberdeck,
+
             bg: Color::RGB(2, 8, 4),
             bg_lighter: Color::RGB(8, 22, 12),
             bg_selected: Color::RGB(14, 50, 22),
@@ -280,6 +397,7 @@ impl Theme {
 
             text: Color::RGB(140, 240, 150),
             text_dim: Color::RGB(70, 140, 80),
+            text_muted: Color::RGB(40, 90, 50),
             text_accent: Color::RGB(120, 255, 140),
             text_error: Color::RGB(255, 90, 90),
             text_success: Color::RGB(120, 255, 140),
@@ -312,7 +430,7 @@ impl Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::midnight()
+        Self::by_id(DEFAULT_THEME_ID)
     }
 }
 
@@ -331,8 +449,10 @@ struct LayoutDefaults {
     font_size_title: u16,
     font_regular: &'static str,
     font_bold: &'static str,
+    font_display: &'static str,
     scanline_strength: u8,
     animated_sweep: bool,
+    atmosphere: bool,
 }
 
 impl Default for LayoutDefaults {
@@ -350,8 +470,10 @@ impl Default for LayoutDefaults {
             font_size_title: 24,
             font_regular: "ShareTechMono-Regular",
             font_bold: "ShareTechMono-Regular",
+            font_display: "ShareTechMono-Regular",
             scanline_strength: 24,
             animated_sweep: false,
+            atmosphere: true,
         }
     }
 }
@@ -364,11 +486,13 @@ impl LayoutDefaults {
     fn into_theme_skeleton(self) -> Theme {
         let z = Color::RGB(0, 0, 0);
         Theme {
+            id: DEFAULT_THEME_ID,
+            ui: UiStyle::Cyberdeck,
             bg: z, bg_lighter: z, bg_selected: z, bg_header: z,
             card_bg: z, card_border: z, card_highlight: z,
             shadow: z, shadow_offset: 0,
             header_gradient_top: z, header_gradient_bottom: z,
-            text: z, text_dim: z, text_accent: z,
+            text: z, text_dim: z, text_muted: z, text_accent: z,
             text_error: z, text_success: z, text_warning: z,
             accent: z, border: z,
             btn_a: z, btn_b: z, btn_x: z, btn_y: z, btn_l: z, btn_r: z,
@@ -387,8 +511,10 @@ impl LayoutDefaults {
             font_size_title: self.font_size_title,
             font_regular: self.font_regular,
             font_bold: self.font_bold,
+            font_display: self.font_display,
             scanline_strength: self.scanline_strength,
             animated_sweep: self.animated_sweep,
+            atmosphere: self.atmosphere,
         }
     }
 }
