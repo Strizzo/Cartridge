@@ -20,8 +20,10 @@ reformat it as part of launcher development.
 - Native 720×720 home/settings/store/Todo renders and the requested ES handoff
   pass in the simulator. Python startup failure/recovery/undo tests pass.
 - Lua already has dirty rendering, idle rate controls and asynchronous HTTP APIs.
-  App adoption, blocking network calls, and device frame budgets still require
-  inspection and verification; existence of an API is not evidence of adoption.
+  HN, stocks and weather use async polling. AI Papers and Network Tool still
+  contain synchronous HTTP calls; these and actual device frame budgets remain
+  to fix/verify. Both runtime loops also retain an unbounded frame-history Vec
+  that should become bounded outside explicit benchmarks.
 - Root-system verification uses a known-good image on the backup SSD. No changes
   in this branch have been installed on the physical card.
 
@@ -40,8 +42,9 @@ reformat it as part of launcher development.
   measure actual device latency/frame times and verify efficient idle behavior.
 - [ ] Keep simulator checks reproducible (offline/low battery/control scenarios,
   app interactions and launch/return), with a small virtual device fixture.
-- [ ] Establish a working ARM/Linux compatibility VM or equivalent runtime and
-  document its limits; no claim of RK3326 GPU, thermal or battery emulation.
+- [x] Establish a working ARM/Linux compatibility VM: ARM binaries, real UI
+  scenarios and systemd setup/fallback/undo pass in Lima/VZ. See `arm-vm.md`;
+  no RK3326 GPU, thermal, battery or exact device-library emulation is claimed.
 - [ ] Validate wireless deploy/restart/log/screenshot workflow with the device.
 - [ ] Document app-development budgets and platform APIs using measured hardware
   behavior and a practical simulator-first release workflow.

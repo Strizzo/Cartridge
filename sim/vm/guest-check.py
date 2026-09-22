@@ -21,7 +21,11 @@ def main():
     if platform.machine() != 'aarch64' or not Path('/etc/cartridge-compat-vm').is_file():
         raise RuntimeError('Only run inside the disposable Cartridge ARM VM')
     if os.geteuid() != 0: raise RuntimeError('Run inside the VM with sudo')
-    report_dir.mkdir(exist_ok=True)
+    if report_dir.exists(): shutil.rmtree(report_dir)
+    report_dir.mkdir()
+    # GitHub artifact ZIPs do not preserve executable permissions.
+    for executable in [app/'cartridge', app/'dev/sim-check']:
+        executable.chmod(0o755)
     run(str(app/'cartridge'), '--version')
     linked = run('ldd',str(app/'cartridge'),capture_output=True).stdout
     (report_dir/'libraries.txt').write_text(linked)
@@ -31,6 +35,7 @@ def main():
     run('python3',str(root/'sim/setup-game-fixture.py'),str(home/'device'))
     env = dict(os.environ, CARTRIDGE_SIM='1', CARTRIDGE_HOME=str(home),
                CARTRIDGE_ASSETS=str(app/'assets'), CARTRIDGE_HIDDEN='1',
+               CARTRIDGE_SIM_PROFILE=str(root/'sim/profiles/r36s-plus.json'),
                CARTRIDGE_SOFTWARE='1', SDL_VIDEODRIVER='dummy',
                CARTRIDGE_READY_FILE=str(home/'ready'),
                CARTRIDGE_ES_SYSTEMS=str(home/'device/es_systems.cfg'),
@@ -94,6 +99,8 @@ def main():
     shutil.copytree(home/'checks',report_dir/'screenshots',dirs_exist_ok=True)
     result={'architecture':platform.machine(),'kernel':platform.release(),
             'binary_sha256':hashlib.sha256((app/'cartridge').read_bytes()).hexdigest(),
+            'build_revision':(app/'dev/build-revision').read_text().strip(),
+            'os_release':Path('/etc/os-release').read_text(),
             'checks':['ARM ELF libraries','Python unit tests','native ARM simulator scenarios',
                       'real systemd setup','rendered ES handoff','startup failure and latch','undo'],
             'hardware_performance_validated':False}

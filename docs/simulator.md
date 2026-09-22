@@ -134,8 +134,12 @@ supports Cortex-A35 emulation but is explicitly a generic virtual board. Its
 virtual GPU is not the handheld's Mali/display stack. The stock Rockchip kernel
 and DTB cannot simply be assumed to boot that board. Such a VM needs a compatible
 generic kernel; it is an ABI/service test, not a hardware-performance oracle.
-Neither QEMU nor a working Linux VM has been validated in the current workflow
-at this stage. Keep that gate separate from the passing native simulator tests.
+An ARM Linux compatibility VM is now implemented and verified using Lima/Apple
+Virtualization. It runs the CI ARM binaries, captures the actual UI and tests
+setup/fallback/undo through Linux systemd. Use `./sim/vm.sh start`, then
+`./sim/vm.sh check --run <successful-build-id>`. See [ARM VM](arm-vm.md) for
+requirements, exact checks, saved evidence and the hardware limits. QEMU board
+emulation is not installed or claimed.
 
 Use wireless deployment for final real-device checks. A single enabled SSH
 connection lets the Mac push builds, restart the primary session, collect logs

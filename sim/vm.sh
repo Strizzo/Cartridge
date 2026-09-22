@@ -20,7 +20,10 @@ case "${1:-help}" in
         python3 - "$IMAGE" <<'PY'
 import hashlib,sys
 from pathlib import Path
-if hashlib.file_digest(open(sys.argv[1],'rb'),'sha256').hexdigest() != '7e938df669e3b1923595eeda97aa28569350c5283e05a835cc912a2486a54934':
+digest=hashlib.sha256()
+with open(sys.argv[1],'rb') as image:
+    for chunk in iter(lambda:image.read(1024*1024),b''):digest.update(chunk)
+if digest.hexdigest() != '7e938df669e3b1923595eeda97aa28569350c5283e05a835cc912a2486a54934':
     raise SystemExit('VM image checksum failed; image was not booted')
 PY
         IMAGE_EXPR="$(python3 - "$IMAGE" <<'PY'

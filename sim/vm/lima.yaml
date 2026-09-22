@@ -10,6 +10,9 @@ images:
   arch: aarch64
   digest: sha256:7e938df669e3b1923595eeda97aa28569350c5283e05a835cc912a2486a54934
 mounts: []
+# Apple NAT avoids usernet outbound/DNS failures on this Mac.
+networks:
+- vzNAT: true
 containerd:
   system: false
   user: false
