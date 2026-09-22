@@ -59,15 +59,20 @@ everything is `chmod +x`-ed after the copy.
 
 ## Restarting
 
-After a push the script touches `/tmp/.cartridge_skip_selector` and restarts
-`cartridge-boot.service`. That flag makes `cartridge-boot.sh` skip its 5-second
-boot selector once, so you land straight back in the launcher; the next real
-boot shows the selector as usual. Pass `--payload-only` to push without
-restarting.
+When the primary-session override is installed, deployment refreshes its supervisor
+and restarts `emulationstation.service`, whose override starts Cartridge directly.
+Use `--payload-only` when a game is running or you want to defer the restart.
+Legacy boot-selector installations still use their existing service. Manual-only
+installations require relaunching Cartridge from Tools.
 
-If the boot service isn't installed (you launch Cartridge from EmulationStation
-→ Tools instead), the script kills the running launcher and tells you to
-relaunch from the Tools menu.
+To enable primary startup once, after validating the build:
+
+```bash
+ssh ark@DEVICE 'sudo python3 /roms/Cartridge/setup-primary.py enable --cartridge-dir /roms/Cartridge'
+```
+
+The next normal boot starts Cartridge. Substitute `/roms2` when appropriate.
+See [primary session](primary-session.md) for recovery and undo.
 
 ## Logs
 
@@ -93,10 +98,10 @@ into `screenshots/`, and opens it. Use `--keep` to leave the copy on the device.
 
 ## Gotchas
 
-- **`HOME` is `/root`.** The launcher runs as root under systemd, so its
-  settings and installed apps live in `/root/.cartridges/…`. An SSH session as
-  `ark` has a *different* home — if you poke at settings by hand, use absolute
-  paths under `/root/.cartridges`, or you'll edit a file nothing reads.
+- **Primary sessions run as `ark`.** Their settings and session logs are in
+  `/home/ark/.cartridges/`. Legacy root-run installations used `/root/.cartridges/`;
+  preserve that data if migrating. The current manual ES Tools launch also runs
+  as `ark`, so enabling primary startup keeps its existing app state.
 - **Bundled apps beat installed ones.** A cartridge in
   `<roms>/Cartridge/lua_cartridges/` shadows the same app installed from the
   store into `/root/.cartridges/apps/`.

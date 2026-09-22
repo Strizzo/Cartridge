@@ -4,6 +4,8 @@
 # Usage:
 #   ./sim.sh                          # launcher (FPS overlay on)
 #   ./sim.sh app lua_cartridges/hacker_news   # one cartridge, hot reload on
+#   ./sim.sh check                    # automated navigation/app screenshots
+#   ./sim.sh session                  # real startup supervisor + native UI
 #   ./sim.sh boot                     # the 5 s boot selector
 #   ./sim.sh demo                     # drawing-primitives demo
 #
@@ -56,6 +58,8 @@ usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; }
 while [[ $# -gt 0 ]]; do
     case "$1" in
         app)          MODE="app"; APP_DIR="${2:-}"; [[ -n "$APP_DIR" ]] || { echo "app: missing cartridge dir" >&2; exit 2; }; shift 2 ;;
+        check)        MODE="check"; HIDDEN=1; SOFTWARE=1; SHOW_FPS=0; shift ;;
+        session)      MODE="session"; shift ;;
         boot)         MODE="boot"; shift ;;
         demo)         MODE="demo"; shift ;;
         --scale)      SCALE="$2"; shift 2 ;;
@@ -164,6 +168,15 @@ echo "sim: home=$CARTRIDGE_HOME profile=${CARTRIDGE_SIM_PROFILE:-<defaults>} bat
 echo
 
 case "$MODE" in
+    check)
+        export CARTRIDGE_READY_FILE="$SIM_HOME/check-ready"
+        rm -f "$CARTRIDGE_READY_FILE"
+        exec cargo run -q ${CARGO_FLAGS[@]+"${CARGO_FLAGS[@]}"} --bin sim-check -- ${PASS[@]+"${PASS[@]}"}
+        ;;
+    session)
+        export CARTRIDGE_SIM_RELEASE="$RELEASE"
+        exec bash "$ROOT/sim/session.sh" ${PASS[@]+"${PASS[@]}"}
+        ;;
     launcher) exec cargo run -q ${CARGO_FLAGS[@]+"${CARGO_FLAGS[@]}"} --bin cartridge -- ${PASS[@]+"${PASS[@]}"} ;;
     app)      exec cargo run -q ${CARGO_FLAGS[@]+"${CARGO_FLAGS[@]}"} --bin cartridge -- run --path "$APP_DIR" ${PASS[@]+"${PASS[@]}"} ;;
     demo)     exec cargo run -q ${CARGO_FLAGS[@]+"${CARGO_FLAGS[@]}"} --bin cartridge -- demo ${PASS[@]+"${PASS[@]}"} ;;

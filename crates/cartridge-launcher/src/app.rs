@@ -24,6 +24,7 @@ pub struct LauncherApp {
     overlay: Option<BootOverlay>,
     /// Set when a screen requests launching an app; checked by the main loop.
     pub pending_launch: Option<String>,
+    pub pending_exit: Option<crate::LauncherResult>,
 }
 
 impl LauncherApp {
@@ -54,8 +55,9 @@ impl LauncherApp {
         let installer_http = cartridge_net::HttpClient::new(cache_dir);
         let installer = cartridge_net::AppInstaller::new(installer_http);
 
-        // Try to load registry from network first, fall back to local file
-        let registry = load_registry_from_net(&registry_client, assets_dir);
+        // Startup must work offline and present immediately. Store refresh is
+        // explicit; the bundled registry already describes installed apps.
+        let registry = load_registry_from_file(assets_dir);
 
         // Load installed apps from storage, then sync with what's on disk
         let mut installed: InstalledApps = storage
@@ -108,6 +110,7 @@ impl LauncherApp {
             ctx,
             overlay: None,
             pending_launch: None,
+            pending_exit: None,
         }
     }
 
@@ -123,16 +126,17 @@ impl LauncherApp {
                     return false;
                 }
                 OverlayResult::SwitchToES => {
-                    // Write flag file and signal quit
-                    let _ = std::fs::write("/tmp/.cartridge_switch_to_es", "1");
+                    self.pending_exit = Some(crate::LauncherResult::EmulationStation);
                     return true;
                 }
                 OverlayResult::Reboot => {
                     request_power_action(PowerAction::Reboot);
+                    self.pending_exit = Some(crate::LauncherResult::PowerRequested);
                     return true;
                 }
                 OverlayResult::Shutdown => {
                     request_power_action(PowerAction::Shutdown);
+                    self.pending_exit = Some(crate::LauncherResult::PowerRequested);
                     return true;
                 }
             }
@@ -231,6 +235,10 @@ enum PowerAction {
 /// On other platforms (macOS dev) it just logs and exits cleanly so the
 /// developer can iterate without rebooting their workstation.
 fn request_power_action(action: PowerAction) {
+    if cartridge_core::sim::is_sim() {
+        log::info!("Simulator power action requested; host unchanged");
+        return;
+    }
     #[cfg(target_os = "linux")]
     {
         let arg = match action {
@@ -258,31 +266,6 @@ fn create_screen(id: ScreenId) -> Box<dyn LauncherScreen> {
         ScreenId::Settings => Box::new(SettingsScreen::new()),
         ScreenId::WiFi => Box::new(WifiScreen::new()),
     }
-}
-
-/// Try to load the registry from the network via RegistryClient, falling
-/// back to a local registry.json file on disk if the network is unavailable.
-fn load_registry_from_net(
-    client: &cartridge_net::RegistryClient,
-    assets_dir: &Path,
-) -> Registry {
-    log::info!("Attempting to fetch registry from network...");
-    match client.fetch() {
-        Ok(net_reg) => {
-            log::info!(
-                "Fetched registry v{} with {} apps from network",
-                net_reg.version,
-                net_reg.apps.len(),
-            );
-            return Registry::from_net(&net_reg);
-        }
-        Err(e) => {
-            log::warn!("Network registry fetch failed: {e}");
-            log::info!("Falling back to local registry file...");
-        }
-    }
-
-    load_registry_from_file(assets_dir)
 }
 
 /// Load registry from a local JSON file on disk.

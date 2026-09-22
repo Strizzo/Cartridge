@@ -26,6 +26,7 @@ fn backlight_dir() -> Option<PathBuf> {
 /// Get current brightness as 0..100. Returns 100 on platforms with no
 /// backlight control.
 pub fn get_brightness_percent() -> u8 {
+    if crate::sim::is_sim() { return crate::sim::brightness(); }
     #[cfg(target_os = "linux")]
     {
         if let Some(dir) = backlight_dir() {
@@ -51,6 +52,7 @@ pub fn get_brightness_percent() -> u8 {
 
 /// Set brightness as 0..100. Clamped. No-op if no backlight is available.
 pub fn set_brightness_percent(pct: u8) {
+    if crate::sim::is_sim() { crate::sim::set_brightness(pct.min(100)); return; }
     let pct = pct.min(100);
     #[cfg(target_os = "linux")]
     {
@@ -77,6 +79,7 @@ pub fn set_brightness_percent(pct: u8) {
 
 /// Get current master volume as 0..100.
 pub fn get_volume_percent() -> u8 {
+    if crate::sim::is_sim() { return crate::sim::volume(); }
     #[cfg(target_os = "linux")]
     {
         let output = std::process::Command::new("amixer")
@@ -104,6 +107,7 @@ pub fn get_volume_percent() -> u8 {
 
 /// Set master volume to 0..100. No-op if amixer is unavailable.
 pub fn set_volume_percent(pct: u8) {
+    if crate::sim::is_sim() { crate::sim::set_volume(pct.min(100)); return; }
     let pct = pct.min(100);
     #[cfg(target_os = "linux")]
     {

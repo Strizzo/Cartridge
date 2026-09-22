@@ -64,6 +64,12 @@ exit "$TEST_EXIT"
         self.assertIn('mock diagnostic', result.stdout)
         self.assertIn('mock diagnostic', (self.app / 'launch.log').read_text())
 
+    def test_intentional_session_handoffs_return_to_parent_cleanly(self):
+        for status in (20, 30):
+            result = self.launch(status)
+            self.assertEqual(result.returncode, 0)
+            self.assertNotIn('exited with code', result.stdout)
+
     def test_missing_binary_does_not_install_or_change_services(self):
         result = subprocess.run(['/bin/bash', str(SCRIPT)], env=self.env,
                                 capture_output=True, text=True, timeout=10)

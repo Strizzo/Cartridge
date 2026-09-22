@@ -96,3 +96,40 @@ watched, so restart for those.
 - Audio, brightness and volume are simulated. Power actions (reboot, shutdown,
   switch to EmulationStation) are logged and ignored off-Linux.
 - `snapshot` and `perf-bench` still expect to run from the repo root.
+
+## Repeatable checks and boot-session rehearsal
+
+`./sim.sh check` runs the real launcher through home, settings, store and the ES
+handoff, renders the Todo cartridge, exercises simulated brightness/volume/Wi-Fi,
+and checks first-frame readiness and 720×720 PNG dimensions. Captures are saved
+under `.sim/home/checks/`. This command uses a hidden software-rendered window;
+on macOS it still needs access to the WindowServer. On Linux CI it can run with
+`SDL_VIDEODRIVER=dummy`. Simulator mode bypasses real hardware/network-management
+controls on Linux as well as macOS.
+
+`./sim.sh session` wraps the real native UI in the same supervisor used at device
+startup. Selecting ES prints a simulated handoff instead of launching a foreign
+binary. `./sim.sh session --hidden --software -- --check` drives that handoff
+automatically. No host services are modified. The old `boot` subcommand previews
+the optional graphical selector; it is not the new primary-session startup path.
+
+## ARM virtual machine boundary
+
+The native simulator is the fastest edit/run/screenshot loop. It uses the same
+Rust/Lua drawing and input code but does not emulate RK3326 hardware or predict
+its frame times. The next compatibility layer is an ARM Linux VM for the device
+binaries, dynamic libraries and systemd startup integration, with a disposable
+root and a small ROM fixture rather than the 128 GB recovery image.
+
+QEMU's [`virt` platform](https://www.qemu.org/docs/master/system/arm/virt.html)
+supports Cortex-A35 emulation but is explicitly a generic virtual board. Its
+virtual GPU is not the handheld's Mali/display stack. The stock Rockchip kernel
+and DTB cannot simply be assumed to boot that board. Such a VM needs a compatible
+generic kernel; it is an ABI/service test, not a hardware-performance oracle.
+Neither QEMU nor a working Linux VM has been validated in the current workflow
+at this stage. Keep that gate separate from the passing native simulator tests.
+
+Use wireless deployment for final real-device checks. A single enabled SSH
+connection lets the Mac push builds, restart the primary session, collect logs
+and capture frames without repeated SD-card swaps. See
+[wireless deployment](wireless-deploy.md) and [primary startup](primary-session.md).

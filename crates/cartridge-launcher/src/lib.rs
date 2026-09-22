@@ -35,6 +35,10 @@ pub enum LauncherResult {
     Quit,
     /// User wants to launch a Lua app at this path.
     LaunchApp(PathBuf),
+    /// Hand display ownership to the stock launcher through the session wrapper.
+    EmulationStation,
+    /// A shutdown/reboot was requested; never start the fallback during shutdown.
+    PowerRequested,
 }
 
 /// Stats collected during a launcher run -- used by perf benches and tests.
@@ -139,6 +143,7 @@ pub fn run_launcher_with_config(
     // Dirty rendering: skip render+present when nothing has changed.
     // Always render the first few frames (warmup, asset loading).
     let mut dirty = true;
+    let mut ready_file = std::env::var_os("CARTRIDGE_READY_FILE").map(PathBuf::from);
     let mut last_render = Instant::now();
     // Force a re-render at least every N seconds even when idle (sysinfo
     // history grows, clock ticks, etc.). 1 second is fine -- still saves
@@ -230,6 +235,9 @@ pub fn run_launcher_with_config(
             dirty = true;
         }
         if launcher.handle_input(&input_events) {
+            if let Some(exit) = launcher.pending_exit.take() {
+                return Ok((exit, build_stats(frame_count, &all_frame_ms, &text_cache, bench_start)));
+            }
             if let Some(app_id) = launcher.pending_launch() {
                 sounds.launch();
                 // Give the audio device ~150ms to actually emit the
@@ -301,6 +309,11 @@ pub fn run_launcher_with_config(
             }
 
             canvas.present();
+            // Startup watchdog acknowledges actual presentation, not process creation.
+            if let Some(path) = ready_file.take() {
+                std::fs::write(&path, "ready\n")
+                    .map_err(|e| format!("Cannot acknowledge first frame: {e}"))?;
+            }
             dirty = false;
             last_render = Instant::now();
         }

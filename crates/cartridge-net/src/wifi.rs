@@ -18,10 +18,28 @@ pub enum WifiStatus {
 /// WiFi manager wrapping nmcli commands.
 pub struct WifiManager;
 
+fn simulated_status() -> WifiStatus {
+    match cartridge_core::sim::wifi_status() {
+        Some((ssid, rssi)) => WifiStatus::Connected {
+            ssid,
+            signal: cartridge_core::sim::rssi_to_percent(rssi),
+        },
+        None => WifiStatus::Disconnected,
+    }
+}
+
+fn simulated_networks() -> Vec<WifiNetwork> {
+    let mut networks: Vec<_> = cartridge_core::sim::wifi_networks().into_iter().map(|n| WifiNetwork {
+        ssid: n.ssid, signal: n.signal, security: n.security, is_saved: n.saved,
+    }).collect();
+    networks.sort_by(|a, b| b.signal.cmp(&a.signal));
+    networks
+}
+
 impl WifiManager {
     pub fn new() -> Self {
         #[cfg(target_os = "linux")]
-        Self::ensure_nm_headless_config();
+        if !cartridge_core::sim::is_sim() { Self::ensure_nm_headless_config(); }
         Self
     }
 
@@ -55,6 +73,9 @@ wifi-sec.psk-flags=0\n";
     }
 
     pub fn status(&self) -> WifiStatus {
+        if cartridge_core::sim::is_sim() {
+            return simulated_status();
+        }
         #[cfg(target_os = "linux")]
         {
             use std::process::Command;
@@ -90,18 +111,14 @@ wifi-sec.psk-flags=0\n";
         }
         #[cfg(not(target_os = "linux"))]
         {
-            // Simulated device profile (cartridge_core::sim).
-            match cartridge_core::sim::wifi_status() {
-                Some((ssid, rssi)) => WifiStatus::Connected {
-                    ssid,
-                    signal: cartridge_core::sim::rssi_to_percent(rssi),
-                },
-                None => WifiStatus::Disconnected,
-            }
+            simulated_status()
         }
     }
 
     pub fn scan_networks(&self) -> Vec<WifiNetwork> {
+        if cartridge_core::sim::is_sim() {
+            return simulated_networks();
+        }
         #[cfg(target_os = "linux")]
         {
             use std::process::Command;
@@ -148,21 +165,14 @@ wifi-sec.psk-flags=0\n";
         }
         #[cfg(not(target_os = "linux"))]
         {
-            let mut networks: Vec<WifiNetwork> = cartridge_core::sim::wifi_networks()
-                .into_iter()
-                .map(|n| WifiNetwork {
-                    ssid: n.ssid,
-                    signal: n.signal,
-                    security: n.security,
-                    is_saved: n.saved,
-                })
-                .collect();
-            networks.sort_by(|a, b| b.signal.cmp(&a.signal));
-            networks
+            simulated_networks()
         }
     }
 
     pub fn saved_connections(&self) -> Vec<String> {
+        if cartridge_core::sim::is_sim() {
+            return cartridge_core::sim::wifi_saved();
+        }
         #[cfg(target_os = "linux")]
         {
             use std::process::Command;
@@ -190,6 +200,13 @@ wifi-sec.psk-flags=0\n";
 
     /// Connect to a saved WiFi network.
     pub fn connect(&self, ssid: &str) -> Result<(), String> {
+        if cartridge_core::sim::is_sim() {
+            return if cartridge_core::sim::wifi_saved().iter().any(|s| s == ssid) {
+                cartridge_core::sim::wifi_connect(ssid)
+            } else {
+                Err("No saved password for this network".into())
+            };
+        }
         #[cfg(target_os = "linux")]
         {
             let psk = Self::read_saved_psk(ssid);
@@ -218,6 +235,9 @@ wifi-sec.psk-flags=0\n";
     /// Falls back to keyfile approach if that fails.
     /// Logs all steps to /tmp/cartridge_wifi.log for diagnostics.
     pub fn connect_with_password(&self, ssid: &str, password: &str) -> Result<(), String> {
+        if cartridge_core::sim::is_sim() {
+            return cartridge_core::sim::wifi_connect(ssid);
+        }
         #[cfg(target_os = "linux")]
         {
             Self::save_psk(ssid, password);
@@ -226,7 +246,7 @@ wifi-sec.psk-flags=0\n";
             log.push_str(&format!("=== WiFi connect: '{}' at {} ===\n", ssid, chrono_now()));
 
             // Step 0: Ensure NM headless config exists
-            Self::ensure_nm_headless_config();
+            if !cartridge_core::sim::is_sim() { Self::ensure_nm_headless_config(); }
 
             // Step 1: Clean up ALL stale profiles
             let cleanup = Self::cleanup_profiles(ssid);
@@ -484,6 +504,10 @@ method=auto\n");
     }
 
     pub fn disconnect(&self) -> Result<(), String> {
+        if cartridge_core::sim::is_sim() {
+            cartridge_core::sim::wifi_disconnect();
+            return Ok(());
+        }
         #[cfg(target_os = "linux")]
         {
             use std::process::Command;

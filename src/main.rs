@@ -40,6 +40,8 @@ fn main() {
             loop {
                 match cartridge_launcher::run_launcher(&assets_dir) {
                     Ok(cartridge_launcher::LauncherResult::Quit) => break,
+                    Ok(cartridge_launcher::LauncherResult::EmulationStation) => std::process::exit(20),
+                    Ok(cartridge_launcher::LauncherResult::PowerRequested) => std::process::exit(30),
                     Ok(cartridge_launcher::LauncherResult::LaunchApp(app_dir)) => {
                         log::info!("Launching app from: {}", app_dir.display());
                         if let Err(e) = cartridge_lua::run_lua_app(&app_dir, &assets_dir) {

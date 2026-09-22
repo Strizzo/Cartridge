@@ -72,6 +72,7 @@ push() {
     info "Pushing scripts, registry and assets..."
     rsync "${rsync_opts[@]}" \
         deploy/cartridge-boot.sh deploy/cartridge-boot.service deploy/autosetup.sh \
+        deploy/setup-primary.py deploy/cartridge-session.py \
         registry.json \
         "${USER_NAME}@${HOST}:${dest}/"
     rsync "${rsync_opts[@]}" --delete assets/fonts/ "${USER_NAME}@${HOST}:${dest}/assets/fonts/"
@@ -98,6 +99,14 @@ push() {
 restart() {
     if [[ "$PAYLOAD_ONLY" == "1" ]]; then
         info "Not restarting (--payload-only)"
+        return
+    fi
+    local dest
+    dest="$(remote_roms_dir)/Cartridge"
+    if dev_ssh "test -f /etc/systemd/system/emulationstation.service.d/99-cartridge-primary.conf"; then
+        info "Restarting Cartridge primary session..."
+        # Refresh the installed supervisor before restarting its stock service.
+        dev_ssh "sudo python3 '${dest}/setup-primary.py' enable --cartridge-dir '${dest}' && sudo systemctl restart emulationstation.service"
         return
     fi
     # The one-shot flag makes cartridge-boot.sh skip its 5 s selector, so a

@@ -42,6 +42,7 @@ jobs:
           # Boot scripts
           cp deploy/cartridge-boot.sh release/Cartridge/
           cp deploy/cartridge-boot.service release/Cartridge/
+          cp deploy/setup-primary.py deploy/cartridge-session.py release/Cartridge/
           cp deploy/autosetup.sh release/Cartridge/
           chmod +x release/Cartridge/cartridge-boot.sh
           chmod +x release/Cartridge/autosetup.sh
