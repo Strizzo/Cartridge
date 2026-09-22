@@ -29,9 +29,11 @@ reformat it as part of launcher development.
 
 - [ ] Run the new primary session on the handheld, verify normal and recovery
   startup, ES handoff and return, shutdown/reboot, controls/audio and logs.
-- [ ] Add a direct game library in Cartridge; reuse installed emulator launch
-  configuration, ROM locations, per-game settings and saves. Validate at least
-  representative RetroArch and standalone emulator paths and return to Cartridge.
+- [x] Add a direct game library in Cartridge using installed emulator launch
+  configuration, ROM locations and per-game settings. Native simulator launch
+  and selection restoration pass; real recovered library import is read-only.
+- [ ] Validate physical RetroArch and standalone emulator launch, saves and return
+  to Cartridge. See `game-library.md` for the evidence and remaining limits.
 - [ ] Apply the design language consistently to apps, including data/loading/error
   states, and review actual device-resolution captures rather than mockups only.
 - [ ] Complete app performance work, remove blocking I/O from interaction paths,

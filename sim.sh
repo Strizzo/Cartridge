@@ -146,6 +146,14 @@ if [[ -z "$PROFILE" && -f "$ROOT/sim/profiles/r36s-plus.json" ]]; then
     PROFILE="$ROOT/sim/profiles/r36s-plus.json"
 fi
 
+# Small generated library lets game discovery and launch/return work offline.
+if [[ -z "${CARTRIDGE_ES_SYSTEMS:-}" ]]; then
+    python3 "$ROOT/sim/setup-game-fixture.py" "$SIM_HOME/device"
+    export CARTRIDGE_ES_SYSTEMS="$SIM_HOME/device/es_systems.cfg"
+    export CARTRIDGE_ES_SETTINGS="$SIM_HOME/device/es_settings.cfg"
+    export CARTRIDGE_ES_HOME="$SIM_HOME/device"
+    export CARTRIDGE_ROMS="$SIM_HOME/device/roms"
+fi
 export CARTRIDGE_SIM=1
 export CARTRIDGE_ASSETS="$ROOT/assets"
 export CARTRIDGE_HOME="$SIM_HOME"

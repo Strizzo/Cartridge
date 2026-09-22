@@ -30,6 +30,9 @@ start ES during shutdown. SDL/audio resources close before the handoff.
 The launcher loads its bundled registry immediately; network availability no
 longer blocks the first screen. Refresh the store explicitly for registry updates.
 
+The Games screen is directly available with L2; see [game library](game-library.md)
+for shared emulator/save paths and launch/return validation.
+
 ## Recovery and undo
 
 - Cartridge's Select menu can switch to EmulationStation.

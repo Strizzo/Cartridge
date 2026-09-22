@@ -1,4 +1,5 @@
 pub mod app;
+pub mod games;
 pub mod data;
 pub mod neo;
 pub mod screens;
@@ -35,6 +36,7 @@ pub enum LauncherResult {
     Quit,
     /// User wants to launch a Lua app at this path.
     LaunchApp(PathBuf),
+    LaunchGame(games::GameRequest),
     /// Hand display ownership to the stock launcher through the session wrapper.
     EmulationStation,
     /// A shutdown/reboot was requested; never start the fallback during shutdown.
@@ -56,6 +58,10 @@ pub struct ScriptStep {
 /// Configuration for headless / scripted runs.
 #[derive(Default)]
 pub struct LauncherConfig {
+    /// Restore the game library selection after the emulator exits.
+    pub resume_game: Option<games::GameRequest>,
+    /// Scripted scenarios await real background I/O, with a 15s deadline.
+    pub script_wait_for_background: bool,
     /// Stop after this many frames (None = run forever).
     pub max_frames: Option<u64>,
     /// Pre-scripted input. Each ScriptStep injects buttons then waits N frames.
@@ -111,6 +117,7 @@ pub fn run_launcher_with_config(
     let mut event_pump = sdl_context.event_pump()?;
 
     let mut launcher = LauncherApp::new(assets_dir);
+    if let Some(game) = config.resume_game.clone() { launcher.show_games(Some(game)); }
     // Build the theme AFTER the launcher so we honor the user's saved
     // theme_id. Atmosphere is pre-composited from theme colors, so it
     // must be re-built whenever the user picks a different preset.
@@ -193,7 +200,7 @@ pub fn run_launcher_with_config(
         let mut input_events = input_manager.process_events(&events);
 
         // Inject scripted input if applicable
-        if !config.script.is_empty() && script_idx < config.script.len() {
+        if !config.script.is_empty() && script_idx < config.script.len() && !(config.script_wait_for_background && launcher.is_loading()) {
             if script_wait_frames == 0 {
                 let step = &config.script[script_idx];
                 for b in &step.buttons {
@@ -353,7 +360,10 @@ pub fn run_launcher_with_config(
             }
         }
 
-        frame_count += 1;
+        if config.script_wait_for_background && launcher.is_loading() {
+            if bench_start.elapsed().as_secs() > 15 { return Err("Simulator background work timed out".into()); }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        } else { frame_count += 1; }
 
         // Check exit conditions for benches
         if let Some(max) = config.max_frames {

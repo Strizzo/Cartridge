@@ -114,6 +114,14 @@ impl LauncherApp {
         }
     }
 
+    pub fn is_loading(&self) -> bool {
+        self.screen_stack.last().map(|s| s.is_loading()).unwrap_or(false)
+    }
+
+    pub fn show_games(&mut self, resume: Option<crate::games::GameRequest>) {
+        self.screen_stack.push(Box::new(crate::screens::games::GamesScreen::new(resume)));
+    }
+
     /// Handle input events. Returns true if the app should quit.
     pub fn handle_input(&mut self, events: &[InputEvent]) -> bool {
         // If overlay is active, route input there
@@ -159,6 +167,10 @@ impl LauncherApp {
                 ScreenAction::ShowOverlay => {
                     self.overlay = Some(BootOverlay::new());
                 }
+                ScreenAction::LaunchGame(game) => {
+                    self.pending_exit = Some(crate::LauncherResult::LaunchGame(game));
+                    return true;
+                }
                 ScreenAction::LaunchApp(app_id) => {
                     self.pending_launch = Some(app_id);
                     return true;
@@ -176,7 +188,9 @@ impl LauncherApp {
     /// Cheap; safe to call every frame. Returns true if data updated
     /// (caller can use this to mark the UI dirty).
     pub fn refresh_sysinfo(&mut self) -> bool {
-        self.ctx.sysinfo.refresh()
+        let changed = self.ctx.sysinfo.refresh();
+        let screen_changed = self.screen_stack.last_mut().map(|s| s.update(&mut self.ctx)).unwrap_or(false);
+        changed || screen_changed
     }
 
     /// Read the user's currently selected theme id.
@@ -261,6 +275,7 @@ fn request_power_action(action: PowerAction) {
 fn create_screen(id: ScreenId) -> Box<dyn LauncherScreen> {
     match id {
         ScreenId::Home => Box::new(HomeScreen::new()),
+        ScreenId::Games => Box::new(crate::screens::games::GamesScreen::new(None)),
         ScreenId::Store => Box::new(StoreScreen::new()),
         ScreenId::Detail(idx) => Box::new(DetailScreen::new(idx)),
         ScreenId::Settings => Box::new(SettingsScreen::new()),

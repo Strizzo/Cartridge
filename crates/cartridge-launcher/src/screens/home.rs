@@ -190,6 +190,7 @@ impl HomeScreen {
                         return action;
                     }
                 }
+                Button::L2 => return ScreenAction::Push(ScreenId::Games),
                 Button::Y => return ScreenAction::Push(ScreenId::Store),
                 Button::X => self.remove_focused(ctx),
                 Button::Start => return ScreenAction::Push(ScreenId::Settings),
@@ -275,6 +276,7 @@ impl LauncherScreen for HomeScreen {
                         }
                     }
                 }
+                Button::L2 => return ScreenAction::Push(ScreenId::Games),
                 Button::Y => {
                     return ScreenAction::Push(ScreenId::Store);
                 }
@@ -1123,7 +1125,7 @@ fn render_neo(screen: &mut Screen, ctx: &ScreenContext, dock_index: i32, recent_
     neo::draw_readout(screen, sysinfo);
     neo::draw_footer(
         screen,
-        &[Hint::a("Open"), Hint::y("Store"), Hint::x("Remove"), Hint::start("Settings")],
+        &[Hint::a("Open"), Hint::wide("L2", "Games"), Hint::y("Store"), Hint::x("Remove"), Hint::start("Settings")],
     );
 }
 

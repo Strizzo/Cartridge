@@ -99,8 +99,8 @@ watched, so restart for those.
 
 ## Repeatable checks and boot-session rehearsal
 
-`./sim.sh check` runs the real launcher through home, settings, store and the ES
-handoff, renders the Todo cartridge, exercises simulated brightness/volume/Wi-Fi,
+`./sim.sh check` runs the real launcher through home, settings, store, the game
+library with simulated launch/selection restoration, and the ES handoff, renders the Todo cartridge, exercises simulated brightness/volume/Wi-Fi,
 and checks first-frame readiness and 720×720 PNG dimensions. Captures are saved
 under `.sim/home/checks/`. This command uses a hidden software-rendered window;
 on macOS it still needs access to the WindowServer. On Linux CI it can run with
@@ -112,6 +112,14 @@ startup. Selecting ES prints a simulated handoff instead of launching a foreign
 binary. `./sim.sh session --hidden --software -- --check` drives that handoff
 automatically. No host services are modified. The old `boot` subcommand previews
 the optional graphical selector; it is not the new primary-session startup path.
+
+## Game-library fixture
+
+The default simulator generates a small original library and cover art in its
+isolated home. Press Q (L2) for Games, then Z (A) to open a system or simulate a
+launch. Game fixtures are non-playable; simulator mode never executes device
+emulator commands. See [game library](game-library.md) for configuration import,
+launch reports, automated return-to-selection checks and device validation limits.
 
 ## ARM virtual machine boundary
 

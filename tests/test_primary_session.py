@@ -55,6 +55,21 @@ class PrimarySessionTest(unittest.TestCase):
         self.launch(); self.assertEqual(self.reason(),'previous_failure')
         self.assertTrue(self.es_seen.exists())
 
+    def test_crash_cleans_emulator_descendant_before_fallback(self):
+        marker = self.root/'orphan-emulator-ran'
+        pidfile = self.root/'emulator-pid'
+        child_code = "import signal,time; from pathlib import Path; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(0.6); Path("+repr(str(marker))+").touch(); time.sleep(10)"
+        self.binary("import subprocess,sys\np=subprocess.Popen([sys.executable,'-c',"+repr(child_code)+"])\nPath("+repr(str(pidfile))+").write_text(str(p.pid))\nPath(os.environ['CARTRIDGE_READY_FILE']).write_text('ready')\ntime.sleep(0.1)\nraise SystemExit(9)")
+        try:
+            self.launch(); self.assertEqual(self.reason(),'crashed')
+            time.sleep(0.7)
+            self.assertFalse(marker.exists(), 'Orphan emulator survived the frontend crash')
+            self.assertTrue(self.es_seen.exists())
+        finally:
+            if pidfile.exists():
+                try: os.kill(int(pidfile.read_text()), signal.SIGKILL)
+                except ProcessLookupError: pass
+
     def test_timeout_kills_hung_startup_and_falls_back(self):
         self.binary('time.sleep(30)')
         start=time.monotonic(); self.launch()

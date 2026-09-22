@@ -400,7 +400,7 @@ install_to_device() {
     cp "deploy/cartridge-boot.sh" "$dest/cartridge-boot.sh"
     chmod +x "$dest/cartridge-boot.sh"
     cp "deploy/cartridge-boot.service" "$dest/cartridge-boot.service"
-    cp "deploy/setup-primary.py" "deploy/cartridge-session.py" "$dest/"
+    cp "deploy/game-library.py" "deploy/setup-primary.py" "deploy/cartridge-session.py" "$dest/"
     cp "deploy/autosetup.sh" "$dest/autosetup.sh"
     chmod +x "$dest/autosetup.sh"
 

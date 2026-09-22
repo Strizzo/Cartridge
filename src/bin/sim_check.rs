@@ -1,12 +1,21 @@
 //! Run the real renderer/input/app loops with deterministic desktop scenarios.
 use cartridge_core::input::Button;
-use cartridge_launcher::{LauncherConfig, LauncherResult, ScriptStep, run_launcher_with_config};
+use cartridge_launcher::{run_launcher_with_config, LauncherConfig, LauncherResult, ScriptStep};
 use std::path::PathBuf;
 
 fn scenario(
     name: &str,
     buttons: &[Button],
     out: &std::path::Path,
+) -> Result<LauncherResult, String> {
+    scenario_resuming(name, buttons, out, None)
+}
+
+fn scenario_resuming(
+    name: &str,
+    buttons: &[Button],
+    out: &std::path::Path,
+    resume: Option<cartridge_launcher::games::GameRequest>,
 ) -> Result<LauncherResult, String> {
     let dir = out.join(name);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -23,6 +32,8 @@ fn scenario(
     let (result, stats) = run_launcher_with_config(
         &cartridge_core::paths::assets_dir(),
         LauncherConfig {
+            resume_game: resume,
+            script_wait_for_background: true,
             max_frames: Some(35),
             uncapped: true,
             capture_dir: Some(dir.clone()),
@@ -31,7 +42,7 @@ fn scenario(
             ..Default::default()
         },
     )?;
-    if name != "handoff" {
+    if name != "handoff" && name != "game-launch" {
         check_png(&dir.join("frame_0025.png"))?;
     }
     println!(
@@ -94,6 +105,8 @@ fn run() -> Result<(), String> {
         ("home", vec![]),
         ("settings", vec![Button::Start]),
         ("store", vec![Button::Y]),
+        ("systems", vec![Button::L2]),
+        ("games", vec![Button::L2, Button::A]),
     ] {
         if !matches!(scenario(name, &buttons, &out)?, LauncherResult::Quit) {
             return Err(format!("{name}: unexpected launcher exit"));
@@ -107,6 +120,34 @@ fn run() -> Result<(), String> {
         LauncherResult::EmulationStation
     ) {
         return Err("Power menu did not return the EmulationStation handoff".into());
+    }
+    let game = match scenario(
+        "game-launch",
+        &[Button::L2, Button::A, Button::DpadDown, Button::A],
+        &out,
+    )? {
+        LauncherResult::LaunchGame(game) => game,
+        _ => return Err("Game selection did not request an emulator launch".into()),
+    };
+    cartridge_launcher::games::launch(&game)?;
+    let report = std::fs::read_to_string(home.join(".cartridges/games/last-launch.json"))
+        .map_err(|e| e.to_string())?;
+    if !report.contains("\"simulated\": true") {
+        return Err("Game launch was not isolated to the simulator".into());
+    }
+    if !matches!(
+        scenario_resuming("game-return", &[], &out, Some(game.clone()))?,
+        LauncherResult::Quit
+    ) {
+        return Err("Game return did not restore the library".into());
+    }
+    match scenario_resuming("game-launch", &[Button::A], &out, Some(game.clone()))? {
+        LauncherResult::LaunchGame(restored)
+            if restored.system == game.system && restored.path == game.path =>
+        {
+            ()
+        }
+        _ => return Err("Game return lost the selected system or ROM".into()),
     }
     let app_dir = cartridge_core::paths::bundled_cartridges_dir().join("todo");
     let dir = out.join("todo");
@@ -129,7 +170,7 @@ fn run() -> Result<(), String> {
         stats.frames, stats.frame_ms_p95
     );
     println!(
-        "SIMULATOR CHECK PASSED: native 720x720 rendering, navigation, Lua app, readiness, ES handoff.\nScreenshots: {}",
+        "SIMULATOR CHECK PASSED: native 720x720 rendering, navigation, games and selection restore, Lua app, readiness, ES handoff.\nScreenshots: {}",
         out.display()
     );
     Ok(())

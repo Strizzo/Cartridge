@@ -37,11 +37,29 @@ fn main() {
         None => {
             // Default: run the launcher in a loop so we can launch apps and return
             let assets_dir = find_assets_dir();
+            let mut resume_game = None;
             loop {
-                match cartridge_launcher::run_launcher(&assets_dir) {
+                let config = cartridge_launcher::LauncherConfig {
+                    resume_game: resume_game.take(),
+                    ..Default::default()
+                };
+                match cartridge_launcher::run_launcher_with_config(&assets_dir, config)
+                    .map(|(result, _)| result)
+                {
                     Ok(cartridge_launcher::LauncherResult::Quit) => break,
-                    Ok(cartridge_launcher::LauncherResult::EmulationStation) => std::process::exit(20),
-                    Ok(cartridge_launcher::LauncherResult::PowerRequested) => std::process::exit(30),
+                    Ok(cartridge_launcher::LauncherResult::LaunchGame(mut game)) => {
+                        if let Err(error) = cartridge_launcher::games::launch(&game) {
+                            log::error!("Game launch failed: {error}");
+                            game.error = Some(error);
+                        }
+                        resume_game = Some(game);
+                    }
+                    Ok(cartridge_launcher::LauncherResult::EmulationStation) => {
+                        std::process::exit(20)
+                    }
+                    Ok(cartridge_launcher::LauncherResult::PowerRequested) => {
+                        std::process::exit(30)
+                    }
                     Ok(cartridge_launcher::LauncherResult::LaunchApp(app_dir)) => {
                         log::info!("Launching app from: {}", app_dir.display());
                         if let Err(e) = cartridge_lua::run_lua_app(&app_dir, &assets_dir) {
@@ -51,10 +69,7 @@ fn main() {
                             if let Ok(exe) = std::env::current_exe() {
                                 if let Some(dir) = exe.parent() {
                                     let log_path = dir.join("crash.log");
-                                    let msg = format!(
-                                        "App: {}\nError: {e}\n",
-                                        app_dir.display()
-                                    );
+                                    let msg = format!("App: {}\nError: {e}\n", app_dir.display());
                                     let _ = std::fs::OpenOptions::new()
                                         .create(true)
                                         .append(true)

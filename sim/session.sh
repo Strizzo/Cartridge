@@ -5,6 +5,7 @@ TASK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SIM_SESSION="$CARTRIDGE_HOME/session-device"
 mkdir -p "$SIM_SESSION"
 ln -sfn "$TASK_ROOT/assets" "$SIM_SESSION/assets"
+ln -sfn "$TASK_ROOT/deploy/game-library.py" "$SIM_SESSION/game-library.py"
 ln -sfn "$TASK_ROOT/lua_cartridges" "$SIM_SESSION/lua_cartridges"
 ln -sfn "$TASK_ROOT/registry.json" "$SIM_SESSION/registry.json"
 # Cargo puts binaries in this explicitly chosen directory for isolated worktrees.

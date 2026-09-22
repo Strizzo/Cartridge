@@ -72,7 +72,7 @@ push() {
     info "Pushing scripts, registry and assets..."
     rsync "${rsync_opts[@]}" \
         deploy/cartridge-boot.sh deploy/cartridge-boot.service deploy/autosetup.sh \
-        deploy/setup-primary.py deploy/cartridge-session.py \
+        deploy/game-library.py deploy/setup-primary.py deploy/cartridge-session.py \
         registry.json \
         "${USER_NAME}@${HOST}:${dest}/"
     rsync "${rsync_opts[@]}" --delete assets/fonts/ "${USER_NAME}@${HOST}:${dest}/assets/fonts/"

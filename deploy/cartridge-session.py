@@ -22,17 +22,29 @@ def atomic_json(path, value):
 
 
 def stop(child):
-    if child.poll() is None:
-        child.terminate()
-        try:
-            child.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            child.kill(); child.wait()
+    # The frontend owns a separate process group including Python launch helpers
+    # and emulators. Clean the group even if the frontend itself already exited.
+    # Otherwise a crash could leave an emulator holding DRM while ES starts.
+    try:
+        os.killpg(child.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        child.wait()
+        return
+    try:
+        child.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        pass
+    # Also terminate descendants which ignored SIGTERM after their parent died.
+    try:
+        os.killpg(child.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    child.wait()
 
 
 def supervise(command, cwd, env, ready, timeout, log):
     """First-frame deadline; shutdown signals never start another environment."""
-    child = subprocess.Popen(command, cwd=str(cwd), env=env, stdout=log, stderr=subprocess.STDOUT)
+    child = subprocess.Popen(command, cwd=str(cwd), env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     old = {}
     def shutting_down(signum, _frame):
         # Unwind child.wait() before calling stop() in finally; re-entering
