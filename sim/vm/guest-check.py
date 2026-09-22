@@ -41,13 +41,14 @@ def main():
                CARTRIDGE_ES_SYSTEMS=str(home/'device/es_systems.cfg'),
                CARTRIDGE_ES_SETTINGS=str(home/'device/es_settings.cfg'),
                CARTRIDGE_ES_HOME=str(home/'device'),CARTRIDGE_ROMS=str(home/'device/roms'))
+    shutil.copytree(root/'sim/fixtures',app/'sim/fixtures',dirs_exist_ok=True)
     run(str(app/'dev/sim-check'),env=env,cwd=app)
     # Install an explicitly fake stock service in this disposable VM, then run
     # the real setup/undo against Linux systemd rather than an offline fixture.
     if subprocess.run(['id','ark'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
         run('useradd','-m','-s','/bin/bash','ark')
     deployed=Path('/roms/Cartridge');deployed.mkdir(parents=True,exist_ok=True)
-    for name in ['assets','lua_cartridges','registry.json','game-library.py']:
+    for name in ['assets','lua_cartridges','registry.json','game-library.py','sim']:
         path=deployed/name
         if not path.is_symlink() and path.exists(): raise RuntimeError('Unexpected fixture path '+str(path))
         if path.is_symlink():path.unlink()

@@ -19,6 +19,7 @@ home directory — so you can build the whole UI without touching the handheld.
 | `--true-size` | Scales the window so it is 71.8 mm wide on your main display — the physical size of the device panel. Use this before deciding a font is big enough. |
 | `--fullscreen` | Desktop fullscreen, 720×720 letterboxed. |
 | `--release` | Release build. Closer to device behaviour, still not device numbers. |
+| `--fixture <json>` | Deterministic app HTTP replies; unmatched URLs fail offline. |
 | `--profile <json>` | Simulated device profile. Default `sim/profiles/r36s-plus.json`. |
 | `--battery N` | Override battery percent (e.g. `--battery 8` to check the low-battery header). |
 | `--wifi off\|<ssid>` | Override WiFi state. |
@@ -68,7 +69,7 @@ the process, so the Settings sliders actually move.
 | `CARTRIDGE_ASSETS` | Assets directory (fonts, overlays, controller DB). |
 | `CARTRIDGE_SCALE`, `CARTRIDGE_FULLSCREEN` | Window scaling. Drawing code always works in 720×720 logical pixels. |
 | `CARTRIDGE_SOFTWARE`, `CARTRIDGE_HIDDEN` | Renderer and window visibility. |
-| `CARTRIDGE_FPS=1` | On-screen FPS / frame-time / text-cache overlay. Works in the launcher **and** in cartridges. |
+| `CARTRIDGE_FPS=1` | On-screen CPU-work / text-cache overlay. Works in the launcher **and** in cartridges. |
 | `CARTRIDGE_HOT_RELOAD=1` | Re-run a cartridge when any of its `.lua` files changes. |
 
 ## Screenshots
@@ -87,8 +88,8 @@ watched, so restart for those.
 
 ## Limits — read this before trusting a number
 
-- **Desktop frame times are not device frame times.** A MacBook is roughly an
-  order of magnitude faster than the RK3326. Use the simulator to catch
+- **Desktop frame times are not device frame times.** There is no calibrated
+  conversion from host timings to RK3326 timings. Use the simulator to catch
   *regressions* (`cargo run --bin perf-bench --release -- app lua_cartridges/bench`),
   and the real device to judge whether something is fast enough.
 - Text rendering goes through the same SDL2_ttf path, but the device
@@ -100,7 +101,10 @@ watched, so restart for those.
 ## Repeatable checks and boot-session rehearsal
 
 `./sim.sh check` runs the real launcher through home, settings, store, the game
-library with simulated launch/selection restoration, and the ES handoff, renders the Todo cartridge, exercises simulated brightness/volume/Wi-Fi,
+library with simulated launch/selection restoration, and the ES handoff. It also
+runs 14 app scenarios covering calculator, Todo, Pomodoro, system monitor, papers
+(list/detail/loading/reader), network (overview/DNS/probes), and offline
+news/stocks/weather. It exercises simulated brightness/volume/Wi-Fi,
 and checks first-frame readiness and 720×720 PNG dimensions. Captures are saved
 under `.sim/home/checks/`. This command uses a hidden software-rendered window;
 on macOS it still needs access to the WindowServer. On Linux CI it can run with
@@ -145,3 +149,21 @@ Use wireless deployment for final real-device checks. A single enabled SSH
 connection lets the Mac push builds, restart the primary session, collect logs
 and capture frames without repeated SD-card swaps. See
 [wireless deployment](wireless-deploy.md) and [primary startup](primary-session.md).
+
+## Interactive HTTP fixtures
+
+```bash
+./sim.sh app lua_cartridges/ai_papers --fixture sim/fixtures/http.json --no-fps
+```
+
+This uses the same fixture as the automated checks, with delayed synthetic
+responses and no app HTTP sockets. Edit the JSON to add cases, then restart the
+app (or save a Lua file to reload it). Each entry has `url_prefix`, `body`, optional
+`status` (default 200), `delay_polls` (default 2) and `elapsed_ms`. The longest
+matching URL prefix wins. Unmatched requests return an offline failure. Delays
+are counted in polls, not wall-clock milliseconds. Blocking HTTP and POST are
+rejected in fixture mode so accidental live requests cannot bypass it.
+
+`CARTRIDGE_HTTP_FIXTURE` is honored only with `CARTRIDGE_SIM=1`. Simulated Wi-Fi
+does not itself block real HTTP; choose fixtures to make an interactive app
+repeatable. See [app development](app-development.md) for performance and porting.

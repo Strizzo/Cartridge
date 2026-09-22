@@ -9,6 +9,8 @@ lifecycle callbacks and uses the global tables documented here.
 - [Cartridge structure](#cartridge-structure)
 - [Lifecycle callbacks](#lifecycle-callbacks)
 - [Input events](#input-events)
+- [`app.*` — redraw and idle updates](#app)
+- [`ui.*` — shared app styling](#ui)
 - [`screen.*` — drawing](#screen)
 - [`theme.*` — colors and dimensions](#theme)
 - [`storage.*` — persistence](#storage)
@@ -54,7 +56,7 @@ manifest are not available to your Lua code (the global table simply
 doesn't exist). The store also displays permissions to the user before
 install.
 
-Always available (no permission needed): `screen`, `theme`, `json`, `text_input`.
+Always available (no permission needed): `screen`, `theme`, `json`, `text_input`, `app`, `ui`.
 
 Permission-gated:
 
@@ -89,7 +91,7 @@ function on_input(button, action)
 end
 
 function on_render()
-  -- Called every frame after on_update.
+  -- Called after on_update when the screen is dirty (plus a 1-second refresh).
   -- ONLY place where screen.* methods may be called.
   -- Always start with screen.clear() if you want a known background.
 end
@@ -100,8 +102,42 @@ function on_destroy()
 end
 ```
 
-The cartridge runs at 30fps. Note that `Select` exits the cartridge and is
-filtered out before `on_input`, so apps cannot intercept it.
+The loop runs at up to 30 Hz while active and defaults to 5 Hz after 3 seconds
+without input. Rendering is skipped when clean. `Select` exits the cartridge and
+is filtered out before `on_input`, so apps cannot intercept it.
+
+## `app.*`
+
+- `app.request_redraw()` requests a render after the current update.
+- `app.set_idle_fps(n)` sets idle update frequency, clamped to 1–60 Hz (default 5).
+- Returning `true` from `on_update(dt)` also requests redraw.
+
+Input, HTTP completions, hot reload and the on-screen keyboard trigger drawing
+automatically. A compatibility refresh occurs at least once per second. Do not
+return true unconditionally from a static app.
+
+## `ui.*`
+
+Optional shared styling, available inside `on_render`. Custom layouts and raw
+`screen.*` calls are supported alongside these helpers.
+
+```lua
+ui.header("My app", "Ready", theme.text_dim)
+ui.card(18, 56, 684, 100, {border=theme.accent})
+ui.footer({{"A", "Open", theme.btn_a}, {"B", "Back", theme.btn_b}})
+```
+
+Headers occupy y=0–39; footers y=684–719. `ui.card` accepts the same options as
+`screen.draw_card`; Neo uses opaque square cards without shadows and adds a focus
+bar to an accent border. `ui.rect` and `ui.pill` mirror their `screen.draw_*`
+equivalents with square geometry in Neo. `ui.rect` sets the passed options table's
+radius to zero in Neo; use a separate table if sharing it with rounded raw draws.
+`theme.ui` is `"neo"` or `"classic"`. Classic retains rounded card/pill primitives.
+
+For custom title placement, use `screen.draw_display_text(text,x,y,size,color)`
+and `screen.get_display_text_width(text,size)`. Both use the theme's display face;
+color is a `{r=...,g=...,b=...}` or indexed RGB table. Width measurement can only
+be called inside `on_render`, like other screen methods.
 
 ## Input events
 
@@ -171,8 +207,8 @@ Filled circle. RGB args are individual numbers.
 
 ### `screen.draw_card(x, y, w, h, opts?)`
 
-Stylized rounded card with optional background, border, and shadow. The
-preferred container for content blocks.
+Stylized rounded card with optional background, border, and shadow. Prefer
+`ui.card` for containers that follow the current app theme.
 
 ```lua
 screen.draw_card(10, 10, 300, 200, {
@@ -297,7 +333,7 @@ local keys = storage.list_keys()        -- {"settings", ...}
 HTTP client. Two flavors: synchronous (blocks the render thread) and
 asynchronous (non-blocking with polling).
 
-### Synchronous (simple)
+### Synchronous (legacy)
 
 ```lua
 local resp = http.get("https://api.example.com/data")
@@ -307,10 +343,10 @@ local resp = http.get_cached("https://...", 60)  -- TTL in seconds
 local resp = http.post("https://...", '{"key":"value"}')
 ```
 
-Use these for one-off calls. They block, so don't poll an endpoint
-once per second this way — use the async API.
+These block even in `on_init` and `on_update`. Use async requests for all
+interactive apps; keep sync methods only for compatibility.
 
-### Asynchronous (recommended for polling)
+### Asynchronous (recommended)
 
 ```lua
 -- Kick off a request; returns an integer request id immediately.
@@ -318,7 +354,7 @@ local id = http.get_async("https://...")
 local id = http.post_async("https://...", body)
 
 -- Drain completed responses. Returns an array of:
---   {id = N, ok = true, status = 200, body = "..."}
+--   {id = N, ok = true, status = 200, body = "...", elapsed_ms = 42.0, etag = "..."}
 function on_update(dt)
   local responses = http.poll()
   for _, resp in ipairs(responses) do
@@ -329,8 +365,19 @@ function on_update(dt)
 end
 ```
 
-The async API runs requests on a background thread, so `on_render`
-keeps running smoothly while a request is in flight.
+The async API uses four background workers. `elapsed_ms` is monotonic request
+wall time including connection/transfer, excluding time waiting in the queue.
+`get_async(url, etag)` optionally supplies an ETag; a 304 response has `ok=true`
+and an empty body. Keep the previous content in that case.
+
+At most 64 requests may remain outstanding (including unpolled completions).
+Further submissions raise a Lua error: use `pcall`, poll regularly and retry
+later. `poll()` returns at most 8 responses per call and requests a redraw when
+it delivers results. Exiting the app abandons queued jobs; requests already in
+flight may run until their timeout. Text response bodies are limited to 4 MiB;
+oversized/truncated bodies fail instead of reporting successful empty content.
+JSON decoding and callbacks still run on the UI thread. See
+[app development](app-development.md) for practical budgets and test workflow.
 
 ## `json.*`
 

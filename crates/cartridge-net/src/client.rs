@@ -144,9 +144,18 @@ impl HttpClient {
                 let body = if status == 304 {
                     String::new()
                 } else {
-                    resp.into_body().read_to_string().unwrap_or_default()
+                    resp.into_body()
+                        .with_config()
+                        .limit(4 * 1024 * 1024)
+                        .read_to_string()
+                        .map_err(|e| format!("Response body failed (4 MiB limit): {e}"))?
                 };
-                Ok(HttpResponse { ok, status, body, etag })
+                Ok(HttpResponse {
+                    ok,
+                    status,
+                    body,
+                    etag,
+                })
             }
             Err(e) => {
                 log::warn!("HTTP request failed: {e}");
@@ -158,5 +167,60 @@ impl HttpClient {
                 })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::net::TcpListener;
+    use std::time::Duration;
+
+    fn reply(headers: &str, body: &str) -> Result<HttpResponse, String> {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let message = format!("HTTP/1.1 200 OK\r\nConnection: close\r\n{headers}\r\n{body}");
+        let server = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            let mut socket = loop {
+                match listener.accept() {
+                    Ok((socket, _)) => break socket,
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(std::time::Instant::now() < deadline, "HTTP client did not connect");
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(e) => panic!("HTTP accept failed: {e}"),
+                }
+            };
+            socket
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = [0; 4096];
+            socket.read(&mut request).unwrap();
+            // A limit rejection may close the connection before all bytes send.
+            let _ = socket.write_all(message.as_bytes());
+        });
+        let result = HttpClient::new(std::env::temp_dir().join("unused-http-test-cache"))
+            .get(&format!("http://{address}/"));
+        server.join().unwrap();
+        result
+    }
+
+    #[test]
+    fn reports_body_failures_instead_of_success_with_empty_text() {
+        let normal = reply("Content-Length: 2\r\nETag: sample\r\n", "ok").unwrap();
+        assert!(normal.ok);
+        assert_eq!(normal.body, "ok");
+        assert_eq!(normal.etag.as_deref(), Some("sample"));
+        assert!(
+            reply("Content-Length: 4194305\r\n", "").is_err(),
+            "oversized body accepted"
+        );
+        assert!(
+            reply("Content-Length: 100\r\n", "short").is_err(),
+            "truncated body accepted"
+        );
     }
 }

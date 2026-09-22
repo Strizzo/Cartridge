@@ -14,6 +14,7 @@
 #   --true-size      scale so the window is 71.8 mm wide on the main display
 #   --fullscreen     desktop fullscreen, 720x720 letterboxed
 #   --release        release build (closer to device perf; still not device numbers)
+#   --fixture <json> deterministic HTTP replies for interactive apps (no sockets)
 #   --profile <json> simulated device profile (default sim/profiles/r36s-plus.json)
 #   --battery N      override battery percent
 #   --wifi off|ssid  override WiFi state
@@ -45,6 +46,7 @@ TRUE_SIZE=0
 FULLSCREEN=0
 RELEASE=0
 PROFILE=""
+HTTP_FIXTURE=""
 BATTERY=""
 WIFI=""
 SIM_HOME=""
@@ -67,6 +69,7 @@ while [[ $# -gt 0 ]]; do
         --true-size)  TRUE_SIZE=1; shift ;;
         --fullscreen) FULLSCREEN=1; shift ;;
         --release)    RELEASE=1; shift ;;
+        --fixture)    HTTP_FIXTURE="$2"; shift 2 ;;
         --profile)    PROFILE="$2"; shift 2 ;;
         --profile=*)  PROFILE="${1#--profile=}"; shift ;;
         --battery)    BATTERY="$2"; shift 2 ;;
@@ -158,6 +161,7 @@ export CARTRIDGE_SIM=1
 export CARTRIDGE_ASSETS="$ROOT/assets"
 export CARTRIDGE_HOME="$SIM_HOME"
 export RUST_LOG="${RUST_LOG:-cartridge=info,cartridge_launcher=info,cartridge_core=info,cartridge_lua=info}"
+[[ -n "$HTTP_FIXTURE" ]]   && export CARTRIDGE_HTTP_FIXTURE="$HTTP_FIXTURE"
 [[ -n "$PROFILE" ]]        && export CARTRIDGE_SIM_PROFILE="$PROFILE"
 [[ -n "$BATTERY" ]]        && export CARTRIDGE_SIM_BATTERY="$BATTERY"
 [[ -n "$WIFI" ]]           && export CARTRIDGE_SIM_WIFI="$WIFI"

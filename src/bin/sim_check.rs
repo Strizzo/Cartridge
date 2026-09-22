@@ -1,6 +1,6 @@
 //! Run the real renderer/input/app loops with deterministic desktop scenarios.
 use cartridge_core::input::Button;
-use cartridge_launcher::{run_launcher_with_config, LauncherConfig, LauncherResult, ScriptStep};
+use cartridge_launcher::{LauncherConfig, LauncherResult, ScriptStep, run_launcher_with_config};
 use std::path::PathBuf;
 
 fn scenario(
@@ -46,8 +46,8 @@ fn scenario_resuming(
         check_png(&dir.join("frame_0025.png"))?;
     }
     println!(
-        "{name}: {} frames, host p95 {:.2}ms",
-        stats.frames, stats.frame_ms_p95
+        "{name}: {} frames, host render p95 {:.2}ms",
+        stats.frames, stats.render_ms_p95
     );
     Ok(result)
 }
@@ -149,26 +149,65 @@ fn run() -> Result<(), String> {
         }
         _ => return Err("Game return lost the selected system or ROM".into()),
     }
-    let app_dir = cartridge_core::paths::bundled_cartridges_dir().join("todo");
-    let dir = out.join("todo");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let stats = cartridge_lua::run_lua_app_with_config(
-        &app_dir,
-        &cartridge_core::paths::assets_dir(),
-        cartridge_lua::LuaAppConfig {
-            hidden: true,
-            uncapped: true,
-            max_frames: Some(35),
-            capture_dir: Some(dir.clone()),
-            capture_frames: vec![25],
-            ..Default::default()
-        },
-    )?;
-    check_png(&dir.join("frame_0025.png"))?;
-    println!(
-        "todo: {} frames, host p95 {:.2}ms",
-        stats.frames, stats.frame_ms_p95
-    );
+    let fixture = cartridge_core::paths::assets_dir()
+        .parent()
+        .unwrap()
+        .join("sim/fixtures/http.json");
+    for (name, app, buttons) in [
+        ("todo", "todo", vec![]),
+        ("calculator", "calculator", vec![]),
+        ("pomodoro", "pomodoro", vec![]),
+        ("system-monitor", "system_monitor", vec![]),
+        ("papers", "ai_papers", vec![]),
+        ("paper-detail", "ai_papers", vec![Button::A]),
+        ("paper-loading", "ai_papers", vec![Button::A, Button::X]),
+        ("paper-reader", "ai_papers", vec![Button::A, Button::X]),
+        ("network", "network_tool", vec![]),
+        (
+            "network-dns",
+            "network_tool",
+            vec![Button::R1, Button::R1, Button::A],
+        ),
+        (
+            "network-probes",
+            "network_tool",
+            vec![Button::L1, Button::A],
+        ),
+        ("hn-offline", "hacker_news", vec![]),
+        ("stocks-offline", "stock_market", vec![]),
+        ("weather-offline", "weather", vec![]),
+    ] {
+        let dir = out.join(name);
+        let capture = if name == "paper-loading" { 15 } else { 32 };
+        let script = buttons
+            .into_iter()
+            .enumerate()
+            .map(|(i, b)| (8 + i as u64 * 4, b))
+            .collect();
+        let stats = cartridge_lua::run_lua_app_with_config(
+            &cartridge_core::paths::bundled_cartridges_dir().join(app),
+            &cartridge_core::paths::assets_dir(),
+            cartridge_lua::LuaAppConfig {
+                hidden: true,
+                uncapped: true,
+                max_frames: Some(40),
+                capture_dir: Some(dir.clone()),
+                capture_frames: vec![capture],
+                http_fixture: Some(fixture.clone()),
+                script,
+                fail_on_error: true,
+                ..Default::default()
+            },
+        )?;
+        check_png(&dir.join(format!("frame_{capture:04}.png")))?;
+        println!(
+            "{name}: {} loops, {} renders, host render p95 {:.2}ms",
+            stats.frames, stats.rendered_frames, stats.render_ms_p95
+        );
+        if name == "todo" && stats.rendered_frames > 3 {
+            return Err("Static app is redrawing during clean idle iterations".into());
+        }
+    }
     println!(
         "SIMULATOR CHECK PASSED: native 720x720 rendering, navigation, games and selection restore, Lua app, readiness, ES handoff.\nScreenshots: {}",
         out.display()

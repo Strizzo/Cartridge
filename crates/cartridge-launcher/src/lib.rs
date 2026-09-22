@@ -143,7 +143,8 @@ pub fn run_launcher_with_config(
     let mut frame_count: u64 = 0;
     let mut script_idx = 0usize;
     let mut script_wait_frames: u32 = 0;
-    let mut all_frame_ms: Vec<f32> = Vec::with_capacity(1024);
+    let mut all_frame_ms = cartridge_core::perf::FrameSamples::new(config.max_frames.is_some());
+    let mut render_frame_ms = cartridge_core::perf::FrameSamples::new(config.max_frames.is_some());
     let bench_start = Instant::now();
     let result;
 
@@ -159,6 +160,7 @@ pub fn run_launcher_with_config(
 
     loop {
         let frame_start = Instant::now();
+        let mut capture_time = std::time::Duration::ZERO;
         let dt = frame_start.duration_since(last_frame).as_secs_f32();
         last_frame = frame_start;
         atmosphere.update(dt);
@@ -176,14 +178,14 @@ pub fn run_launcher_with_config(
             match event {
                 sdl2::event::Event::Quit { .. } => {
                     result = LauncherResult::Quit;
-                    return Ok((result, build_stats(frame_count, &all_frame_ms, &text_cache, bench_start)));
+                    return Ok((result, build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start)));
                 }
                 sdl2::event::Event::KeyDown {
                     keycode: Some(sdl2::keyboard::Keycode::Escape),
                     ..
                 } => {
                     result = LauncherResult::Quit;
-                    return Ok((result, build_stats(frame_count, &all_frame_ms, &text_cache, bench_start)));
+                    return Ok((result, build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start)));
                 }
                 _ => {}
             }
@@ -243,7 +245,7 @@ pub fn run_launcher_with_config(
         }
         if launcher.handle_input(&input_events) {
             if let Some(exit) = launcher.pending_exit.take() {
-                return Ok((exit, build_stats(frame_count, &all_frame_ms, &text_cache, bench_start)));
+                return Ok((exit, build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start)));
             }
             if let Some(app_id) = launcher.pending_launch() {
                 sounds.launch();
@@ -252,10 +254,10 @@ pub fn run_launcher_with_config(
                 std::thread::sleep(std::time::Duration::from_millis(120));
                 let app_dir = resolve_app_dir(app_id, assets_dir);
                 result = LauncherResult::LaunchApp(app_dir);
-                return Ok((result, build_stats(frame_count, &all_frame_ms, &text_cache, bench_start)));
+                return Ok((result, build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start)));
             }
             result = LauncherResult::Quit;
-            return Ok((result, build_stats(frame_count, &all_frame_ms, &text_cache, bench_start)));
+            return Ok((result, build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start)));
         }
 
         // Reflect setting changes (sounds toggle).
@@ -299,6 +301,7 @@ pub fn run_launcher_with_config(
             }
 
             // Capture frame BEFORE present so we get exactly what was drawn.
+            let capture_start = Instant::now();
             if should_capture {
                 if let Some(ref dir) = config.capture_dir {
                     let path = dir.join(format!("frame_{frame_count:04}.png"));
@@ -315,6 +318,7 @@ pub fn run_launcher_with_config(
                 }
             }
 
+            capture_time += capture_start.elapsed();
             canvas.present();
             // Startup watchdog acknowledges actual presentation, not process creation.
             if let Some(path) = ready_file.take() {
@@ -329,8 +333,9 @@ pub fn run_launcher_with_config(
         if had_input {
             last_input = Instant::now();
         }
-        let frame_time = Instant::now().duration_since(frame_start);
+        let frame_time = frame_start.elapsed().saturating_sub(capture_time);
         all_frame_ms.push(frame_time.as_secs_f32() * 1000.0);
+        if render_this_frame { render_frame_ms.push(frame_time.as_secs_f32() * 1000.0); }
 
         if !config.uncapped {
             let idle_secs = last_input.elapsed().as_secs_f32();
@@ -345,8 +350,8 @@ pub fn run_launcher_with_config(
                 ACTIVE_FPS
             };
             let target_time = std::time::Duration::from_secs_f64(1.0 / target_fps as f64);
-            if !had_input && frame_time < target_time {
-                std::thread::sleep(target_time - frame_time);
+            if !had_input {
+                std::thread::sleep(target_time.saturating_sub(frame_start.elapsed()));
             }
         }
 
@@ -354,7 +359,7 @@ pub fn run_launcher_with_config(
         if show_fps {
             frame_times.push(frame_time.as_secs_f32());
             if last_stats_log.elapsed().as_secs() >= 5 {
-                let stats = build_stats(frame_count, &all_frame_ms, &text_cache, bench_start);
+                let stats = build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start);
                 log::info!("{}", stats.log_line());
                 last_stats_log = Instant::now();
             }
@@ -369,7 +374,7 @@ pub fn run_launcher_with_config(
         if let Some(max) = config.max_frames {
             if frame_count >= max {
                 result = LauncherResult::Quit;
-                let stats = build_stats(frame_count, &all_frame_ms, &text_cache, bench_start);
+                let stats = build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start);
                 if config.print_stats {
                     print_stats_summary(&stats);
                 }
@@ -381,11 +386,12 @@ pub fn run_launcher_with_config(
 
 fn build_stats(
     frames: u64,
-    frame_ms: &[f32],
+    frame_ms: &cartridge_core::perf::FrameSamples,
+    render_ms: &cartridge_core::perf::FrameSamples,
     text_cache: &TextCache,
     start: Instant,
 ) -> LauncherStats {
-    LauncherStats::build(frames, frame_ms, text_cache, start)
+    LauncherStats::build(frames, frame_ms, render_ms, text_cache, start)
 }
 
 fn print_stats_summary(stats: &LauncherStats) {

@@ -135,26 +135,11 @@ local state = {
 -- ── Drawing Helpers ──────────────────────────────────────────────────────────
 
 local function draw_header(title, right_text, right_color)
-    screen.draw_gradient_rect(0, 0, 720, 40,
-        theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
-        theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
-    screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
-    if right_text then
-        local rc = right_color or theme.text_dim
-        local rw = screen.get_text_width(right_text, 12, false)
-        screen.draw_text(right_text, 704 - rw, 14, {color=rc, size=12})
-    end
+    ui.header(title, right_text, right_color)
 end
 
 local function draw_footer(hints)
-    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 684, 720, 684, {color=theme.border})
-    local x = 10
-    for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
-        x = x + w + 14
-    end
+    ui.footer(hints)
 end
 
 local function draw_tab_indicator(active)
@@ -169,7 +154,7 @@ local function draw_tab_indicator(active)
         local surface_x = tx + (tab_w - tw) / 2
         screen.draw_text(label, surface_x, tab_y + 4, {color=col, size=12, bold=is_active})
         if is_active then
-            screen.draw_rect(tx + 20, tab_y + 24, tab_w - 40, 2, {color=theme.accent, filled=true, radius=1})
+            ui.rect(tx + 20, tab_y + 24, tab_w - 40, 2, {color=theme.accent, filled=true, radius=1})
         end
     end
     screen.draw_line(0, tab_y + 28, 720, tab_y + 28, {color=theme.border})
@@ -335,7 +320,7 @@ local function draw_current_screen()
     content_y = content_y + 22
 
     -- Main temperature + condition card
-    screen.draw_card(6, content_y, 708, 150, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
+    ui.card(6, content_y, 708, 150, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
 
     -- Large temperature
     local tc = temp_color(w.temperature)
@@ -348,7 +333,7 @@ local function draw_current_screen()
     screen.draw_text(string.format("Feels like %+.0f\194\176", w.feels_like), 30, content_y + 48, {color=theme.text_dim, size=13})
 
     -- Condition label pill
-    screen.draw_pill(cond.label, 30, content_y + 72,
+    ui.pill(cond.label, 30, content_y + 72,
         cond.color[1], cond.color[2], cond.color[3], {text_color={20,20,30}, size=11})
 
     -- Sunrise / Sunset
@@ -376,7 +361,7 @@ local function draw_current_screen()
     local start_x = (720 - (card_w * 3 + gap * 2)) / 2
     for i, stat in ipairs(stats) do
         local cx = start_x + (i - 1) * (card_w + gap)
-        screen.draw_card(cx, content_y, card_w, 62, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+        ui.card(cx, content_y, card_w, 62, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
         screen.draw_text(stat[1], cx + 12, content_y + 8, {color=theme.text_dim, size=11})
         screen.draw_text(stat[2], cx + 12, content_y + 28, {color=stat[3], size=16, bold=true})
     end
@@ -384,7 +369,7 @@ local function draw_current_screen()
 
     -- 24h Sparkline card
     if w.hourly_temps and #w.hourly_temps > 0 then
-        screen.draw_card(6, content_y, 708, 80, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+        ui.card(6, content_y, 708, 80, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
         screen.draw_text("24h Temperature Trend", 18, content_y + 6, {color=theme.text_dim, size=11})
         screen.draw_sparkline(w.hourly_temps, 18, content_y + 24, 684, 46, {color=theme.accent})
 
@@ -454,9 +439,9 @@ local function draw_forecast_screen()
         local card_h = row_height - 4
 
         if selected then
-            screen.draw_card(card_x, y, card_w, card_h, {bg=theme.card_highlight, border=theme.accent, radius=8})
+            ui.card(card_x, y, card_w, card_h, {bg=theme.card_highlight, border=theme.accent, radius=8})
         else
-            screen.draw_card(card_x, y, card_w, card_h, {bg=theme.card_bg, radius=8})
+            ui.card(card_x, y, card_w, card_h, {bg=theme.card_bg, radius=8})
         end
 
         local cond = condition_from_code(day.weather_code)
@@ -466,7 +451,7 @@ local function draw_forecast_screen()
         screen.draw_text(day.date, card_x + 14, y + 32, {color=theme.text_dim, size=11})
 
         -- Condition pill
-        screen.draw_pill(cond.label, card_x + 14, y + 50,
+        ui.pill(cond.label, card_x + 14, y + 50,
             cond.color[1], cond.color[2], cond.color[3], {text_color={20,20,30}, size=10})
 
         -- Mini weather icon
@@ -537,9 +522,9 @@ local function draw_settings_screen()
         local card_h = row_height - 4
 
         if is_selected then
-            screen.draw_card(card_x, y, card_w, card_h, {bg=theme.card_highlight, border=theme.accent, radius=6})
+            ui.card(card_x, y, card_w, card_h, {bg=theme.card_highlight, border=theme.accent, radius=6})
         else
-            screen.draw_card(card_x, y, card_w, card_h, {bg=theme.card_bg, radius=6})
+            ui.card(card_x, y, card_w, card_h, {bg=theme.card_bg, radius=6})
         end
 
         screen.draw_text(city.name, card_x + 16, y + 6, {color=theme.text, size=14, bold=is_selected})
@@ -547,7 +532,7 @@ local function draw_settings_screen()
             card_x + 16, y + 26, {color=theme.text_dim, size=11})
 
         if is_current then
-            screen.draw_pill("Active", card_x + card_w - 80, y + 12,
+            ui.pill("Active", card_x + card_w - 80, y + 12,
                 theme.positive.r, theme.positive.g, theme.positive.b, {text_color={20,20,30}, size=10})
         end
     end
@@ -560,8 +545,8 @@ local function draw_settings_screen()
         local thumb_h = math.max(16, math.floor(bar_h * visible_rows / #CITIES))
         local max_scroll = math.max(1, #CITIES - visible_rows)
         local thumb_y = bar_y + math.floor((bar_h - thumb_h) * state.settings_scroll / max_scroll)
-        screen.draw_rect(bar_x, bar_y, 4, bar_h, {color=theme.border, filled=true, radius=2})
-        screen.draw_rect(bar_x, thumb_y, 4, thumb_h, {color=theme.accent, filled=true, radius=2})
+        ui.rect(bar_x, bar_y, 4, bar_h, {color=theme.border, filled=true, radius=2})
+        ui.rect(bar_x, thumb_y, 4, thumb_h, {color=theme.accent, filled=true, radius=2})
     end
 
     draw_footer({

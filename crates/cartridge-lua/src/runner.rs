@@ -35,6 +35,11 @@ impl LuaAppRunner {
         theme: &Theme,
         permissions: &[String],
     ) -> Result<Self, String> {
+        Self::new_with_http_fixture(app_dir, entry_file, app_id, theme, permissions, None)
+    }
+
+    pub fn new_with_http_fixture(app_dir: &Path, entry_file: &str, app_id: &str,
+        theme: &Theme, permissions: &[String], fixture: Option<&Path>) -> Result<Self, String> {
         let has = |p: &str| permissions.iter().any(|x| x == p);
         let lua = Lua::new();
         let screen_handle = new_screen_handle();
@@ -59,6 +64,10 @@ impl LuaAppRunner {
         register_app_api(&lua, control.clone())
             .map_err(|e| format!("Failed to register app API: {e}"))?;
 
+        let ui: LuaTable = lua.load(include_str!("app_ui.lua")).eval()
+            .map_err(|e| format!("Failed to load app UI helpers: {e}"))?;
+        lua.globals().set("ui", ui).map_err(|e| e.to_string())?;
+
         // Permission-gated APIs.
         if has("storage") {
             let storage = AppStorage::new(app_id);
@@ -66,8 +75,13 @@ impl LuaAppRunner {
                 .map_err(|e| format!("Failed to register storage API: {e}"))?;
         }
         if has("network") {
-            register_http_api(&lua, app_id, control.clone())
-                .map_err(|e| format!("Failed to register HTTP API: {e}"))?;
+            if let Some(path) = fixture {
+                crate::http_fixture::register(&lua, path, control.clone())
+                    .map_err(|e| format!("HTTP fixture failed: {e}"))?;
+            } else {
+                register_http_api(&lua, app_id, control.clone())
+                    .map_err(|e| format!("Failed to register HTTP API: {e}"))?;
+            }
         }
         if has("ssh") {
             register_ssh_api(&lua)
