@@ -32,7 +32,7 @@ const FORCE_RENDER_EVERY: Duration = Duration::from_secs(1);
 pub struct LuaAppConfig {
     /// Create the SDL window hidden (also honoured via CARTRIDGE_HIDDEN=1).
     pub hidden: bool,
-    /// Skip the frame-rate sleep so benches run as fast as possible.
+    /// Skip frame pacing so benches run as fast as possible.
     pub uncapped: bool,
     /// Stop after this many frames (None = run until quit).
     pub max_frames: Option<u64>,
@@ -45,6 +45,8 @@ pub struct LuaAppConfig {
     pub print_stats: bool,
     /// Simulator-only HTTP replies; unmatched requests fail offline.
     pub http_fixture: Option<PathBuf>,
+    /// Separate data/cache root for simulator scenarios.
+    pub storage_root: Option<PathBuf>,
     /// Frame-numbered button presses for deterministic interaction checks.
     pub script: Vec<(u64, Button)>,
     /// Automated checks fail on Lua errors instead of capturing an error panel.
@@ -84,6 +86,9 @@ pub fn run_lua_app_with_config(
     assets_dir: &Path,
     config: LuaAppConfig,
 ) -> Result<FrameStats, String> {
+    if config.storage_root.is_some() && !cartridge_core::sim::is_sim() {
+        return Err("Scenario storage requires simulator mode".into());
+    }
     let manifest = CartridgeManifest::load(app_dir)?;
     log::info!(
         "Running cartridge: {} v{} by {}",
@@ -101,7 +106,7 @@ pub fn run_lua_app_with_config(
 
     let window_title = format!("CartridgeOS - {}", manifest.name);
     // Shared helper: honors CARTRIDGE_HIDDEN/SOFTWARE/SCALE/FULLSCREEN.
-    // No present_vsync(): unreliable on RK3326; sleep cap below provides timing.
+    // No present_vsync(): unreliable on RK3326; event-aware cap below provides timing.
     let mut canvas = cartridge_core::window::create_canvas(
         &video_subsystem,
         &window_title,
@@ -127,8 +132,9 @@ pub fn run_lua_app_with_config(
         input_manager.set_ignore_joystick(true);
     }
     let mut event_pump = sdl_context.event_pump()?;
+    let mut event_inbox = cartridge_core::event_wait::EventInbox::default();
 
-    let mut app = LuaAppRunner::new_with_http_fixture(app_dir, &manifest.entry, &manifest.id, &theme, &manifest.permissions, config.http_fixture.as_deref())?;
+    let mut app = LuaAppRunner::new_with_options(app_dir, &manifest.entry, &manifest.id, &theme, &manifest.permissions, config.http_fixture.as_deref(), config.storage_root.as_deref())?;
 
     // Call on_init
     app.call_init();
@@ -177,7 +183,7 @@ pub fn run_lua_app_with_config(
                 log::info!("Hot reload: detected change, restarting cartridge VM");
                 app.call_destroy();
                 drop(app);
-                match LuaAppRunner::new_with_http_fixture(app_dir, &manifest.entry, &manifest.id, &theme, &manifest.permissions, config.http_fixture.as_deref()) {
+                match LuaAppRunner::new_with_options(app_dir, &manifest.entry, &manifest.id, &theme, &manifest.permissions, config.http_fixture.as_deref(), config.storage_root.as_deref()) {
                     Ok(mut new_app) => {
                         new_app.call_init();
                         app = new_app;
@@ -187,7 +193,7 @@ pub fn run_lua_app_with_config(
                         // Caller will see a Lua error screen on next render via
                         // the runner's error path -- but we couldn't reach a
                         // runner. Re-create with the old code if possible.
-                        app = LuaAppRunner::new_with_http_fixture(app_dir, &manifest.entry, &manifest.id, &theme, &manifest.permissions, config.http_fixture.as_deref())?;
+                        app = LuaAppRunner::new_with_options(app_dir, &manifest.entry, &manifest.id, &theme, &manifest.permissions, config.http_fixture.as_deref(), config.storage_root.as_deref())?;
                         app.call_init();
                     }
                 }
@@ -197,13 +203,13 @@ pub fn run_lua_app_with_config(
         }
 
         // Collect events
-        let events: Vec<sdl2::event::Event> = event_pump.poll_iter().collect();
+        let events = event_inbox.collect(&mut event_pump);
 
         // Check for quit via raw SDL events (bypasses input manager).
         // This catches Select/Start regardless of GameController mapping.
         let mut raw_select = false;
         let mut raw_start = false;
-        for event in &events {
+        for event in events {
             match event {
                 sdl2::event::Event::Quit { .. } => break 'running,
                 sdl2::event::Event::KeyDown {
@@ -239,7 +245,7 @@ pub fn run_lua_app_with_config(
         }
         // Screenshot (F12 / SIGUSR1): reads back the last presented frame.
         // Best-effort on accelerated renderers; exact with CARTRIDGE_SOFTWARE=1.
-        if cartridge_core::screenshot::requested(&events) {
+        if cartridge_core::screenshot::requested(events) {
             let capture_start = Instant::now();
             if let Err(e) = cartridge_core::screenshot::save_now(&canvas) {
                 log::warn!("Screenshot failed: {e}");
@@ -248,7 +254,7 @@ pub fn run_lua_app_with_config(
         }
 
         // Process input
-        let mut input_events = input_manager.process_events(&events);
+        let mut input_events = input_manager.process_events(events);
         for &(frame, button) in &config.script {
             if frame == frame_count {
                 use cartridge_core::input::{InputEvent, InputAction};
@@ -360,7 +366,7 @@ pub fn run_lua_app_with_config(
         all_frame_ms.push(frame_time.as_secs_f32() * 1000.0);
         if render_this_frame { render_frame_ms.push(frame_time.as_secs_f32() * 1000.0); }
 
-        // Adaptive frame rate cap. Never sleep past a frame that saw input.
+        // Adaptive update rate; incoming SDL input interrupts the idle wait.
         if !config.uncapped {
             let idle_secs = last_input.elapsed().as_secs_f32();
             let target_fps = if idle_secs > IDLE_AFTER_SECS {
@@ -370,7 +376,7 @@ pub fn run_lua_app_with_config(
             };
             let target_time = Duration::from_secs_f64(1.0 / target_fps as f64);
             if !had_input {
-                std::thread::sleep(target_time.saturating_sub(frame_start.elapsed()));
+                event_inbox.wait(&mut event_pump, target_time.saturating_sub(frame_start.elapsed()));
             }
         }
 

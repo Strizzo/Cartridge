@@ -71,7 +71,7 @@ pub struct LauncherConfig {
     pub capture_dir: Option<PathBuf>,
     /// Frames at which to capture (e.g. [10, 30, 60]).
     pub capture_frames: Vec<u64>,
-    /// Skip the frame-rate sleep so benches run as fast as possible.
+    /// Skip frame pacing so benches run as fast as possible.
     pub uncapped: bool,
     /// Print perf stats every 5 seconds (or before exit).
     pub print_stats: bool,
@@ -98,7 +98,7 @@ pub fn run_launcher_with_config(
     // Window + canvas via the shared helper: honors CARTRIDGE_HIDDEN (headless
     // capture), CARTRIDGE_SOFTWARE (reliable read_pixels), CARTRIDGE_SCALE and
     // CARTRIDGE_FULLSCREEN (simulator). Never vsync (unreliable on RK3326;
-    // the sleep-based frame cap below provides timing).
+    // the event-aware frame cap below provides timing).
     let mut canvas = cartridge_core::window::create_canvas(
         &video_subsystem,
         "CartridgeOS",
@@ -115,6 +115,7 @@ pub fn run_launcher_with_config(
         input_manager.set_ignore_joystick(true);
     }
     let mut event_pump = sdl_context.event_pump()?;
+    let mut event_inbox = cartridge_core::event_wait::EventInbox::default();
 
     let mut launcher = LauncherApp::new(assets_dir);
     if let Some(game) = config.resume_game.clone() { launcher.show_games(Some(game)); }
@@ -171,10 +172,10 @@ pub fn run_launcher_with_config(
         }
 
         // Collect SDL events
-        let events: Vec<sdl2::event::Event> = event_pump.poll_iter().collect();
+        let events = event_inbox.collect(&mut event_pump);
 
         // Check for quit / escape
-        for event in &events {
+        for event in events {
             match event {
                 sdl2::event::Event::Quit { .. } => {
                     result = LauncherResult::Quit;
@@ -193,13 +194,13 @@ pub fn run_launcher_with_config(
 
         // Screenshot hotkey (F12) or SIGUSR1: force a render this frame and
         // capture it just before present.
-        let screenshot_requested = cartridge_core::screenshot::requested(&events);
+        let screenshot_requested = cartridge_core::screenshot::requested(events);
         if screenshot_requested {
             dirty = true;
         }
 
         // Process input
-        let mut input_events = input_manager.process_events(&events);
+        let mut input_events = input_manager.process_events(events);
 
         // Inject scripted input if applicable
         if !config.script.is_empty() && script_idx < config.script.len() && !(config.script_wait_for_background && launcher.is_loading()) {
@@ -351,7 +352,7 @@ pub fn run_launcher_with_config(
             };
             let target_time = std::time::Duration::from_secs_f64(1.0 / target_fps as f64);
             if !had_input {
-                std::thread::sleep(target_time.saturating_sub(frame_start.elapsed()));
+                event_inbox.wait(&mut event_pump, target_time.saturating_sub(frame_start.elapsed()));
             }
         }
 

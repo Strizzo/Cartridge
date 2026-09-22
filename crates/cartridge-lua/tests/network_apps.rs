@@ -7,9 +7,11 @@ fn app(name: &str) -> Lua {
     lua.load(r#"
         theme = setmetatable({}, {__index=function() return {r=220,g=210,b=200} end})
         drawn = {}
+        storage = {load=function() return nil end,save=function() end}
         screen = setmetatable({
             draw_text=function(text) drawn[#drawn+1]=text; return #text*7 end,
             draw_pill=function(text) drawn[#drawn+1]=text; return #text*7 end,
+            draw_image=function(path) drawn[#drawn+1]=path end,
             get_text_width=function(text) return #text*7 end,
             get_line_height=function() return 18 end,
         }, {__index=function() return function() return 0 end end})
@@ -75,4 +77,34 @@ fn papers_ignore_cancelled_reader_results_and_allow_failed_load_retry() {
         assert(text:find('NEW α result',1,true) and not text:find('OLD',1,true))
         assert(sync_calls==0)
     "#).exec().unwrap();
+}
+
+#[test]
+fn weather_retries_without_duplicates_and_ignores_previous_city() {
+    app("weather")
+        .load(
+            r#"
+        on_init(); assert(#requests==2)
+        for i=1,20 do press('x') end
+        assert(#requests==2,'weather refresh duplicated pending requests')
+        respond(1,'offline',false);respond(2,'offline',false);on_update(0.1)
+        press('x');assert(#requests==4,'failed weather request must be retryable')
+        press('r1');press('r1');press('dpad_down');press('a');assert(#requests==6)
+        function current(temp)
+            return json.encode({current={temperature_2m=temp,apparent_temperature=temp,
+                relative_humidity_2m=60,wind_speed_10m=12,surface_pressure=1013,weather_code=61}})
+        end
+        respond(5,current(23));respond(6,'{"daily":{"time":[]}}');on_update(0.1)
+        press('l1');press('l1')
+        local before=render_text()
+        assert(before:find('London',1,true) and before:find('+23',1,true))
+        assert(before:find('assets/conditions/rain.png',1,true))
+        respond(3,current(99));respond(4,'{"daily":{"time":[]}}');on_update(0.1)
+        local after=render_text()
+        assert(after:find('+23',1,true) and not after:find('+99',1,true))
+        assert(sync_calls==0)
+    "#,
+        )
+        .exec()
+        .unwrap();
 }

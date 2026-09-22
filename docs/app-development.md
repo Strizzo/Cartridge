@@ -44,7 +44,7 @@ power draw or thermal limits.
 | Area | Current behavior / development target |
 | --- | --- |
 | Input and updates | Up to 30 Hz during interaction; avoid blocking calls in every lifecycle callback. |
-| Idle | After 3 seconds, updates drop to 5 Hz by default. Draw only when dirty, with a 1-second compatibility refresh. |
+| Idle | After 3 seconds, updates drop to 5 Hz by default. SDL input interrupts the pacing wait immediately. Draw only when dirty, with a 1-second compatibility refresh. |
 | Redraw | Input, completed HTTP, hot reload, explicit requests and a true update return value invalidate the frame. |
 | Frame work | Provisional device target: p95 below 33 ms during navigation; aim below 20 ms to leave headroom. Validate release binaries on the handheld. |
 | Network | Four workers, at most 64 outstanding requests, at most 8 completions per poll; text bodies limited to 4 MiB each. Use much smaller, paginated responses where possible. |
@@ -104,3 +104,22 @@ battery behavior and any temperature/governor changes under the same workload.
 Do not force a permanent performance governor to hide inefficient idle work.
 The current branch has not yet been measured or installed on the replacement
 card. Keep the reversible EmulationStation fallback throughout validation.
+
+## Visual assets and repeatable state
+
+Weather's current and forecast views use original warm-white/red illustrations,
+a large display face and static cards. Ten 192px condition PNGs are cached on first
+use; no runtime SVG parsing or animation is needed. `scripts/render_weather_icons.py`
+regenerates the filled SVG sources and PNGs (ImageMagick is a developer dependency
+only). Condition codes follow the [Open-Meteo table](https://open-meteo.com/en/docs).
+
+`sim/fixtures/populated.json` supplies synthetic news, stocks and weather as well
+as the basic paper/network fixtures. The app checks cover current/forecast/city
+changes, news detail and stock detail/period changes. Every scenario gets its own
+temporary storage directory, removed afterwards; it does not alter interactive
+simulator settings. This includes successful storage writes such as a city change.
+
+The SDL input check sends actual key events from a worker during a one-second
+idle wait. It verifies early wake, ordered press/release delivery exactly once,
+and waiting when no input is present. Host wake timings validate this code path;
+they do not measure the handheld's complete button-to-display latency.

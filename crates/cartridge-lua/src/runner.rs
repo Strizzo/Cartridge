@@ -40,6 +40,11 @@ impl LuaAppRunner {
 
     pub fn new_with_http_fixture(app_dir: &Path, entry_file: &str, app_id: &str,
         theme: &Theme, permissions: &[String], fixture: Option<&Path>) -> Result<Self, String> {
+        Self::new_with_options(app_dir, entry_file, app_id, theme, permissions, fixture, None)
+    }
+
+    pub fn new_with_options(app_dir: &Path, entry_file: &str, app_id: &str,
+        theme: &Theme, permissions: &[String], fixture: Option<&Path>, storage_root: Option<&Path>) -> Result<Self, String> {
         let has = |p: &str| permissions.iter().any(|x| x == p);
         let lua = Lua::new();
         let screen_handle = new_screen_handle();
@@ -70,7 +75,10 @@ impl LuaAppRunner {
 
         // Permission-gated APIs.
         if has("storage") {
-            let storage = AppStorage::new(app_id);
+            let storage = match storage_root {
+                Some(root) => AppStorage::at_root(app_id, root.to_path_buf()),
+                None => AppStorage::new(app_id),
+            };
             register_storage_api(&lua, storage)
                 .map_err(|e| format!("Failed to register storage API: {e}"))?;
         }

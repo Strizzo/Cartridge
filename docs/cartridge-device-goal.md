@@ -26,9 +26,11 @@ reformat it as part of launcher development.
   are bounded during interactive use, and benchmarks separate rendered work from
   skipped idle iterations. Actual device budgets remain to measure.
 - Shared app styling now supplies condensed display headers, flat cards and
-  control hints. Fourteen app scenarios render with synthetic delayed/offline
+  control hints. Twenty-two app scenarios render with synthetic delayed/offline
   responses and fail on Lua errors. Full app-content and physical readability
-  review remains open. Development/porting guidance is in `app-development.md`.
+  review remains open. Weather now has custom condition icons and larger current/forecast
+  readings; input-aware pacing wakes on SDL events while preserving low idle update
+  rates. App scenarios use separate temporary storage. Development/porting guidance is in `app-development.md`.
 - Root-system verification uses a known-good image on the backup SSD. No changes
   in this branch have been installed on the physical card.
 

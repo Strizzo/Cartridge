@@ -1,5 +1,6 @@
 pub mod atmosphere;
 pub mod device;
+pub mod event_wait;
 pub mod font;
 pub mod gradient_cache;
 pub mod image_cache;

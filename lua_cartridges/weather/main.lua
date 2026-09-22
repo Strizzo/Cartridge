@@ -20,73 +20,25 @@ local WEEKDAYS = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
 
 -- ── Weather condition mapping ────────────────────────────────────────────────
 
+-- WMO interpretation: https://open-meteo.com/en/docs#weathervariables
 local function condition_from_code(code)
-    if code == 0 then
-        return {label="Clear Sky", color={255, 220, 80}, icon={
-            "    \\   |   /",
-            "      .---.",
-            "  ---( O  )---",
-            "      '---'",
-            "    /   |   \\",
-        }}
-    elseif code >= 1 and code <= 3 then
-        return {label=code <= 2 and "Partly Cloudy" or "Overcast", color={180, 200, 220}, icon={
-            "   \\  /",
-            " _ /''.-.",
-            "   \\_(   ).",
-            "   /(___(__)",
-            "",
-        }}
-    elseif code == 45 or code == 48 then
-        return {label="Fog", color={160, 160, 180}, icon={
-            " _ - _ - _ -",
-            "  _ - _ - _",
-            " _ - _ - _ -",
-            "  _ - _ - _",
-            " _ - _ - _ -",
-        }}
-    elseif code >= 51 and code <= 55 then
-        return {label="Drizzle", color={120, 180, 240}, icon={
-            "    .---.",
-            "   (     ).",
-            "  (______(_)",
-            "   ' ' ' '",
-            "  ' ' ' '",
-        }}
-    elseif code >= 61 and code <= 65 then
-        return {label="Rain", color={80, 150, 255}, icon={
-            "    .---.",
-            "   (     ).",
-            "  (______(_)",
-            "  | | | | |",
-            "  | | | | |",
-        }}
-    elseif code >= 71 and code <= 77 then
-        return {label="Snow", color={220, 230, 255}, icon={
-            "    .---.",
-            "   (     ).",
-            "  (______(_)",
-            "  * * * * *",
-            "   * * * *",
-        }}
-    elseif code >= 80 and code <= 82 then
-        return {label="Showers", color={80, 140, 240}, icon={
-            "    .---.",
-            "   (     ).",
-            "  (______(_)",
-            "  /|/|/|/|",
-            "  |/|/|/|/",
-        }}
-    elseif code >= 95 then
-        return {label="Thunderstorm", color={200, 180, 60}, icon={
-            "    .---.",
-            "   (     ).",
-            "  (______(_)",
-            "    / / /",
-            "   / / /",
-        }}
-    end
-    return {label="Unknown", color={180, 180, 180}, icon={"?????","?   ?","    ??","   ?","   ."}}
+    local label, icon = "Unknown", "unknown"
+    if code == 0 then label, icon = "Clear sky", "clear"
+    elseif code == 1 then label, icon = "Mainly clear", "partly_cloudy"
+    elseif code == 2 then label, icon = "Partly cloudy", "partly_cloudy"
+    elseif code == 3 then label, icon = "Overcast", "cloudy"
+    elseif code == 45 or code == 48 then label, icon = "Fog", "fog"
+    elseif code == 51 or code == 53 or code == 55 then label, icon = "Drizzle", "drizzle"
+    elseif code == 56 or code == 57 then label, icon = "Freezing drizzle", "drizzle"
+    elseif code == 61 or code == 63 or code == 65 then label, icon = "Rain", "rain"
+    elseif code == 66 or code == 67 then label, icon = "Freezing rain", "rain"
+    elseif code == 71 or code == 73 or code == 75 then label, icon = "Snow", "snow"
+    elseif code == 77 then label, icon = "Snow grains", "snow"
+    elseif code == 80 or code == 81 or code == 82 then label, icon = "Showers", "showers"
+    elseif code == 85 or code == 86 then label, icon = "Snow showers", "snow"
+    elseif code == 95 then label, icon = "Thunderstorm", "storm"
+    elseif code == 96 or code == 99 then label, icon = "Storm with hail", "storm" end
+    return {label=label, icon="assets/conditions/"..icon..".png", color={242,237,228}}
 end
 
 local function temp_color(temp_c)
@@ -290,6 +242,42 @@ end
 
 -- ── Current Weather Screen ───────────────────────────────────────────────────
 
+local function draw_current_neo(w, cond, city)
+    screen.draw_text(city.name:upper()..", "..city.country, 18, 84, {color=theme.text_dim,size=18,bold=true})
+    ui.card(18,112,684,234)
+    local temperature=string.format("%.0f",w.temperature)
+    screen.draw_display_text(temperature,36,116,116,theme.text)
+    local unit_x=36+screen.get_display_text_width(temperature,116)+8
+    screen.draw_text("°C",unit_x,140,{color=theme.accent,size=28,bold=true})
+    screen.draw_text(cond.label:upper(),36,252,{color=theme.text,size=20,bold=true})
+    screen.draw_text(string.format("Feels like %.0f°C",w.feels_like),36,288,{color=theme.text_dim,size=16})
+    screen.draw_image(cond.icon,512,138,{w=152,h=152})
+    screen.draw_text("SUNRISE "..w.sunrise.."   SUNSET "..w.sunset,370,318,{color=theme.text_dim,size=12})
+
+    local stats={
+        {"HUMIDITY",string.format("%.0f%%",w.humidity)},
+        {"WIND",string.format("%.0f km/h",w.wind_speed)},
+        {"PRESSURE",string.format("%.0f hPa",w.pressure)},
+    }
+    for i,stat in ipairs(stats) do
+        local x=18+(i-1)*234
+        ui.card(x,362,216,92)
+        screen.draw_text(stat[1],x+14,374,{color=theme.text_dim,size=13})
+        screen.draw_display_text(stat[2],x+14,397,34,theme.text)
+    end
+    ui.card(18,474,684,164)
+    screen.draw_text("24 HOUR TEMPERATURE",32,489,{color=theme.text_dim,size=14,bold=true})
+    if w.hourly_temps and #w.hourly_temps > 0 then
+        screen.draw_sparkline(w.hourly_temps,32,530,656,68,{color=theme.accent})
+        local lo,hi=w.hourly_temps[1],w.hourly_temps[1]
+        for _,t in ipairs(w.hourly_temps) do lo=math.min(lo,t);hi=math.max(hi,t) end
+        screen.draw_text(string.format("LOW %.0f°C    HIGH %.0f°C",lo,hi),32,613,{color=theme.text_dim,size=13})
+    else
+        screen.draw_text("Hourly data unavailable",32,542,{color=theme.text_dim,size=16})
+    end
+    draw_footer({{"L1/R1","Tab",theme.btn_l},{"X","Refresh",theme.btn_x}})
+end
+
 local function draw_current_screen()
     local city = CITIES[state.city_idx]
     draw_header("Weather",
@@ -300,19 +288,20 @@ local function draw_current_screen()
     if state.current_loading and not state.current then
         local tw = screen.get_text_width("Fetching weather...", 16, false)
         screen.draw_text("Fetching weather...", (720 - tw) / 2, 220, {color=theme.text_dim, size=16})
-        draw_footer({{"L1/R1", "Tab", theme.btn_l}})
+        draw_footer({{"L1/R1", "Tab", theme.btn_l}, {"X", "Refresh", theme.btn_x}})
         return
     end
 
     if not state.current then
         local tw = screen.get_text_width("No data", 16, false)
         screen.draw_text("No data", (720 - tw) / 2, 220, {color=theme.text_dim, size=16})
-        draw_footer({{"L1/R1", "Tab", theme.btn_l}})
+        draw_footer({{"L1/R1", "Tab", theme.btn_l}, {"X", "Refresh", theme.btn_x}})
         return
     end
 
     local w = state.current
     local cond = condition_from_code(w.weather_code)
+    if theme.ui == "neo" then draw_current_neo(w,cond,city);return end
     local content_y = 76
 
     -- City name
@@ -339,14 +328,7 @@ local function draw_current_screen()
     -- Sunrise / Sunset
     screen.draw_text("Sunrise " .. w.sunrise .. "   Sunset " .. w.sunset, 30, content_y + 98, {color=theme.text_dim, size=11})
 
-    -- ASCII weather art (right side)
-    local art_x = 440
-    local art_y = content_y + 16
-    for i, line in ipairs(cond.icon) do
-        if line and line ~= "" then
-            screen.draw_text(line, art_x, art_y + (i - 1) * 18, {color=cond.color, size=14})
-        end
-    end
+    screen.draw_image(cond.icon, 520, content_y + 12, {w=124,h=124})
 
     content_y = content_y + 160
 
@@ -385,7 +367,7 @@ local function draw_current_screen()
         end
     end
 
-    draw_footer({{"L1/R1", "Tab", theme.btn_l}})
+    draw_footer({{"L1/R1", "Tab", theme.btn_l}, {"X", "Refresh", theme.btn_x}})
 end
 
 -- ── Forecast Screen ──────────────────────────────────────────────────────────
@@ -397,27 +379,28 @@ local function draw_forecast_screen()
         state.forecast_loading and theme.text_dim or (state.forecast_error and theme.negative or {100, 220, 100}))
     draw_tab_indicator(2)
 
-    local content_top = 76
+    local neo = theme.ui == "neo"
+    local content_top = neo and 94 or 76
     local content_bottom = 684
-    local row_height = 74
-    local visible_rows = math.floor((content_bottom - content_top) / row_height)
+    local row_height = neo and 108 or 74
+    local visible_rows = math.floor((content_bottom - content_top - 18) / row_height)
 
     if state.forecast_loading and #state.forecast_days == 0 then
         local tw = screen.get_text_width("Fetching forecast...", 16, false)
         screen.draw_text("Fetching forecast...", (720 - tw) / 2, 220, {color=theme.text_dim, size=16})
-        draw_footer({{"L1/R1", "Tab", theme.btn_l}})
+        draw_footer({{"L1/R1", "Tab", theme.btn_l}, {"X", "Refresh", theme.btn_x}})
         return
     end
 
     if #state.forecast_days == 0 then
         local tw = screen.get_text_width("No forecast data", 16, false)
         screen.draw_text("No forecast data", (720 - tw) / 2, 220, {color=theme.text_dim, size=16})
-        draw_footer({{"L1/R1", "Tab", theme.btn_l}})
+        draw_footer({{"L1/R1", "Tab", theme.btn_l}, {"X", "Refresh", theme.btn_x}})
         return
     end
 
     local days = state.forecast_days
-    screen.draw_text(city.name .. " \226\128\148 5 Day Forecast", 20, content_top - 2, {color=theme.text_dim, size=12})
+    screen.draw_text(city.name:upper() .. " / 5 DAYS", 18, neo and 84 or content_top - 2, {color=theme.text_dim, size=neo and 16 or 12})
 
     -- Ensure visibility
     if state.forecast_cursor < state.forecast_scroll + 1 then
@@ -434,8 +417,8 @@ local function draw_forecast_screen()
 
         local day = days[idx]
         local selected = (idx == state.forecast_cursor)
-        local card_x = 6
-        local card_w = 708
+        local card_x = neo and 18 or 6
+        local card_w = neo and 684 or 708
         local card_h = row_height - 4
 
         if selected then
@@ -446,6 +429,19 @@ local function draw_forecast_screen()
 
         local cond = condition_from_code(day.weather_code)
 
+        if neo then
+            screen.draw_display_text(day.weekday:upper(),32,y+6,32,theme.text)
+            screen.draw_text(day.date,32,y+48,{color=theme.text_dim,size=12})
+            screen.draw_text(cond.label:upper(),32,y+77,{color=theme.text,size=13,bold=true,max_width=190})
+            screen.draw_image(cond.icon,242,y+8,{w=86,h=86})
+            screen.draw_display_text(string.format("%.0f",day.temp_max),380,y+6,40,theme.text)
+            screen.draw_display_text(string.format("%.0f",day.temp_min),466,y+6,40,theme.text_dim)
+            screen.draw_text("HIGH °C",380,y+53,{color=theme.text_dim,size=11})
+            screen.draw_text("LOW °C",466,y+53,{color=theme.text_dim,size=11})
+            screen.draw_text(string.format("%.1f mm",day.precipitation),580,y+18,{color=day.precipitation>0 and theme.accent or theme.text_dim,size=14})
+            screen.draw_text(string.format("%.0f km/h",day.wind_max),580,y+46,{color=theme.text_dim,size=14})
+            screen.draw_text("RISE "..day.sunrise.." / SET "..day.sunset,380,y+79,{color=theme.text_dim,size=11})
+        else
         -- Day name + date
         screen.draw_text(day.weekday, card_x + 14, y + 10, {color=theme.text, size=14, bold=true})
         screen.draw_text(day.date, card_x + 14, y + 32, {color=theme.text_dim, size=11})
@@ -454,12 +450,7 @@ local function draw_forecast_screen()
         ui.pill(cond.label, card_x + 14, y + 50,
             cond.color[1], cond.color[2], cond.color[3], {text_color={20,20,30}, size=10})
 
-        -- Mini weather icon
-        for i = 1, math.min(3, #cond.icon) do
-            if cond.icon[i] and cond.icon[i] ~= "" then
-                screen.draw_text(cond.icon[i], card_x + 200, y + 8 + (i - 1) * 14, {color=cond.color, size=10})
-            end
-        end
+        screen.draw_image(cond.icon, card_x + 224, y + 2, {w=68,h=68})
 
         -- High / Low temps
         local hi_color = temp_color(day.temp_max)
@@ -479,6 +470,7 @@ local function draw_forecast_screen()
 
         -- Sunrise / Sunset
         screen.draw_text("\226\134\145" .. day.sunrise .. " \226\134\147" .. day.sunset, card_x + 580, y + 50, {color=theme.text_dim, size=10})
+        end
     end
 
     draw_footer({
@@ -588,6 +580,11 @@ end
 
 function on_input(button, action)
     if action ~= "press" and action ~= "repeat" then return end
+
+    if button == "x" and action == "press" and state.tab_index ~= 3 then
+        if not state.current_loading and not state.forecast_loading then load_all() end
+        return
+    end
 
     -- Tab switching (all screens)
     if button == "l1" and action == "press" then

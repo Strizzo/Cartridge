@@ -102,9 +102,10 @@ watched, so restart for those.
 
 `./sim.sh check` runs the real launcher through home, settings, store, the game
 library with simulated launch/selection restoration, and the ES handoff. It also
-runs 14 app scenarios covering calculator, Todo, Pomodoro, system monitor, papers
+runs 22 app scenarios covering calculator, Todo, Pomodoro, system monitor, papers
 (list/detail/loading/reader), network (overview/DNS/probes), and offline
-news/stocks/weather. It exercises simulated brightness/volume/Wi-Fi,
+news/stocks/weather. Populated fixtures also cover weather current/forecast/city
+changes, news list/detail and stocks list/detail/period changes. It exercises simulated brightness/volume/Wi-Fi,
 and checks first-frame readiness and 720×720 PNG dimensions. Captures are saved
 under `.sim/home/checks/`. This command uses a hidden software-rendered window;
 on macOS it still needs access to the WindowServer. On Linux CI it can run with
@@ -167,3 +168,9 @@ rejected in fixture mode so accidental live requests cannot bypass it.
 `CARTRIDGE_HTTP_FIXTURE` is honored only with `CARTRIDGE_SIM=1`. Simulated Wi-Fi
 does not itself block real HTTP; choose fixtures to make an interactive app
 repeatable. See [app development](app-development.md) for performance and porting.
+
+Use `--fixture sim/fixtures/populated.json` for populated news, stocks and weather.
+Each automated app scenario uses temporary storage, so changing city or saving
+app state in a check cannot overwrite interactive simulator settings. The check
+also sends SDL key events during a long idle wait and verifies immediate wake,
+ordered press/release delivery, and that an empty wait does not spin.
