@@ -81,6 +81,11 @@ jobs:
           chmod +x bundle/Cartridge/cartridge
           chmod +x bundle/Cartridge/cartridge-boot
 
+          # Developer checks run the exact ARM binary in an isolated Linux VM.
+          mkdir -p bundle/Cartridge/dev
+          cp target/aarch64-unknown-linux-gnu/release/sim-check bundle/Cartridge/dev/
+          printf '%s\n' "$GITHUB_SHA" > bundle/Cartridge/dev/build-revision
+
           # Boot scripts
           cp deploy/cartridge-boot.sh bundle/Cartridge/
           cp deploy/cartridge-boot.service bundle/Cartridge/
