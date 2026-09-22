@@ -7,7 +7,8 @@ home directory — so you can build the whole UI without touching the handheld.
 ```bash
 ./sim.sh                                  # launcher
 ./sim.sh app lua_cartridges/hacker_news   # one cartridge, hot reload on
-./sim.sh boot                             # the 5 s boot selector
+./sim.sh session                          # primary session and ES fallback stand-in
+./sim.sh boot                             # legacy 5 s selector, not primary startup
 ./sim.sh demo                             # drawing-primitives demo
 ```
 

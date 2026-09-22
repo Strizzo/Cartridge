@@ -17,7 +17,9 @@ No build tools needed. Works from Windows, macOS, or Linux.
 
 Launching from Tools leaves your existing boot setup unchanged. Startup errors are saved to `Cartridge/launch.log`.
 
-To make Cartridge the default at boot, first verify it works from Tools, then run **Tools > Setup Cartridge Boot** from EmulationStation. You'll get a boot selector to choose between Cartridge and EmulationStation on every startup.
+On the primary-session branch, first verify the tested build from Tools, then run **Tools > Setup Cartridge Boot** once. Cartridge starts directly on the next normal boot; EmulationStation remains available from its menu and as recovery fallback. Setup does not reboot automatically. Older release archives can still contain the legacy boot selector.
+
+The intended system is **power-on → Cartridge → apps and games**. The [device distribution roadmap](docs/distro-roadmap.md) separates the implemented primary session from the future reproducible system image. See [primary startup and recovery](docs/primary-session.md) for the tested integration and pending handheld checks.
 
 See [INSTALL.md](INSTALL.md) for troubleshooting and build-from-source instructions.
 
@@ -118,7 +120,7 @@ end
 
 | Module | Description |
 |--------|-------------|
-| `screen` | 640x480 drawing surface — text, shapes, colors |
+| `screen` | 720×720 drawing surface — text, shapes, colors |
 | `theme` | Consistent dark theme with accent colors |
 | `storage` | Scoped key-value persistence per app |
 | `http` | HTTP requests for fetching data |

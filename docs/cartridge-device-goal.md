@@ -3,7 +3,10 @@
 Objective: Cartridge becomes the R36S Plus primary launcher and mini-computer
 experience, with apps and the existing game library, consistent bold visual
 styling, responsive input, efficient idle rendering, Mac development and a
-verified/reversible device boot. Keep the original interface isolated in git.
+verified/reversible device boot. The intended destination is a dedicated device
+distribution with Cartridge as the first interactive screen and a reproducible
+system-image recipe; see [distribution roadmap](distro-roadmap.md). Keep the
+original interface isolated in git.
 
 The working replacement card now boots EmulationStation and runs games (confirmed
 by its owner after all restored files, bootloader, root partition and filesystems
@@ -47,12 +50,16 @@ reformat it as part of launcher development.
   states, and review actual device-resolution captures rather than mockups only.
 - [ ] Complete app performance work, remove blocking I/O from interaction paths,
   measure actual device latency/frame times and verify efficient idle behavior.
-- [ ] Keep simulator checks reproducible (offline/low battery/control scenarios,
+- [x] Keep simulator checks reproducible (offline/low battery/control scenarios,
   app interactions and launch/return), with a small virtual device fixture.
 - [x] Establish a working ARM/Linux compatibility VM: ARM binaries, real UI
   scenarios and systemd setup/fallback/undo pass in Lima/VZ. See `arm-vm.md`;
   no RK3326 GPU, thermal, battery or exact device-library emulation is claimed.
 - [ ] Validate wireless deploy/restart/log/screenshot workflow with the device.
+- [ ] Record the exact board/kernel/DTB/library and boot-service baseline, then
+  build and verify a reproducible Cartridge system image with recovery and
+  ROM/save separation. This is a later distribution milestone, not delivered by
+  the current primary-session override.
 - [ ] Document app-development budgets and platform APIs using measured hardware
   behavior and a practical simulator-first release workflow.
 

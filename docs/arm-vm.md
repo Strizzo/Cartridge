@@ -14,7 +14,7 @@ recovery images or real games are mounted in it. Containers are disabled.
 
 ```sh
 ./sim/vm.sh start
-./sim/vm.sh check --run 35783335255     # verified ARM CI artifact
+./sim/vm.sh check --run 35789361899     # verified ARM CI artifact
 # Or: ./sim/vm.sh check /path/to/extracted/device-bundle
 ./sim/vm.sh stop
 ```
@@ -36,15 +36,21 @@ in `.sim/vm`. Together these occupied about 1.6 GiB after initial verification.
 
 ## What passes
 
-Verified on 2026-09-22 using the successful CI ARM artifact from commit
-`12e8697` (including the game-library implementation from `1e0d11e`):
+Verified on 2026-09-23 using [Build 35789361899](https://github.com/Strizzo/Cartridge/actions/runs/35789361899)
+for commit `af32b8a` (CI merge revision
+`3a5743ef463186669408197822b848dadcc78a2c`). The Cartridge binary SHA-256 is
+`3774fa0fe0229178ee5b9fbec474462e755776de610c767d5b74b5bb116d69f4`.
 
 - ARM ELF loading and runtime library resolution.
 - 27 Python tests for library import, quoting, simulator isolation, launch
   failure, supervisor cleanup, recovery and reversible setup.
 - The actual ARM renderer/input code: home/settings/store, system/game browsing,
-  simulated game handoff and restoration of a non-first selection, Lua Todo,
-  first-frame readiness and ES request.
+  simulated game handoff and restoration of a non-first selection, input-aware
+  idle wakeup without dropped/duplicated button events, first-frame readiness
+  and ES request.
+- Twenty-two Lua app scenarios covering loading, offline and populated data,
+  including Weather current/forecast/city, news detail and stock period changes.
+  Each scenario uses isolated temporary storage and synthetic HTTP fixtures.
 - Real Linux systemd service installation, rendered first-frame/ES handoff,
   forced startup failure, fallback latch and undo. The stock ES service and ES
   executable are explicit test stand-ins; no emulator or ES build is included.
