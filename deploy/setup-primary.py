@@ -20,7 +20,7 @@ def write_atomic(path, data, mode):
     os.replace(str(temporary), str(path))
 
 
-def configure(root, app, action):
+def configure(root, app, action, *, offline_bundle=None):
     root = root.resolve()
     dropin = root / DROPIN
     real = root == Path('/')
@@ -50,7 +50,9 @@ def configure(root, app, action):
         raise RuntimeError('Legacy Cartridge boot service still enabled; restore stock boot first')
     if not (root/'etc/systemd/system/multi-user.target.wants/emulationstation.service').is_symlink():
         raise RuntimeError('Stock EmulationStation service must already be enabled')
-    deployed = root / app.relative_to('/')
+    if offline_bundle is not None and real:
+        raise RuntimeError('An offline bundle cannot configure the running system')
+    deployed = Path(offline_bundle) if offline_bundle is not None else root / app.relative_to('/')
     if not (deployed/'cartridge').is_file() or not (deployed/'assets/fonts').is_dir():
         raise RuntimeError('Cartridge binary or fonts missing')
     if real:

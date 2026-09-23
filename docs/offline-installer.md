@@ -104,6 +104,33 @@ Rollback accepts only managed Cartridge/Tools paths, verifies original backups
 and refuses to overwrite files changed by another process. Games, saves and
 keys are outside its allowed path set.
 
+The [Mac preparation handoff](../installer/host_prepare.py) now separates these
+steps. Its `root` phase checks a verified clone and selected card identity,
+copies that clone into a **new workspace outside the card**, and runs only the
+copy in a dedicated ARM VM. The VM shares only that workspace; it mounts the
+ext4 file through a loop device, installs the startup override, unmounts it,
+checks ext4 and records the image hash. macOS independently checks that hash,
+ext4, the exact startup override and the unchanged original clone. Its `roms`
+phase then checks the selected mounted games partition and stages only
+Cartridge-owned files. A mismatch in the selected card, bundle or root image
+stops before staging. This backend has passed on a disposable 128 MiB clone
+through the actual host-to-VM share, and the separate ARM VM suite rehearses
+split root/ROMS preparation and rollback on mounted ext4/exFAT images. The
+repeatable [`host-prepare-check.py`](../sim/vm/host-prepare-check.py) smoke check
+also completes the Mac/VM handoff, host ROMS staging and guarded s2 writeback
+against disposable files, then checks the original root and game/save/key
+hashes. It takes a CI bundle from the same code revision and never inventories
+or opens a physical disk.
+
+The backend remains a developer CLI, not a graphical one-step installer. The
+intended sequence is read-only `card_inventory.py`, read-only `card_clone.py`,
+`host_prepare.py root`, `host_prepare.py roms`, then
+`install_transaction.py`. The root workspace needs free space for one more
+Linux partition image plus 1 GiB. A failed `roms` phase restores only managed
+Cartridge files; the original s2 backup stays immutable. **Do not run the
+staging or writeback phases on the working card yet.** The spare-card boot and
+recovery gate remains open.
+
 [`installer/install_transaction.py`](../installer/install_transaction.py)
 coordinates the two partitions after preparation and unmounting. It checks that
 the mounted exFAT partition belongs to the selected card and still contains the
@@ -122,7 +149,7 @@ file, read it back, verified the boot files inside it, and checked both
 filesystems and game/save/key hashes. The normal desktop simulator and ARM VM
 still cannot emulate the handheld's exact board and display. **No physical SD
 card was written or booted by this transaction.** The Mac graphical installer,
-host-to-VM preparation workflow, safe eject, fresh bootable image and spare-card
+safe eject, fresh bootable image and spare-card
 first-boot validation remain to be built before this can be offered to users.
 
 The converter has passed unit checks and an ARM VM check on separate mounted

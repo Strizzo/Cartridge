@@ -97,7 +97,7 @@ def restore_roms(roms, backup, *, require_mount=True):
     if manifest_path.is_symlink() or not manifest_path.is_file():
         raise RuntimeError('Preparation backup manifest is missing or symlinked')
     manifest = json.loads(manifest_path.read_text())
-    if manifest.get('state') not in {'backed_up', 'prepared_and_verified',
+    if manifest.get('state') not in {'backed_up', 'roms_backed_up', 'prepared_and_verified',
                                     'roms_rollback_started', 'roms_rollback_incomplete'}:
         raise RuntimeError('Preparation is not in a restorable state')
     rows = manifest.get('files')
@@ -256,6 +256,18 @@ def bundle_files(bundle, roms):
     return result
 
 
+def bundle_digest(bundle):
+    """Bind both preparation phases to every file that will be installed."""
+    bundle = Path(bundle)
+    digest = hashlib.sha256()
+    for source, _ in bundle_files(bundle, Path('/unused-roms')):
+        digest.update(str(source.relative_to(bundle)).encode('utf-8') + b'\0')
+        digest.update(sha256(source).encode('ascii') + b'\n')
+    digest.update(b'dev/build-revision\0')
+    digest.update(sha256(bundle/'dev/build-revision').encode('ascii') + b'\n')
+    return digest.hexdigest()
+
+
 def prepare(root, roms, bundle, backup, *, require_mount=True):
     root, roms, backup = check_layout(Path(root), Path(roms), Path(backup), require_mount)
     bundle = Path(bundle).resolve()
@@ -353,16 +365,202 @@ def prepare(root, roms, bundle, backup, *, require_mount=True):
     return manifest
 
 
+def prepare_root(root, bundle, backup, app_path='/roms/Cartridge', *, require_mount=True):
+    """Configure only an offline ext4 clone; no ROMS partition is needed in Linux."""
+    root, bundle, backup = Path(root), Path(bundle), Path(backup)
+    if root.is_symlink() or bundle.is_symlink() or backup.is_symlink():
+        raise RuntimeError('Root, bundle and backup must not be symlinks')
+    root, bundle = root.resolve(strict=True), bundle.resolve(strict=True)
+    backup = backup.parent.resolve(strict=True)/backup.name
+    if root == Path('/') or not root.is_dir() or backup.exists():
+        raise RuntimeError('Expected an offline root and a new backup directory')
+    if backup == root or root in backup.parents or backup == bundle or bundle in backup.parents:
+        raise RuntimeError('Backup must be outside the root image and bundle')
+    if require_mount:
+        if not os.path.ismount(root):
+            raise RuntimeError('Linux root must be a mounted offline image')
+        fstype = subprocess.check_output(['findmnt', '-n', '-o', 'FSTYPE', '-T', str(root)], text=True).strip()
+        if fstype != 'ext4':
+            raise RuntimeError('Expected an ext4 Linux root image, found '+fstype)
+    if app_path not in {'/roms/Cartridge', '/roms2/Cartridge'}:
+        raise RuntimeError('Unsupported Cartridge installation path')
+    if not bundle.is_dir() or not (bundle/'dev/build-revision').is_file():
+        raise RuntimeError('Expected a CI device bundle with a build revision')
+    # Validate the entire payload before changing the clone. Its ROMS files
+    # are installed by stage_roms after the root image has passed inspection.
+    bundle_sha = bundle_digest(bundle)
+    check_stock(root, app_path)
+    managed = root/'etc/systemd/system/emulationstation.service.d/99-cartridge-primary.conf'
+    session = root/'usr/local/lib/cartridge/cartridge-session.py'
+    fallback = root/'home/ark/.cartridges/session/fallback.json'
+    targets = (managed, session, fallback)
+    for target in targets:
+        ancestor = target.parent
+        while ancestor != root:
+            if ancestor.is_symlink():
+                raise RuntimeError('Refusing symlink parent '+str(ancestor))
+            ancestor = ancestor.parent
+        if target.is_symlink() or (target.exists() and not target.is_file()):
+            raise RuntimeError('Refusing unsafe root target '+str(target))
+    backup.mkdir(mode=0o700)
+    rows = []
+    for target in targets:
+        rel = 'root/'+str(target.relative_to(root))
+        old = sha256(target) if target.is_file() else None
+        if old is not None:
+            previous = backup/'previous'/rel
+            atomic_copy(target, previous)
+            if sha256(previous) != old:
+                raise RuntimeError('Backup checksum mismatch: '+rel)
+        rows.append({'path': rel, 'previous_sha256': old, 'installed_sha256': None})
+    manifest = {'state': 'root_backed_up', 'build_revision': (bundle/'dev/build-revision').read_text().strip(),
+                'app_path': app_path, 'cartridge_sha256': sha256(bundle/'cartridge'),
+                'session_sha256': sha256(bundle/'cartridge-session.py'),
+                'bundle_sha256': bundle_sha, 'files': rows,
+                'games_and_saves_written': False}
+    os.sync()
+    write_manifest(backup/'manifest.json', manifest)
+    try:
+        spec = importlib.util.spec_from_file_location('cartridge_setup_offline', bundle/'setup-primary.py')
+        setup = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(setup)
+        setup.configure(root, Path(app_path), 'enable', offline_bundle=bundle)
+        expected = ('# Managed by Cartridge primary session v1\n[Service]\nExecStart=\n'
+                    'ExecStart=/usr/bin/python3 /usr/local/lib/cartridge/cartridge-session.py'
+                    ' --cartridge-dir '+app_path+'\n')
+        if managed.read_text() != expected or sha256(session) != manifest['session_sha256']:
+            raise RuntimeError('Offline root setup did not produce the expected startup files')
+        if not (root/'etc/systemd/system/multi-user.target.wants/emulationstation.service').is_symlink():
+            raise RuntimeError('Stock ES recovery link disappeared')
+        rows[0]['installed_sha256'] = sha256(managed)
+        rows[1]['installed_sha256'] = sha256(session)
+        if fallback.exists():
+            raise RuntimeError('Old Cartridge failure latch was not cleared')
+    except BaseException:
+        try:
+            for row in reversed(rows):
+                target = root/row['path'][5:]
+                if row['previous_sha256'] is None:
+                    target.unlink(missing_ok=True)
+                else:
+                    atomic_copy(backup/'previous'/row['path'], target)
+                    if sha256(target) != row['previous_sha256']:
+                        raise RuntimeError('Root rollback checksum mismatch: '+row['path'])
+            manifest['state'] = 'root_rolled_back_after_failure'
+        except BaseException:
+            manifest['state'] = 'root_rollback_incomplete'
+        write_manifest(backup/'manifest.json', manifest)
+        raise
+    manifest['state'] = 'root_prepared_and_verified'
+    os.sync()
+    write_manifest(backup/'manifest.json', manifest)
+    return manifest
+
+
+def stage_roms(roms, bundle, backup, *, require_mount=True):
+    """Stage Cartridge-owned files on mounted exFAT after clone preparation."""
+    roms, bundle, backup = Path(roms), Path(bundle), Path(backup)
+    if roms.is_symlink() or bundle.is_symlink() or backup.is_symlink():
+        raise RuntimeError('ROMS, bundle and backup must not be symlinks')
+    roms, bundle, backup = (path.resolve(strict=True) for path in (roms, bundle, backup))
+    if not roms.is_dir() or not backup.is_dir() or roms == backup or roms in backup.parents:
+        raise RuntimeError('ROMS needs a separate preparation backup')
+    if require_mount and not os.path.ismount(roms):
+        raise RuntimeError('ROMS must be a mounted offline partition')
+    path = backup/'manifest.json'
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError('Root preparation manifest is missing')
+    manifest = json.loads(path.read_text())
+    if manifest.get('state') != 'root_prepared_and_verified':
+        raise RuntimeError('Root clone must be prepared before ROMS staging')
+    if (manifest.get('build_revision') != (bundle/'dev/build-revision').read_text().strip() or
+            manifest.get('cartridge_sha256') != sha256(bundle/'cartridge') or
+            manifest.get('session_sha256') != sha256(bundle/'cartridge-session.py') or
+            manifest.get('bundle_sha256') != bundle_digest(bundle)):
+        raise RuntimeError('Bundle differs from the prepared root')
+    if not (roms/'Cartridge').is_dir() or not (roms/'tools').is_dir():
+        raise RuntimeError('Expected existing ROMS/Cartridge and ROMS/tools directories')
+    files = bundle_files(bundle, roms)
+    for _, target in files:
+        ancestor = target.parent
+        while ancestor != roms:
+            if ancestor.is_symlink():
+                raise RuntimeError('Refusing symlink parent '+str(ancestor))
+            ancestor = ancestor.parent
+        if target.is_symlink() or (target.exists() and not target.is_file()):
+            raise RuntimeError('Refusing unsafe ROMS target '+str(target))
+    rows = manifest['files']
+    if not isinstance(rows, list) or not all(isinstance(row, dict) and
+            isinstance(row.get('path'), str) and row['path'].startswith('root/') for row in rows):
+        raise RuntimeError('Root preparation file list is invalid')
+    staged = []
+    for source, target in files:
+        rel = 'roms/'+str(target.relative_to(roms))
+        if not managed_roms_path(rel[5:]):
+            raise RuntimeError('Bundle contains an unmanaged ROMS path: '+rel)
+        old = sha256(target) if target.is_file() else None
+        if old is not None:
+            previous = backup/'previous'/rel
+            atomic_copy(target, previous, preserve_mode=False)
+            if sha256(previous) != old:
+                raise RuntimeError('Backup checksum mismatch: '+rel)
+        staged.append({'path': rel, 'previous_sha256': old, 'installed_sha256': sha256(source)})
+    rows.extend(staged)
+    manifest['state'] = 'roms_backed_up'
+    os.sync()
+    write_manifest(path, manifest)
+    try:
+        for (source, target), row in zip(files, staged):
+            atomic_copy(source, target, preserve_mode=False)
+            if sha256(target) != row['installed_sha256']:
+                raise RuntimeError('ROMS readback checksum mismatch: '+row['path'])
+    except BaseException:
+        try:
+            for row in reversed(staged):
+                target = roms/row['path'][5:]
+                if row['previous_sha256'] is None:
+                    target.unlink(missing_ok=True)
+                else:
+                    atomic_copy(backup/'previous'/row['path'], target, preserve_mode=False)
+                    if sha256(target) != row['previous_sha256']:
+                        raise RuntimeError('ROMS rollback checksum mismatch: '+row['path'])
+            manifest['state'] = 'roms_rollback_verified'
+        except BaseException:
+            manifest['state'] = 'roms_rollback_incomplete'
+        write_manifest(path, manifest)
+        raise
+    manifest['state'] = 'prepared_and_verified'
+    manifest['cartridge_default_on_next_boot'] = True
+    os.sync()
+    write_manifest(path, manifest)
+    return manifest
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--root', type=Path, required=True, help='Mounted OFFLINE ext4 root image')
-    parser.add_argument('--roms', type=Path, required=True, help='Separate mounted ROMS partition under --root')
+    parser.add_argument('--phase', choices=('combined', 'root', 'roms'), default='combined')
+    parser.add_argument('--root', type=Path, help='Mounted OFFLINE ext4 root image')
+    parser.add_argument('--roms', type=Path, help='Mounted ROMS partition')
     parser.add_argument('--bundle', type=Path, required=True, help='Verified CI device bundle /Cartridge')
-    parser.add_argument('--backup', type=Path, required=True, help='New backup directory outside the card images')
+    parser.add_argument('--backup', type=Path, required=True, help='Backup directory outside the card images')
+    parser.add_argument('--app-path', choices=('/roms/Cartridge', '/roms2/Cartridge'),
+                        default='/roms/Cartridge', help='Device path to Cartridge after boot')
     args = parser.parse_args()
-    result = prepare(args.root, args.roms, args.bundle, args.backup)
+    if args.phase == 'combined':
+        if args.root is None or args.roms is None:
+            parser.error('combined phase requires --root and --roms')
+        result = prepare(args.root, args.roms, args.bundle, args.backup)
+    elif args.phase == 'root':
+        if args.root is None or args.roms is not None:
+            parser.error('root phase requires --root and no --roms')
+        result = prepare_root(args.root, args.bundle, args.backup, args.app_path)
+    else:
+        if args.roms is None or args.root is not None:
+            parser.error('roms phase requires --roms and no --root')
+        result = stage_roms(args.roms, args.bundle, args.backup)
     print(json.dumps({'state': result['state'], 'build_revision': result['build_revision'],
-                      'cartridge_default_on_next_boot': result['cartridge_default_on_next_boot']}, indent=2))
+                      'cartridge_default_on_next_boot': result.get('cartridge_default_on_next_boot', False)},
+                     indent=2))
 
 
 if __name__ == '__main__':

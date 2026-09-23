@@ -78,6 +78,55 @@ class OfflinePrepareTest(unittest.TestCase):
         self.assertEqual((self.backup/'previous/roms/Cartridge/cartridge').read_bytes(), b'old Cartridge executable')
         self.assertEqual(json.loads((self.backup/'manifest.json').read_text())['state'], 'prepared_and_verified')
 
+    def test_split_preparation_configures_clone_before_staging_roms(self):
+        root = module.prepare_root(self.root, self.bundle, self.backup, require_mount=False)
+        self.assertEqual(root['state'], 'root_prepared_and_verified')
+        self.assertFalse(root.get('cartridge_default_on_next_boot', False))
+        self.assertEqual((self.roms/'Cartridge/cartridge').read_bytes(), b'old Cartridge executable')
+        self.assertEqual((self.roms/'psx/game.chd').read_bytes(), b'unchanged ROM')
+        self.assertEqual((self.root/'etc/systemd/system/emulationstation.service').read_bytes(), self.stock)
+        result = module.stage_roms(self.roms, self.bundle, self.backup, require_mount=False)
+        self.assertEqual(result['state'], 'prepared_and_verified')
+        self.assertTrue(result['cartridge_default_on_next_boot'])
+        self.assertEqual((self.roms/'Cartridge/cartridge').read_bytes(), b'new cartridge')
+        self.assertEqual((self.roms/'psx/game.srm').read_bytes(), b'unchanged save')
+        self.assertEqual((self.roms/'Cartridge/ssh/id_ed25519').read_bytes(), b'user key stays on card')
+        rollback = module.restore_roms(self.roms, self.backup, require_mount=False)
+        self.assertEqual(rollback['state'], 'roms_rollback_verified')
+        self.assertEqual((self.roms/'Cartridge/cartridge').read_bytes(), b'old Cartridge executable')
+
+    def test_split_preparation_rejects_different_bundle_before_roms_writes(self):
+        module.prepare_root(self.root, self.bundle, self.backup, require_mount=False)
+        (self.bundle/'cartridge').write_bytes(b'different device build')
+        with self.assertRaisesRegex(RuntimeError, 'Bundle differs'):
+            module.stage_roms(self.roms, self.bundle, self.backup, require_mount=False)
+        self.assertEqual((self.roms/'Cartridge/cartridge').read_bytes(), b'old Cartridge executable')
+        self.assertEqual(json.loads((self.backup/'manifest.json').read_text())['state'],
+                         'root_prepared_and_verified')
+
+    def test_split_preparation_root_failure_leaves_roms_unchanged(self):
+        (self.bundle/'setup-primary.py').write_text('raise RuntimeError("simulated setup failure")\n')
+        with self.assertRaisesRegex(RuntimeError, 'simulated setup failure'):
+            module.prepare_root(self.root, self.bundle, self.backup, require_mount=False)
+        self.assertEqual((self.roms/'Cartridge/cartridge').read_bytes(), b'old Cartridge executable')
+        self.assertEqual(json.loads((self.backup/'manifest.json').read_text())['state'],
+                         'root_rolled_back_after_failure')
+
+    def test_split_roms_copy_failure_restores_cartridge_files(self):
+        module.prepare_root(self.root, self.bundle, self.backup, require_mount=False)
+        original_copy = module.atomic_copy
+        def fail_second_install(source, destination, **kwargs):
+            if destination.is_relative_to(self.roms.resolve()) and destination.name == 'autosetup.sh':
+                raise OSError('simulated ROMS write failure')
+            return original_copy(source, destination, **kwargs)
+        with mock.patch.object(module, 'atomic_copy', side_effect=fail_second_install):
+            with self.assertRaisesRegex(OSError, 'simulated ROMS write failure'):
+                module.stage_roms(self.roms, self.bundle, self.backup, require_mount=False)
+        self.assertEqual((self.roms/'Cartridge/cartridge').read_bytes(), b'old Cartridge executable')
+        self.assertEqual((self.roms/'psx/game.chd').read_bytes(), b'unchanged ROM')
+        self.assertEqual(json.loads((self.backup/'manifest.json').read_text())['state'],
+                         'roms_rollback_verified')
+
     def test_refuses_unmounted_paths_and_unsupported_boot(self):
         with self.assertRaisesRegex(RuntimeError, 'offline mounts'):
             module.prepare(self.root, self.roms, self.bundle, self.backup)

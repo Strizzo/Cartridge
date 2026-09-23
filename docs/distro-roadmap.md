@@ -43,7 +43,7 @@ baseline; preserve their verified versions while measuring improvements.
 | --- | --- | --- |
 | 1. Primary session | Direct boot into Cartridge; apps and games launch from home; explicit ES recovery and undo. | Implemented and tested in the native simulator and ARM VM. Replacement-card validation pending. |
 | 2. Device platform | Measured startup, display/input/audio lifecycle, brightness, volume, WiFi, power actions, bounded app work and wireless updates. | APIs and tooling exist; remaining blocking paths and physical validation are open. |
-| 3. Cartridge system image and installer | Versioned image recipe with pinned base, board files, packages, kernel/DTB checksums, emulator compatibility, recovery and a desktop writer that verifies the card. | Read-only card inventory and clone, guarded s2 writeback, ROMS rollback and two-partition coordination pass disposable ARM VM checks. No physical-card validation, graphical installer or fresh image yet. |
+| 3. Cartridge system image and installer | Versioned image recipe with pinned base, board files, packages, kernel/DTB checksums, emulator compatibility, recovery and a desktop writer that verifies the card. | Read-only card inventory and clone, Mac-to-VM root preparation, guarded s2 writeback, ROMS rollback and two-partition coordination pass disposable image checks. No physical-card validation, graphical installer or fresh image yet. |
 | 4. Hardware specialization | Measured service reduction, clock/power policy and justified driver/kernel changes for the exact board/panel. | Requires a recorded device baseline and benchmarks first. |
 
 The next physical milestone is stage 1 on the already working replacement card.
@@ -91,8 +91,9 @@ are prepared offline. A full reformat is available only for a blank card or an
 explicit erase choice, with backup and verified restoration for populated cards.
 The offline conversion, rollback and guarded Linux-partition writeback core is
 implemented and tested on disposable image files; macOS has a read-only
-whole-disk/layout inventory. Physical-card validation and the graphical
-host-to-VM workflow remain open. An image builder must
+whole-disk/layout inventory and a tested CLI handoff into a dedicated ARM
+preparation VM. Physical-card validation and the graphical installer remain
+open. An image builder must
 produce an artifact file, with explicit target-media selection for any later
 flashing step. Test installation on a disposable image or spare card before
 considering the user's working card. Never distribute personal ROMs, saves, SSH

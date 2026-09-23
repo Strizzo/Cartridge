@@ -93,7 +93,15 @@ def main():
         spec = importlib.util.spec_from_file_location('offline_prepare', ROOT/'installer/offline_prepare.py')
         converter = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(converter)
-        result = converter.prepare(mounted_root, mounted_roms, BUNDLE, BASE/'previous-installation')
+        # The host workflow prepares the cloned Linux root first, then stages
+        # managed files on the Mac-mounted games partition. Rehearse that split
+        # on real mounted filesystems before the combined legacy path below.
+        root_stage = converter.prepare_root(mounted_root, BUNDLE, BASE/'previous-installation')
+        if root_stage['state'] != 'root_prepared_and_verified':
+            raise RuntimeError('Split root preparation did not complete')
+        if (app/'cartridge').read_bytes() != b'previous application':
+            raise RuntimeError('Root-only preparation wrote to the games partition')
+        result = converter.stage_roms(mounted_roms, BUNDLE, BASE/'previous-installation')
         if result['state'] != 'prepared_and_verified' or not result['cartridge_default_on_next_boot']:
             raise RuntimeError('Offline conversion did not enable Cartridge')
         if digest(app/'cartridge') != digest(BUNDLE/'cartridge'):
@@ -123,6 +131,7 @@ def main():
                   'cartridge_default_on_next_boot': True,
                   'stock_es_service_preserved': True, 'game_save_and_gamelist_sha256': previous,
                   'user_key_preserved': True, 'roms_rollback_rehearsed': True,
+                  'split_root_and_roms_preparation_verified': True,
                   'source_card_or_host_mount_used': False}
     finally:
         if roms_active:

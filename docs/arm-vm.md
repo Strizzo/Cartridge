@@ -26,6 +26,33 @@ results back under `.sim/vm/results/`. Binary SHA-256, CI revision, OS/kernel,
 linked libraries, systemd transition reports and 720×720 screenshots are retained.
 No source compilation or mounted host workspace is needed inside the guest.
 
+## Offline root preparation VM
+
+[`installer/host_prepare.py`](../installer/host_prepare.py) uses a second VM,
+`cartridge-prep-arm64`, for the Linux-root phase of the SD installer. It is
+separate from the compatibility VM above. The Mac first verifies the selected
+card's immutable s2 backup, then creates a new `prepared-root.ext4` inside a
+workspace outside the card. The preparation VM receives **only that workspace**
+as a writable virtiofs mount and a copy of the verified CI device bundle. It
+never receives a raw card device or the original backup directory. Its 4 GiB
+guest disk does not need to contain the full Linux image; the loop-mounted
+image stays on the host's workspace volume. After unmount, both Linux and macOS
+run no-write ext4 checks, and macOS reads the exact boot override and supervisor
+from the prepared image before any games-partition staging can begin.
+
+The 128 MiB disposable end-to-end host/VM rehearsal passed, including image
+hash and boot-file verification; the immutable original retained its SHA-256.
+The main ARM suite also passed split preparation and rollback using a real
+mounted ext4 image plus synthetic exFAT game, save, gamelist and key fixtures.
+To repeat the complete Mac-to-VM transaction on temporary files, run
+`python3 sim/vm/host-prepare-check.py /path/to/device-bundle/Cartridge` from
+the repository. It saves `.sim/vm/results/host-prepare-check.json` and deletes
+its 128 MiB test images afterward. Use a CI bundle built from the same source
+revision; the root preparation script in that bundle must support the offline
+image handoff.
+This is a development backend. No physical SD write or handheld boot has been
+validated through it; keep the working card untouched until spare-media tests.
+
 The first boot downloads a checksum-pinned 217 MiB Ubuntu 24.04 ARM minimal
 image and installs SDL runtime libraries. `curl` uses the Mac resolver because
 Lima's Go resolver timed out on this network. Apple NAT is configured because
