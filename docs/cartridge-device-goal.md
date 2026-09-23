@@ -71,9 +71,9 @@ reformat it as part of launcher development.
   desktop SD installer: a blank card receives that image; a compatible populated
   card preserves games, saves and partitions by default; full reformat is
   opt-in. Both modes must boot Cartridge directly on first insertion, without
-  any on-device ES menu setup. Read-only Mac inventory and clone helpers exist;
-  graphical selection, physical-card backup/writeback and first-boot checks
-  remain open.
+  any on-device ES menu setup. Mac inventory, root cloning, guarded s2
+  writeback and ROMS rollback pass disposable-image checks; graphical selection,
+  physical-card validation and first-boot checks remain open.
 - [ ] Document app-development budgets and platform APIs using measured hardware
   behavior and a practical simulator-first release workflow.
 

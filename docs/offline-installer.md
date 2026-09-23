@@ -95,18 +95,35 @@ identifies layout and volume metadata, not a guaranteed unique card serial;
 the full-partition pre-write hash is the stronger guard against a swapped or
 changed card.
 
-The card-writing Mac application still needs to be built. Its Linux helper can
-mount a cloned ext4 system partition and the corresponding exFAT ROMS partition,
-then use [`installer/offline_prepare.py`](../installer/offline_prepare.py) to
-copy the CI app bundle, install the first-boot service override, preserve ES as
-recovery and verify games/saves. The helper refuses a live `/` root, unmounted
-folders, unsupported stock services and backups placed inside either card
-partition. On failure it restores the previous Cartridge-owned files. The Mac
-application must tie those steps together, produce an image-to-journal handoff,
-verify and stage ROMS-owned files, run writeback, and safely eject. An interrupted
-ROMS update also needs recovery; `card_writeback.py` covers only the Linux
-partition. A complete dry run on a spare physical card and first boot on the
-handheld are still required before this is a user-facing installer.
+[`installer/offline_prepare.py`](../installer/offline_prepare.py) copies the CI
+bundle onto the selected offline exFAT partition and configures the cloned ext4
+root to start Cartridge. It backs up every Cartridge-owned file before changing
+it; its `restore_roms` backend can resume a later rollback after the Linux
+root has been confirmed unchanged or fully restored.
+Rollback accepts only managed Cartridge/Tools paths, verifies original backups
+and refuses to overwrite files changed by another process. Games, saves and
+keys are outside its allowed path set.
+
+[`installer/install_transaction.py`](../installer/install_transaction.py)
+coordinates the two partitions after preparation and unmounting. It checks that
+the mounted exFAT partition belongs to the selected card and still contains the
+prepared files, verifies every ROMS rollback backup, and reads the unmounted
+ext4 image with `debugfs` to confirm the exact Cartridge boot override, session
+supervisor, stock ES service and recovery enable link. It then calls the guarded
+s2 writer. If s2 is unchanged or its rollback is verified, a failed write also
+restores the Cartridge-owned exFAT files. If s2 recovery is incomplete, it
+leaves those files available and reports the card as needing recovery. Neither
+path formats the card or edits ROMs/saves.
+
+This backend passed a complete ARM VM transaction using separate disposable
+ext4 and exFAT images plus a CI device bundle. The test performed preparation,
+an exFAT rollback and re-prepare, wrote the prepared root to a disposable s2
+file, read it back, verified the boot files inside it, and checked both
+filesystems and game/save/key hashes. The normal desktop simulator and ARM VM
+still cannot emulate the handheld's exact board and display. **No physical SD
+card was written or booted by this transaction.** The Mac graphical installer,
+host-to-VM preparation workflow, safe eject, fresh bootable image and spare-card
+first-boot validation remain to be built before this can be offered to users.
 
 The converter has passed unit checks and an ARM VM check on separate mounted
 ext4 and exFAT images using the actual CI bundle. A second VM rehearsal used a

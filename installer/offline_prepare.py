@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+from pathlib import PurePosixPath
 import shutil
 import subprocess
 import tempfile
@@ -56,6 +57,107 @@ def write_manifest(path, value):
         temp.flush()
         os.fsync(temp.fileno())
     os.replace(temporary, path)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+def managed_roms_path(relative):
+    """Only Cartridge payload and three owned Tools entries may be restored."""
+    path = PurePosixPath(relative)
+    parts = path.parts
+    if not parts or path.is_absolute() or str(path) != relative or '..' in parts:
+        return False
+    if len(parts) == 2 and parts[0] == 'tools':
+        return parts[1] in {'Cartridge.sh', 'Setup Cartridge Boot.sh', 'Undo Cartridge Boot.sh'}
+    if len(parts) < 2 or parts[0] != 'Cartridge':
+        return False
+    if len(parts) == 2:
+        return parts[1] in {'cartridge', 'autosetup.sh', 'cartridge-session.py',
+                            'setup-primary.py', 'game-library.py', 'registry.json'}
+    if parts[1] == 'assets':
+        return (parts[2:] == ('boot_logo.png',) or
+                (len(parts) >= 4 and parts[2] in {'fonts', 'overlays'}))
+    return parts[1] == 'lua_cartridges' and len(parts) >= 3
+
+
+def restore_roms(roms, backup, *, require_mount=True):
+    """Resume or perform a verified rollback of Cartridge-owned ROMS files."""
+    roms, backup = Path(roms), Path(backup)
+    if roms.is_symlink() or backup.is_symlink():
+        raise RuntimeError('ROMS mount and backup must not be symlinks')
+    roms, backup = roms.resolve(strict=True), backup.resolve(strict=True)
+    if not roms.is_dir() or not backup.is_dir() or backup == roms or roms in backup.parents:
+        raise RuntimeError('ROMS rollback needs a separate backup directory')
+    if require_mount and not os.path.ismount(roms):
+        raise RuntimeError('ROMS must be a mounted offline partition')
+    manifest_path = backup/'manifest.json'
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise RuntimeError('Preparation backup manifest is missing or symlinked')
+    manifest = json.loads(manifest_path.read_text())
+    if manifest.get('state') not in {'backed_up', 'prepared_and_verified',
+                                    'roms_rollback_started', 'roms_rollback_incomplete'}:
+        raise RuntimeError('Preparation is not in a restorable state')
+    rows = manifest.get('files')
+    if not isinstance(rows, list):
+        raise RuntimeError('Preparation backup file list is invalid')
+    selected, seen = [], set()
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get('path'), str):
+            raise RuntimeError('Preparation backup row is invalid')
+        path = row['path']
+        if path.startswith('root/'):
+            continue
+        if not path.startswith('roms/') or not managed_roms_path(path[5:]) or path in seen:
+            raise RuntimeError('Preparation backup contains an unexpected ROMS path')
+        old, installed = row.get('previous_sha256'), row.get('installed_sha256')
+        if (old is not None and (not isinstance(old, str) or len(old) != 64) or
+                not isinstance(installed, str) or len(installed) != 64):
+            raise RuntimeError('Preparation backup checksum is invalid')
+        seen.add(path)
+        selected.append((path[5:], old, installed))
+    if not selected or not any(rel == 'Cartridge/cartridge' for rel, _, _ in selected):
+        raise RuntimeError('Preparation backup lacks the Cartridge executable')
+    # Validate every current file and every original backup before changing one.
+    for rel, old, installed in selected:
+        target = roms/rel
+        if target.is_symlink() or any(parent.is_symlink() for parent in target.parents if parent != roms and roms in parent.parents):
+            raise RuntimeError('Refusing symlink in ROMS rollback target: '+rel)
+        if target.exists():
+            if not target.is_file() or sha256(target) not in {old, installed}:
+                raise RuntimeError('ROMS target changed outside this install: '+rel)
+        elif old is not None:
+            raise RuntimeError('Previously existing ROMS target disappeared: '+rel)
+        if old is not None:
+            previous = backup/'previous/roms'/rel
+            if previous.is_symlink() or not previous.is_file() or sha256(previous) != old:
+                raise RuntimeError('Original ROMS backup is missing or changed: '+rel)
+            if any(parent.is_symlink() for parent in previous.parents if parent != backup and backup in parent.parents):
+                raise RuntimeError('Original ROMS backup has a symlink parent: '+rel)
+    manifest['state'] = 'roms_rollback_started'
+    write_manifest(manifest_path, manifest)
+    try:
+        for rel, old, installed in reversed(selected):
+            target = roms/rel
+            if target.is_symlink() or (target.exists() and
+                    (not target.is_file() or sha256(target) not in {old, installed})):
+                raise RuntimeError('ROMS target changed during rollback: '+rel)
+            if old is None:
+                target.unlink(missing_ok=True)
+            else:
+                atomic_copy(backup/'previous/roms'/rel, target, preserve_mode=False)
+                if sha256(target) != old:
+                    raise RuntimeError('ROMS rollback readback differs: '+rel)
+        os.sync()
+        manifest['state'] = 'roms_rollback_verified'
+    except BaseException as exc:
+        manifest.update(state='roms_rollback_incomplete', rollback_error=str(exc))
+        write_manifest(manifest_path, manifest)
+        raise
+    write_manifest(manifest_path, manifest)
+    return manifest
 
 
 def check_layout(root, roms, backup, require_mount):
@@ -187,6 +289,8 @@ def prepare(root, roms, bundle, backup, *, require_mount=True):
     # recover from an interrupted run using this manifest and previous/ tree.
     backup.mkdir(parents=True)
     rows = []
+    source_for_target = {target: source for source, target in files}
+    expected_new = {}
     for target in targets:
         base = root if target == managed or target == session or target == fallback else roms
         rel = ('root' if base == root else 'roms') + '/' + str(target.relative_to(base))
@@ -196,10 +300,16 @@ def prepare(root, roms, bundle, backup, *, require_mount=True):
             atomic_copy(target, previous)
             if sha256(previous) != old:
                 raise RuntimeError('Backup checksum mismatch: '+rel)
-        rows.append({'path': rel, 'previous_sha256': old})
+        source = source_for_target.get(target)
+        installed = sha256(source) if source is not None else None
+        rows.append({'path': rel, 'previous_sha256': old, 'installed_sha256': installed})
+        if installed is not None:
+            expected_new[target] = installed
     manifest = {'state': 'backed_up', 'build_revision': (bundle/'dev/build-revision').read_text().strip(),
-                'cartridge_sha256': sha256(bundle/'cartridge'), 'files': rows,
+                'app_path': app, 'cartridge_sha256': sha256(bundle/'cartridge'),
+                'session_sha256': sha256(bundle/'cartridge-session.py'), 'files': rows,
                 'games_and_saves_written': False}
+    os.sync()
     write_manifest(backup/'manifest.json', manifest)
     def restore():
         for item in reversed(rows):
@@ -215,7 +325,7 @@ def prepare(root, roms, bundle, backup, *, require_mount=True):
     try:
         for source, target in files:
             atomic_copy(source, target, preserve_mode=False)
-            if sha256(target) != sha256(source):
+            if sha256(target) != expected_new[target]:
                 raise RuntimeError('Installed file checksum mismatch: '+str(target))
         # The same setup code used on the device applies to the offline root.
         spec = importlib.util.spec_from_file_location('cartridge_setup_offline', bundle/'setup-primary.py')
@@ -238,6 +348,7 @@ def prepare(root, roms, bundle, backup, *, require_mount=True):
         raise
     manifest['state'] = 'prepared_and_verified'
     manifest['cartridge_default_on_next_boot'] = True
+    os.sync()
     write_manifest(backup/'manifest.json', manifest)
     return manifest
 

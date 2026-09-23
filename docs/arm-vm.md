@@ -54,7 +54,10 @@ for commit `af32b8a` (CI merge revision
 - Offline conversion of separate mounted ext4 system and exFAT ROMS images
   using the exact CI app bundle: Cartridge becomes the configured next boot,
   the original ES unit stays intact, game/save/gamelist/key hashes remain
-  unchanged, and both filesystems check clean after unmounting.
+  unchanged, and both filesystems check clean after unmounting. The same fixture
+  now rehearses exFAT rollback, re-preparation and a full two-partition install
+  transaction with a disposable s2 target. `debugfs` verifies the exact startup
+  override and supervisor inside the prepared ext4 image before writeback.
 - Real Linux systemd service installation, rendered first-frame/ES handoff,
   forced startup failure, fallback latch and undo. The stock ES service and ES
   executable are explicit test stand-ins; no emulator or ES build is included.
@@ -71,9 +74,9 @@ The normal `sim/vm.sh check` workflow still uses no host mounts. Do not pass the
 original recovery image or a physical card to the stock-root script: its input
 image is modified during the rehearsal.
 
-The offline converter is a filesystem preparation component. A desktop app
-that chooses a physical card, creates and verifies partition clones, and writes
-the result back does not exist yet. The guest verifier requires
+The offline converter and guarded writeback are backend components. A graphical
+desktop app that chooses a physical card, runs preparation and safely ejects it
+does not exist yet; no physical-card write has been validated. The guest verifier requires
 `/etc/cartridge-compat-vm`, created only by VM
 provisioning. Do not run it on the handheld: it creates a disposable fake stock
 service and `ark` user for integration checks. The fake service is disabled after

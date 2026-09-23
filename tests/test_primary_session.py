@@ -33,10 +33,10 @@ class PrimarySessionTest(unittest.TestCase):
         path.write_text('#!'+sys.executable+'\nimport os,time\nfrom pathlib import Path\n'+body+'\n')
         path.chmod(0o755)
 
-    def launch(self):
+    def launch(self, startup_timeout='3.0'):
         return subprocess.run([sys.executable, str(ROOT/'deploy/cartridge-session.py'),
                                '--cartridge-dir', str(self.app), '--state-dir', str(self.state),
-                               '--es-script', str(self.fallback), '--startup-timeout', '1.0', '--desktop'],
+                               '--es-script', str(self.fallback), '--startup-timeout', startup_timeout, '--desktop'],
                               env=self.env, capture_output=True, text=True, timeout=6)
 
     def reason(self):return json.loads((self.state/'last-session.json').read_text())['reason']
@@ -72,7 +72,7 @@ class PrimarySessionTest(unittest.TestCase):
 
     def test_timeout_kills_hung_startup_and_falls_back(self):
         self.binary('time.sleep(30)')
-        start=time.monotonic(); self.launch()
+        start=time.monotonic(); self.launch(startup_timeout='0.4')
         self.assertLess(time.monotonic()-start,3)
         self.assertEqual(self.reason(),'startup_timeout'); self.assertTrue(self.es_seen.exists())
 
