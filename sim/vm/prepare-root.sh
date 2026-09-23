@@ -41,7 +41,14 @@ else
     limactl start --tty=false --name="$VM" --set "$IMAGE_EXPR" --mount-only "$STAGING:w" \
         --timeout=6m "$ROOT/sim/vm/prep-lima.yaml"
 fi
-cleanup() { limactl stop "$VM" || true; }
+cleanup() {
+    local status=$?
+    limactl stop "$VM" || status=1
+    # The staging directory may be deleted after a successful smoke check.
+    # Do not retain its writable host mount in the stopped VM configuration.
+    limactl edit --tty=false --mount-none "$VM" || status=1
+    exit "$status"
+}
 trap cleanup EXIT
 limactl shell --workdir=/ "$VM" sh -c 'test "$(uname -m)" = aarch64 && test -f /etc/cartridge-prep-vm'
 limactl copy "$ROOT/installer/offline_prepare.py" "$VM:/tmp/cartridge-prep-offline_prepare.py"
