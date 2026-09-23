@@ -69,18 +69,31 @@ not prove that the Linux system can boot Cartridge; the cloned-root inspection
 remains mandatory. An unpartitioned removable disk is only a fresh-image
 candidate, not proof that it contains no recoverable data.
 
-[`installer/card_clone.py`](../installer/card_clone.py) is the next read-only
-backend piece. It requires the selected whole-disk ID and the fingerprint from
+[`installer/card_clone.py`](../installer/card_clone.py) is the read-only backup
+backend. It requires the selected whole-disk ID and the fingerprint from
 inventory, rejects a backup destination on that card, and copies only the
 unmounted Linux partition into a new backup directory. It reads the source
 twice, verifies the saved bytes, runs a no-write ext4 check, and records an
 incomplete manifest if a pass fails. This passed on a disposable 64 MiB ext4
 image with a real `e2fsck`; it has **not** read or written the user's physical
-card. A later transaction must still apply conversion to a clone, update the
-Cartridge-owned ROMS files, write back the prepared Linux partition, verify the
-physical readback, and eject. A disk identifier or partition layout alone is
-not a unique hardware identity, so that transaction must recheck the selected
-media immediately before each write.
+card.
+
+[`installer/card_writeback.py`](../installer/card_writeback.py) now provides the
+guarded Linux-partition write stage. It accepts only a clone with a verified
+manifest for the selected card, checks the original and prepared image sizes and
+SHA-256 hashes, requires both images and a new recovery journal outside the
+card, and checks the prepared ext4 filesystem. It opens only the raw `s2`
+partition, compares its current bytes with the original clone before writing,
+rechecks the inventory fingerprint, records `write_started` durably, then writes,
+flushes, reads back, and checks ext4 again. A handled error attempts a verified
+rollback from the original clone; an interrupted process leaves a journal for
+an explicit `restore`. BOOT, the partition table and EASYROMS are outside this
+stage. Disposable-file tests cover success, changed target, bad inputs,
+partial-write rollback, interrupted-write restoration and a real ext4 image.
+**This writer has not run on a physical SD card.** The inventory fingerprint
+identifies layout and volume metadata, not a guaranteed unique card serial;
+the full-partition pre-write hash is the stronger guard against a swapped or
+changed card.
 
 The card-writing Mac application still needs to be built. Its Linux helper can
 mount a cloned ext4 system partition and the corresponding exFAT ROMS partition,
@@ -89,9 +102,11 @@ copy the CI app bundle, install the first-boot service override, preserve ES as
 recovery and verify games/saves. The helper refuses a live `/` root, unmounted
 folders, unsupported stock services and backups placed inside either card
 partition. On failure it restores the previous Cartridge-owned files. The Mac
-application must retain a durable backup, check the modified filesystems,
-write back only the intended partition data and verify the physical card before
-ejecting it.
+application must tie those steps together, produce an image-to-journal handoff,
+verify and stage ROMS-owned files, run writeback, and safely eject. An interrupted
+ROMS update also needs recovery; `card_writeback.py` covers only the Linux
+partition. A complete dry run on a spare physical card and first boot on the
+handheld are still required before this is a user-facing installer.
 
 The converter has passed unit checks and an ARM VM check on separate mounted
 ext4 and exFAT images using the actual CI bundle. A second VM rehearsal used a

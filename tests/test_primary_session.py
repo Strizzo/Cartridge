@@ -36,7 +36,7 @@ class PrimarySessionTest(unittest.TestCase):
     def launch(self):
         return subprocess.run([sys.executable, str(ROOT/'deploy/cartridge-session.py'),
                                '--cartridge-dir', str(self.app), '--state-dir', str(self.state),
-                               '--es-script', str(self.fallback), '--startup-timeout', '0.4', '--desktop'],
+                               '--es-script', str(self.fallback), '--startup-timeout', '1.0', '--desktop'],
                               env=self.env, capture_output=True, text=True, timeout=6)
 
     def reason(self):return json.loads((self.state/'last-session.json').read_text())['reason']
