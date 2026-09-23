@@ -142,6 +142,14 @@ restores the Cartridge-owned exFAT files. If s2 recovery is incomplete, it
 leaves those files available and reports the card as needing recovery. Neither
 path formats the card or edits ROMs/saves.
 
+The [full-size stock-root rehearsal](../sim/vm/full-root-check.py) has now
+prepared and independently verified a 10.35 GB copy of the recovered Linux
+partition through the actual Mac-to-ARM-VM handoff. It preserved the original
+image checksum and stock ES recovery service, and removed its temporary copy.
+The [VM instructions](arm-vm.md#offline-root-preparation-vm) include the command
+and hashes. This strengthens the Linux-root preparation gate; it does not test
+ROMS staging or raw writeback on a physical card.
+
 This backend passed a complete ARM VM transaction using separate disposable
 ext4 and exFAT images plus a CI device bundle. The test performed preparation,
 an exFAT rollback and re-prepare, wrote the prepared root to a disposable s2

@@ -53,6 +53,33 @@ image handoff.
 This is a development backend. No physical SD write or handheld boot has been
 validated through it; keep the working card untouched until spare-media tests.
 
+On 2026-09-24, the same dedicated preparation VM also passed against a
+**full-size 10,351,525,376-byte copy** of the recovered stock Linux root on an
+external SSD. Run [`full-root-check.py`](../sim/vm/full-root-check.py) with a
+read-only source image, its recorded SHA-256, an extracted CI `Cartridge` bundle,
+and a separate temporary workspace directory on the same volume:
+
+```sh
+python3 sim/vm/full-root-check.py \
+  --source /path/to/verified/stock-root.ext4 \
+  --sha256 RECORDED_SOURCE_SHA256 \
+  --bundle /path/to/extracted/Cartridge \
+  --workspace-parent /path/to/external-ssd/temporary-workspaces
+```
+
+The script checks the original hash and ext4, copies the image, checks the
+copy independently, prepares it in the ARM VM, and verifies the resulting
+filesystem, startup override, supervisor, stock ES service and recovery link.
+It rechecks that the original is unchanged, deletes the temporary copy, and
+writes `.sim/vm/results/full-root-check.json`. This run used source hash
+`58a57477031efeb3fdc8803882fefc1534bcf71a66d3af57e47faadfaa501c3f`
+and produced prepared hash
+`914bb4d6ab1f8e5ce9ab7ccf885b38d207249c08d9bce64115bb39f3b6586d56`
+from CI bundle revision `56d6b48892f15919a909c80f630d484a06ae9890`.
+The workspace was emptied afterward and the VM stopped with no host mount.
+The physical card was not accessed. This verifies full-size root preparation,
+not the handheld's boot, display or game launch.
+
 The first boot downloads a checksum-pinned 217 MiB Ubuntu 24.04 ARM minimal
 image and installs SDL runtime libraries. `curl` uses the Mac resolver because
 Lima's Go resolver timed out on this network. Apple NAT is configured because
