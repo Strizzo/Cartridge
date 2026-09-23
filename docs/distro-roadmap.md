@@ -43,7 +43,7 @@ baseline; preserve their verified versions while measuring improvements.
 | --- | --- | --- |
 | 1. Primary session | Direct boot into Cartridge; apps and games launch from home; explicit ES recovery and undo. | Implemented and tested in the native simulator and ARM VM. Replacement-card validation pending. |
 | 2. Device platform | Measured startup, display/input/audio lifecycle, brightness, volume, WiFi, power actions, bounded app work and wireless updates. | APIs and tooling exist; remaining blocking paths and physical validation are open. |
-| 3. Cartridge system image and installer | Versioned image recipe with pinned base, board files, packages, kernel/DTB checksums, emulator compatibility, recovery and a desktop writer that verifies the card. | Offline preserve converter and read-only macOS card inventory implemented. No physical-card writer, graphical installer or fresh image yet. |
+| 3. Cartridge system image and installer | Versioned image recipe with pinned base, board files, packages, kernel/DTB checksums, emulator compatibility, recovery and a desktop writer that verifies the card. | Offline preserve converter validated on a verified copy of the recovered Linux system; read-only macOS card inventory implemented. No physical-card writer, graphical installer or fresh image yet. |
 | 4. Hardware specialization | Measured service reduction, clock/power policy and justified driver/kernel changes for the exact board/panel. | Requires a recorded device baseline and benchmarks first. |
 
 The next physical milestone is stage 1 on the already working replacement card.

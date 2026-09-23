@@ -63,7 +63,9 @@ reformat it as part of launcher development.
 - [ ] Validate wireless deploy/restart/log/screenshot workflow with the device.
 - [x] Implement an offline conversion core that preserves ROMs and saves while
   making Cartridge the default service in a compatible system image. Unit and
-  disposable ext4/exFAT VM checks pass; no physical-card conversion is claimed.
+  disposable ext4/exFAT VM checks pass; a SHA-256-verified copy of the recovered
+  stock Linux partition also passed the ARM VM rehearsal with a synthetic games
+  partition. No physical-card conversion is claimed.
 - [ ] Record the exact board/kernel/DTB/library and boot-service baseline, then
   build and verify a reproducible Cartridge system image with recovery. Add a
   desktop SD installer: a blank card receives that image; a compatible populated

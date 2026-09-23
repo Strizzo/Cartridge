@@ -9,8 +9,8 @@ Both work without inserting an SD card.
 Requires Apple Silicon, macOS 13.5+, Lima 2.x, Python 3, curl and (for `--run`) the
 GitHub CLI authenticated for this repository. Lima was already installed on the
 development Mac. The VM uses [Apple Virtualization through Lima](https://lima-vm.io/docs/config/vmtype/vz/),
-2 vCPUs, 1 GiB RAM and an 8 GiB sparse disk. No host directories, raw disks,
-recovery images or real games are mounted in it. Containers are disabled.
+2 vCPUs, 1 GiB RAM and an 8 GiB sparse disk. The normal check mounts no host
+directories, raw disks, recovery images or real games. Containers are disabled.
 
 ```sh
 ./sim/vm.sh start
@@ -58,6 +58,18 @@ for commit `af32b8a` (CI merge revision
 - Real Linux systemd service installation, rendered first-frame/ES handoff,
   forced startup failure, fallback latch and undo. The stock ES service and ES
   executable are explicit test stand-ins; no emulator or ES build is included.
+
+For the offline installer gate, `sim/vm/stock-root-check.py` was also run on a
+SHA-256-verified **throwaway copy** of the recovered stock Linux partition,
+mounted through a temporary VM-only directory. It paired that root with a
+synthetic exFAT ROMS image, applied the exact CI bundle, checked the original ES
+service and fixture data, then ran no-write ext4/exFAT checks. A separate
+`chroot` check launched the CI ARM executable with `--version` under the stock
+system libraries and returned `cartridge 0.5.3`. This passed on
+2026-09-23; the temporary host mount was removed and the VM stopped afterward.
+The normal `sim/vm.sh check` workflow still uses no host mounts. Do not pass the
+original recovery image or a physical card to the stock-root script: its input
+image is modified during the rehearsal.
 
 The offline converter is a filesystem preparation component. A desktop app
 that chooses a physical card, creates and verifies partition clones, and writes

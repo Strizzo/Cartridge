@@ -84,14 +84,48 @@ def check_stock(root, app):
     if not service.is_file() or service.is_symlink():
         raise RuntimeError('Stock EmulationStation service is missing or masked')
     text = service.read_text()
-    if 'User=ark' not in text or 'ExecStart=/usr/bin/emulationstation/emulationstation.sh' not in text:
+    section = ''
+    service_entries = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith(('#', ';')):
+            continue
+        if line.startswith('[') and line.endswith(']'):
+            section = line
+        elif section == '[Service]' and '=' in line:
+            service_entries.append(line)
+    if (service_entries.count('User=ark') != 1 or
+            service_entries.count('ExecStart=/usr/bin/emulationstation/emulationstation.sh') != 1 or
+            sum(line.startswith('ExecStart=') for line in service_entries) != 1):
         raise RuntimeError('Unsupported stock service; no conversion attempted')
     if not (root/'usr/bin/emulationstation/emulationstation.sh').is_file():
         raise RuntimeError('Stock ES fallback is missing')
     wants = root/'etc/systemd/system/multi-user.target.wants'
-    if not (wants/'emulationstation.service').is_symlink() or (wants/'cartridge-boot.service').is_symlink():
+    enabled = wants/'emulationstation.service'
+    legacy = wants/'cartridge-boot.service'
+    if (not enabled.is_symlink() or os.readlink(enabled) not in
+            ('../emulationstation.service', '/etc/systemd/system/emulationstation.service') or
+            legacy.exists() or legacy.is_symlink()):
         raise RuntimeError('Stock ES must be enabled and legacy Cartridge boot disabled')
     managed = root/'etc/systemd/system/emulationstation.service.d/99-cartridge-primary.conf'
+    dropins = managed.parent
+    if dropins.is_symlink() or (dropins.exists() and not dropins.is_dir()):
+        raise RuntimeError('Unsupported service override directory')
+    if dropins.exists():
+        for override in dropins.iterdir():
+            if override == managed:
+                continue
+            if override.name != '90-cartridge-recovery.conf' or not override.is_file() or override.is_symlink():
+                raise RuntimeError('Unsupported service override: '+override.name)
+            for raw in override.read_text().splitlines():
+                line = raw.strip()
+                if not line or line.startswith(('#', ';')):
+                    continue
+                if line == '[Service]':
+                    continue
+                key, sep, _ = line.partition('=')
+                if not sep or key not in {'StandardInput', 'StandardOutput', 'StandardError', 'RestartSec'}:
+                    raise RuntimeError('Recovery override changes unsupported service settings')
     if managed.exists() and not managed.read_text().startswith('# Managed by Cartridge primary session v1\n'):
         raise RuntimeError('Unrecognized primary override; no conversion attempted')
     if not app.startswith(('/roms/Cartridge', '/roms2/Cartridge')):

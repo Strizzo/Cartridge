@@ -91,6 +91,48 @@ class OfflinePrepareTest(unittest.TestCase):
         self.assertFalse(self.backup.exists())
         self.assertEqual((self.roms/'Cartridge/cartridge').read_bytes(), b'old Cartridge executable')
 
+    def test_known_recovery_logging_override_is_allowed(self):
+        overrides = self.root/'etc/systemd/system/emulationstation.service.d'
+        overrides.mkdir()
+        (overrides/'90-cartridge-recovery.conf').write_text(
+            '# Cartridge recovery\n[Service]\nStandardInput=null\n'
+            'StandardOutput=append:/var/log/cartridge-recovery-es.log\n'
+            'StandardError=inherit\nRestartSec=3\n')
+        result = module.prepare(self.root, self.roms, self.bundle, self.backup, require_mount=False)
+        self.assertEqual(result['state'], 'prepared_and_verified')
+
+    def test_conflicting_service_override_stops_before_writes(self):
+        overrides = self.root/'etc/systemd/system/emulationstation.service.d'
+        overrides.mkdir()
+        (overrides/'95-other-boot.conf').write_text('[Service]\nExecStart=/other/launcher\n')
+        with self.assertRaisesRegex(RuntimeError, 'Unsupported service override'):
+            module.prepare(self.root, self.roms, self.bundle, self.backup, require_mount=False)
+        self.assertFalse(self.backup.exists())
+        self.assertEqual((self.roms/'Cartridge/cartridge').read_bytes(), b'old Cartridge executable')
+
+    def test_recovery_override_cannot_change_startup(self):
+        overrides = self.root/'etc/systemd/system/emulationstation.service.d'
+        overrides.mkdir()
+        (overrides/'90-cartridge-recovery.conf').write_text('[Service]\nExecStart=/other/launcher\n')
+        with self.assertRaisesRegex(RuntimeError, 'Recovery override changes unsupported'):
+            module.prepare(self.root, self.roms, self.bundle, self.backup, require_mount=False)
+        self.assertFalse(self.backup.exists())
+
+    def test_commented_stock_service_claims_are_rejected(self):
+        (self.root/'etc/systemd/system/emulationstation.service').write_text(
+            '[Service]\n# User=ark\n# ExecStart=/usr/bin/emulationstation/emulationstation.sh\n')
+        with self.assertRaisesRegex(RuntimeError, 'Unsupported stock service'):
+            module.prepare(self.root, self.roms, self.bundle, self.backup, require_mount=False)
+        self.assertFalse(self.backup.exists())
+
+    def test_wrong_es_enable_link_stops_before_writes(self):
+        enabled = self.root/'etc/systemd/system/multi-user.target.wants/emulationstation.service'
+        enabled.unlink()
+        enabled.symlink_to('/dev/null')
+        with self.assertRaisesRegex(RuntimeError, 'Stock ES must be enabled'):
+            module.prepare(self.root, self.roms, self.bundle, self.backup, require_mount=False)
+        self.assertFalse(self.backup.exists())
+
     def test_failure_after_copy_restores_original_payload(self):
         (self.bundle/'setup-primary.py').write_text('raise RuntimeError("simulated setup failure")\n')
         with self.assertRaisesRegex(RuntimeError, 'simulated setup failure'):

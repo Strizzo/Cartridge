@@ -81,9 +81,19 @@ write back only the intended partition data and verify the physical card before
 ejecting it.
 
 The converter has passed unit checks and an ARM VM check on separate mounted
-ext4 and exFAT images using the actual CI bundle. That exercise preserved a
-sample ROM, save, gamelist and user key byte-for-byte and left both filesystems
-clean. It did not write to the user's card or boot a physical handheld.
+ext4 and exFAT images using the actual CI bundle. A second VM rehearsal used a
+SHA-256-verified **copy** of the recovered stock Linux partition
+(`58a57477031efeb3fdc8803882fefc1534bcf71a66d3af57e47faadfaa501c3f`
+before conversion) and a small synthetic exFAT games partition. It confirmed
+that the real stock service and its recovery logging override accept the offline
+Cartridge setup, ES remains available, fixture ROM/save/gamelist/key bytes stay
+unchanged, and both filesystems check clean. The CI ARM executable also returns
+`cartridge 0.5.3` when launched with `--version` inside the cloned stock
+userspace, confirming that this binary starts with its dynamic loader and
+libraries. This does not test its display/audio startup. The rehearsal script is
+[`sim/vm/stock-root-check.py`](../sim/vm/stock-root-check.py); it changes its
+input root image, so only a disposable copy may be supplied. These checks did
+not write to the user's card or boot a physical handheld.
 
 ## Release gates
 
