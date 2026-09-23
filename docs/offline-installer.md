@@ -57,6 +57,18 @@ and restore; it clearly identifies partitions and data that will be replaced.
 A spare card is the preferred first migration target because the original can
 be booted until game launch and saves are checked.
 
+The read-only macOS inventory is [`installer/card_inventory.py`](../installer/card_inventory.py).
+It lists external whole disks, blocks internal, virtual and non-removable media,
+and identifies a three-partition BOOT/Linux/EASYROMS layout as a *preserve
+candidate*. It does not select a target automatically, unmount a disk, or write
+anything. For example, `python3 installer/card_inventory.py --disk disk6` reports
+the chosen disk and an inventory fingerprint. Disk identifiers can change when
+media is reinserted, so the eventual writer must recheck the whole-disk identity
+and layout immediately before any write. A matching partition layout alone does
+not prove that the Linux system can boot Cartridge; the cloned-root inspection
+remains mandatory. An unpartitioned removable disk is only a fresh-image
+candidate, not proof that it contains no recoverable data.
+
 The card-writing Mac application still needs to be built. Its Linux helper can
 mount a cloned ext4 system partition and the corresponding exFAT ROMS partition,
 then use [`installer/offline_prepare.py`](../installer/offline_prepare.py) to

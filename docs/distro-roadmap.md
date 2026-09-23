@@ -43,7 +43,7 @@ baseline; preserve their verified versions while measuring improvements.
 | --- | --- | --- |
 | 1. Primary session | Direct boot into Cartridge; apps and games launch from home; explicit ES recovery and undo. | Implemented and tested in the native simulator and ARM VM. Replacement-card validation pending. |
 | 2. Device platform | Measured startup, display/input/audio lifecycle, brightness, volume, WiFi, power actions, bounded app work and wireless updates. | APIs and tooling exist; remaining blocking paths and physical validation are open. |
-| 3. Cartridge system image and installer | Versioned image recipe with pinned base, board files, packages, kernel/DTB checksums, emulator compatibility, recovery and a desktop writer that verifies the card. | Planned. No fresh image, new partition layout or desktop installer has been produced. |
+| 3. Cartridge system image and installer | Versioned image recipe with pinned base, board files, packages, kernel/DTB checksums, emulator compatibility, recovery and a desktop writer that verifies the card. | Offline preserve converter and read-only macOS card inventory implemented. No physical-card writer, graphical installer or fresh image yet. |
 | 4. Hardware specialization | Measured service reduction, clock/power policy and justified driver/kernel changes for the exact board/panel. | Requires a recorded device baseline and benchmarks first. |
 
 The next physical milestone is stage 1 on the already working replacement card.
@@ -90,7 +90,8 @@ and partition map by default while Cartridge files and the Linux startup service
 are prepared offline. A full reformat is available only for a blank card or an
 explicit erase choice, with backup and verified restoration for populated cards.
 The offline conversion core is implemented and tested on mounted image files;
-Mac physical-card selection and writing remain to build. An image builder must
+macOS now has a read-only whole-disk/layout inventory, while physical-card
+writing remains to build. An image builder must
 produce an artifact file, with explicit target-media selection for any later
 flashing step. Test installation on a disposable image or spare card before
 considering the user's working card. Never distribute personal ROMs, saves, SSH
