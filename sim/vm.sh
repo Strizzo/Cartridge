@@ -58,7 +58,7 @@ import sys,tarfile
 root,bundle,out=map(Path,sys.argv[1:])
 with tarfile.open(out,'w:gz') as t:
     t.add(bundle/'Cartridge',arcname='bundle/Cartridge')
-    for name in ['deploy','tests','sim']:
+    for name in ['deploy','tests','sim','installer']:
         t.add(root/name,arcname=name,filter=lambda info: None if '__pycache__' in info.name else info)
 PY
         limactl copy "$STATE/payload.tar.gz" "$VM:/tmp/cartridge-vm-payload.tar.gz"

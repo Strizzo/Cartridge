@@ -83,10 +83,14 @@ and license notices. The current Docker build pins a distribution release but
 still resolves package updates and a moving Rust toolchain; it is not a fully
 reproducible image build.
 
-Keep system installation separate from ROM/save migration. The public installer
-must support a fresh blank card without requiring any EmulationStation menu step;
-a populated card needs inventory, backup and verified restoration of games and
-saves before any image write. An image builder must
+Keep system installation separate from ROM/save migration. Both installer modes
+must boot directly into Cartridge without an EmulationStation menu step. A blank
+card receives a fresh image. A compatible populated card keeps its ROMS, saves
+and partition map by default while Cartridge files and the Linux startup service
+are prepared offline. A full reformat is available only for a blank card or an
+explicit erase choice, with backup and verified restoration for populated cards.
+The offline conversion core is implemented and tested on mounted image files;
+Mac physical-card selection and writing remain to build. An image builder must
 produce an artifact file, with explicit target-media selection for any later
 flashing step. Test installation on a disposable image or spare card before
 considering the user's working card. Never distribute personal ROMs, saves, SSH

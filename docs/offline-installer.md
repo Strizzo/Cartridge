@@ -1,10 +1,11 @@
 # One-step SD installer for CartridgeOS
 
 The product installation flow is: insert an SD card into a computer, select the
-correct handheld and card in a graphical installer, write and verify the image,
-eject, then power on the handheld directly into Cartridge. EmulationStation's
-Options/Tools menu is a development and migration path, not the shipping first
-boot experience.
+correct handheld and card in a graphical installer, preserve an existing game
+card by default or explicitly choose a full image for a blank/erased card, verify
+the result, eject, then power on directly into Cartridge. Both paths configure
+the next boot offline. EmulationStation's Options/Tools menu is a development
+path, not the shipping first-boot experience.
 
 This is a **planned deliverable**. The primary-session branch and CI ARM bundle
 are not a bootable card image. Copying the current app bundle to the visible ROMS
@@ -40,27 +41,46 @@ verification stage and make the selected physical disk unmistakable.
 
 ## Existing card with games and saves
 
-An image write replaces the card's partition map. The installer must detect an
-existing game library before offering that operation. For migration, inventory
-ROMs, BIOS, saves, gamelists and emulator configuration; back them up to another
-volume; verify the backup; write the new image; restore the data; then verify it
-again. Present the destination capacity and any unsupported file/path mappings
-before the write. A spare card is the recommended first migration target so the
-original remains bootable until game launch and saves are checked.
+**Keep everything is the default.** If the card has a compatible working Linux
+system, the installer updates Cartridge-owned files in ROMS and configures that
+system's startup service offline. It does not reformat ROMS, replace the
+partition table or require a Tools-menu step. ROMs, BIOS, saves, gamelists,
+emulator configuration and user keys stay at their current paths. The installer
+backs up every file it will replace and verifies the result before presenting
+success. If the stock boot layout is unrecognized, it stops before changing the
+card and offers a clear explanation.
 
-An in-place conversion is a separate installer mode with different recovery
-requirements. It cannot be implemented by copying into the exFAT ROMS partition
-alone because normal startup is configured on Linux. The current on-device
-`setup-primary.py` is the reversible conversion mechanism for the development
-build. The public desktop installer should not write ext4 through macOS
-`debugfs`, patch a live partition table ad hoc, or depend on an unverified
-first-boot hook. Design and validate an offline conversion mechanism on
-throwaway images before exposing it to users.
+If the card is blank, the installer offers a fresh image. A populated card may
+also be fully erased **only when the user selects an explicit erase/reformat
+option**. That path first inventories personal data and offers a verified backup
+and restore; it clearly identifies partitions and data that will be replaced.
+A spare card is the preferred first migration target because the original can
+be booted until game launch and saves are checked.
+
+The card-writing Mac application still needs to be built. Its Linux helper can
+mount a cloned ext4 system partition and the corresponding exFAT ROMS partition,
+then use [`installer/offline_prepare.py`](../installer/offline_prepare.py) to
+copy the CI app bundle, install the first-boot service override, preserve ES as
+recovery and verify games/saves. The helper refuses a live `/` root, unmounted
+folders, unsupported stock services and backups placed inside either card
+partition. On failure it restores the previous Cartridge-owned files. The Mac
+application must retain a durable backup, check the modified filesystems,
+write back only the intended partition data and verify the physical card before
+ejecting it.
+
+The converter has passed unit checks and an ARM VM check on separate mounted
+ext4 and exFAT images using the actual CI bundle. That exercise preserved a
+sample ROM, save, gamelist and user key byte-for-byte and left both filesystems
+clean. It did not write to the user's card or boot a physical handheld.
 
 ## Release gates
 
 - A clean, redistributable image builds from documented inputs and carries no
   ROMs, saves, account data, Wi-Fi credentials, keys or recovery captures.
+- The installer identifies blank versus populated cards. A compatible
+  populated card defaults to preservation and becomes Cartridge-first without
+  an on-device setup step. Formatting requires an empty card or an explicit
+  user-selected erase option.
 - The installer refuses ambiguous/internal targets, records the selected disk
   identity, shows the data-loss scope and verifies all written data. Interrupted
   writes report an incomplete card rather than claiming success.

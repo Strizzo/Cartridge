@@ -51,11 +51,18 @@ for commit `af32b8a` (CI merge revision
 - Twenty-two Lua app scenarios covering loading, offline and populated data,
   including Weather current/forecast/city, news detail and stock period changes.
   Each scenario uses isolated temporary storage and synthetic HTTP fixtures.
+- Offline conversion of separate mounted ext4 system and exFAT ROMS images
+  using the exact CI app bundle: Cartridge becomes the configured next boot,
+  the original ES unit stays intact, game/save/gamelist/key hashes remain
+  unchanged, and both filesystems check clean after unmounting.
 - Real Linux systemd service installation, rendered first-frame/ES handoff,
   forced startup failure, fallback latch and undo. The stock ES service and ES
   executable are explicit test stand-ins; no emulator or ES build is included.
 
-The guest verifier requires `/etc/cartridge-compat-vm`, created only by VM
+The offline converter is a filesystem preparation component. A desktop app
+that chooses a physical card, creates and verifies partition clones, and writes
+the result back does not exist yet. The guest verifier requires
+`/etc/cartridge-compat-vm`, created only by VM
 provisioning. Do not run it on the handheld: it creates a disposable fake stock
 service and `ark` user for integration checks. The fake service is disabled after
 the check, and the Cartridge override is removed.

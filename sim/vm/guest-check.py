@@ -43,6 +43,7 @@ def main():
                CARTRIDGE_ES_HOME=str(home/'device'),CARTRIDGE_ROMS=str(home/'device/roms'))
     shutil.copytree(root/'sim/fixtures',app/'sim/fixtures',dirs_exist_ok=True)
     run(str(app/'dev/sim-check'),env=env,cwd=app)
+    run('python3',str(root/'sim/vm/offline-image-check.py'))
     # Install an explicitly fake stock service in this disposable VM, then run
     # the real setup/undo against Linux systemd rather than an offline fixture.
     if subprocess.run(['id','ark'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:

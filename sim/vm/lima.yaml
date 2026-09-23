@@ -23,5 +23,5 @@ provision:
     set -eu
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get install -y --no-install-recommends python3 libsdl2-2.0-0 libsdl2-ttf-2.0-0 libsdl2-image-2.0-0 libsdl2-gfx-1.0-0 libasound2t64
+    apt-get install -y --no-install-recommends python3 libsdl2-2.0-0 libsdl2-ttf-2.0-0 libsdl2-image-2.0-0 libsdl2-gfx-1.0-0 libasound2t64 exfatprogs exfat-fuse
     touch /etc/cartridge-compat-vm

@@ -61,12 +61,16 @@ reformat it as part of launcher development.
   scenarios and systemd setup/fallback/undo pass in Lima/VZ. See `arm-vm.md`;
   no RK3326 GPU, thermal, battery or exact device-library emulation is claimed.
 - [ ] Validate wireless deploy/restart/log/screenshot workflow with the device.
+- [x] Implement an offline conversion core that preserves ROMs and saves while
+  making Cartridge the default service in a compatible system image. Unit and
+  disposable ext4/exFAT VM checks pass; no physical-card conversion is claimed.
 - [ ] Record the exact board/kernel/DTB/library and boot-service baseline, then
-  build and verify a reproducible Cartridge system image with recovery and
-  ROM/save separation. Add a desktop SD installer that writes and verifies the
-  image so a fresh card boots directly into Cartridge without ES menu setup.
-  This is a later distribution milestone, not delivered by the current
-  primary-session override.
+  build and verify a reproducible Cartridge system image with recovery. Add a
+  desktop SD installer: a blank card receives that image; a compatible populated
+  card preserves games, saves and partitions by default; full reformat is
+  opt-in. Both modes must boot Cartridge directly on first insertion, without
+  any on-device ES menu setup. Mac card selection, backup, writeback and
+  physical first-boot checks remain open.
 - [ ] Document app-development budgets and platform APIs using measured hardware
   behavior and a practical simulator-first release workflow.
 
