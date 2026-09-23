@@ -32,6 +32,7 @@ def select_root(records, disk_id, fingerprint):
     parts = record['partitions']
     if (len(parts) != 3 or parts[1]['identifier'] != disk_id+'s2' or
             parts[1]['content'] != 'Linux' or parts[1]['mounted'] or
+            parts[1]['device_size_bytes'] != parts[1]['size_bytes'] or
             not isinstance(parts[1]['size_bytes'], int) or parts[1]['size_bytes'] <= 0):
         raise CloneError('The Linux partition is absent, mounted, or changed')
     return record, parts[1]

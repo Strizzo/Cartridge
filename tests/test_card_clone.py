@@ -27,11 +27,12 @@ class CardCloneTest(unittest.TestCase):
             'identifier': 'disk6', 'inventory_fingerprint': self.fingerprint,
             'status': 'preserve_candidate',
             'partitions': [
-                {'identifier': 'disk6s1', 'content': 'DOS_FAT_32', 'size_bytes': 100,
+                {'identifier': 'disk6s1', 'content': 'DOS_FAT_32', 'size_bytes': 100, 'device_size_bytes': 100,
                  'mounted': True, 'mount_point': str(self.base/'card-boot')},
                 {'identifier': 'disk6s2', 'content': 'Linux', 'size_bytes': self.source.stat().st_size,
+                 'device_size_bytes': self.source.stat().st_size,
                  'mounted': False, 'mount_point': ''},
-                {'identifier': 'disk6s3', 'content': 'Windows_NTFS', 'size_bytes': 100,
+                {'identifier': 'disk6s3', 'content': 'Windows_NTFS', 'size_bytes': 100, 'device_size_bytes': 100,
                  'mounted': True, 'mount_point': str(self.card_mount)},
             ],
         }

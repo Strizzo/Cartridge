@@ -46,6 +46,7 @@ def fixture():
             info[part["DeviceIdentifier"]] = {
                 "DeviceIdentifier": part["DeviceIdentifier"],
                 "ParentWholeDisk": disk["DeviceIdentifier"], "WholeDisk": False,
+                "TotalSize": part["Size"],
                 "VolumeName": name, "FilesystemType": filesystem,
                 "VolumeUUID": "test-" + part["DeviceIdentifier"],
                 "MountPoint": "/Volumes/" + name if name else "",
@@ -89,6 +90,14 @@ class CardInventoryTest(unittest.TestCase):
         disks, info = fixture()
         disks[0]["Partitions"] = []
         self.assertEqual(module.inspect_disk(disks[0], info["disk6"], {})["status"], "fresh_image_candidate")
+
+    def test_linux_partition_size_disagreement_is_unsupported(self):
+        disks, info = fixture()
+        info["disk6s2"]["TotalSize"] -= 4096
+        row = module.inspect_disk(disks[0], info["disk6"], {
+            p["DeviceIdentifier"]: info[p["DeviceIdentifier"]] for p in disks[0]["Partitions"]
+        })
+        self.assertEqual(row["status"], "unsupported_layout")
 
     def test_mount_state_does_not_change_inventory_fingerprint(self):
         disks, info = fixture()

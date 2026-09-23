@@ -50,6 +50,7 @@ def partition_record(partition, whole, info):
         "identifier": identifier,
         "content": partition.get("Content"),
         "size_bytes": partition.get("Size"),
+        "device_size_bytes": info.get("TotalSize"),
         "volume_name": info.get("VolumeName") or partition.get("VolumeName") or "",
         "filesystem": info.get("FilesystemType") or "",
         "volume_uuid": info.get("VolumeUUID") or partition.get("VolumeUUID") or "",
@@ -69,6 +70,7 @@ def layout_verdict(disk, partitions):
         [disk["DeviceIdentifier"] + suffix for suffix in ("s1", "s2", "s3")]
         or any(not isinstance(part["size_bytes"], int) or part["size_bytes"] <= 0
                for part in partitions)
+        or system["device_size_bytes"] != system["size_bytes"]
         or boot["content"] != "DOS_FAT_32"
         or boot["filesystem"] != "msdos"
         or boot["volume_name"] != "BOOT"
@@ -126,7 +128,7 @@ def inspect_disk(disk, info, partition_info):
         "read_only_inventory": True,
     }
     identity = {key: record[key] for key in ("identifier", "media_name", "bus", "size_bytes", "partition_map")}
-    identity["partitions"] = [{key: part[key] for key in ("identifier", "content", "size_bytes", "volume_name", "filesystem", "volume_uuid")}
+    identity["partitions"] = [{key: part[key] for key in ("identifier", "content", "size_bytes", "device_size_bytes", "volume_name", "filesystem", "volume_uuid")}
                               for part in partitions]
     record["inventory_fingerprint"] = hashlib.sha256(
         json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
