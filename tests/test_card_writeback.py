@@ -155,17 +155,17 @@ class CardWritebackTest(unittest.TestCase):
         self.assertEqual(self.target.read_bytes(), self.original)
 
     def test_real_ext4_image_write_and_readback(self):
-        tools = [Path('/opt/homebrew/opt/e2fsprogs/sbin')/name
+        tools = [shutil.which(name) or str(Path('/opt/homebrew/opt/e2fsprogs/sbin')/name)
                  for name in ('mkfs.ext4', 'e2label', 'e2fsck')]
-        if not all(path.is_file() for path in tools):
+        if not all(Path(path).is_file() for path in tools):
             self.skipTest('e2fsprogs tools not installed')
         with self.target.open('wb') as stream:
             stream.truncate(16 * 1024 * 1024)
-        subprocess.run([str(tools[0]), '-F', '-q', str(self.target)], check=True)
+        subprocess.run([tools[0], '-F', '-q', str(self.target)], check=True)
         original_hash = sha(self.target.read_bytes())
         shutil.copyfile(self.target, self.backup/'root.ext4')
         shutil.copyfile(self.target, self.prepared)
-        subprocess.run([str(tools[1]), str(self.prepared), 'CARTRIDGE'], check=True)
+        subprocess.run([tools[1], str(self.prepared), 'CARTRIDGE'], check=True)
         prepared_hash = sha(self.prepared.read_bytes())
         manifest = json.loads((self.backup/'manifest.json').read_text())
         manifest.update(source_bytes=self.target.stat().st_size, sha256=original_hash)
