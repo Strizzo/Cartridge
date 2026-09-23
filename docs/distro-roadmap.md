@@ -2,8 +2,10 @@
 
 Cartridge is intended to be the R36S Plus's primary operating environment: the
 first interactive screen after power-on, with applications, games, device settings
-and power controls. A reproducible bootable image is the distribution milestone.
-The current branch supplies a primary session; it does not yet build that image.
+and power controls. A reproducible bootable image and a desktop SD installer are the distribution
+milestone. The current branch supplies a primary session; it does not yet build
+that image or provide the installer. The intended user flow is described in
+[one-step SD installation](offline-installer.md).
 
 ## Boot and hardware architecture
 
@@ -41,11 +43,11 @@ baseline; preserve their verified versions while measuring improvements.
 | --- | --- | --- |
 | 1. Primary session | Direct boot into Cartridge; apps and games launch from home; explicit ES recovery and undo. | Implemented and tested in the native simulator and ARM VM. Replacement-card validation pending. |
 | 2. Device platform | Measured startup, display/input/audio lifecycle, brightness, volume, WiFi, power actions, bounded app work and wireless updates. | APIs and tooling exist; remaining blocking paths and physical validation are open. |
-| 3. Cartridge system image | Versioned image recipe with pinned base, board files, packages, kernel/DTB checksums, emulator compatibility and repeatable recovery. | Planned. No fresh image or new partition layout has been produced. |
+| 3. Cartridge system image and installer | Versioned image recipe with pinned base, board files, packages, kernel/DTB checksums, emulator compatibility, recovery and a desktop writer that verifies the card. | Planned. No fresh image, new partition layout or desktop installer has been produced. |
 | 4. Hardware specialization | Measured service reduction, clock/power policy and justified driver/kernel changes for the exact board/panel. | Requires a recorded device baseline and benchmarks first. |
 
 The next physical milestone is stage 1 on the already working replacement card.
-Do this over SSH after testing the same build from Tools. Enabling the session
+Do this from Tools or over SSH after testing the same build manually. Enabling the session
 changes the next boot only; no partition rewrite is needed. Routine UI/app
 iterations stay in the simulator, followed by wireless deployment for device-only
 checks. Keep ROMs, saves and emulator configuration at their existing paths.
@@ -81,7 +83,10 @@ and license notices. The current Docker build pins a distribution release but
 still resolves package updates and a moving Rust toolchain; it is not a fully
 reproducible image build.
 
-Keep system installation separate from ROM/save migration. An image builder must
+Keep system installation separate from ROM/save migration. The public installer
+must support a fresh blank card without requiring any EmulationStation menu step;
+a populated card needs inventory, backup and verified restoration of games and
+saves before any image write. An image builder must
 produce an artifact file, with explicit target-media selection for any later
 flashing step. Test installation on a disposable image or spare card before
 considering the user's working card. Never distribute personal ROMs, saves, SSH

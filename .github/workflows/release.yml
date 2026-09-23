@@ -88,8 +88,10 @@ jobs:
             2. Extract the zip to your SD card's `roms/` folder (creates `roms/Cartridge/`)
             3. Copy the 3 `.sh` files from `roms/Cartridge/tools/` into `roms/tools/`
             4. Boot your device into EmulationStation
-            5. Go to **Tools > Cartridge** to launch (auto-sets up boot selector on first run)
-            6. On next reboot, you'll see the CartridgeOS/EmulationStation boot chooser
+            5. Go to **Tools > Cartridge** and confirm it runs on your handheld
+            6. Run **Tools > Setup Cartridge Boot** once, then reboot to start directly in Cartridge
+
+            This archive is an application bundle for existing systems. The planned one-step SD image installer is not included.
 
             ## Custom Boot Logo (optional)
 

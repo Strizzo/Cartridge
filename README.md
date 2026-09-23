@@ -19,7 +19,7 @@ Launching from Tools leaves your existing boot setup unchanged. Startup errors a
 
 On the primary-session branch, first verify the tested build from Tools, then run **Tools > Setup Cartridge Boot** once. Cartridge starts directly on the next normal boot; EmulationStation remains available from its menu and as recovery fallback. Setup does not reboot automatically. Older release archives can still contain the legacy boot selector.
 
-The intended system is **power-on → Cartridge → apps and games**. The [device distribution roadmap](docs/distro-roadmap.md) separates the implemented primary session from the future reproducible system image. See [primary startup and recovery](docs/primary-session.md) for the tested integration and pending handheld checks.
+The intended system is **power-on → Cartridge → apps and games**. A future [desktop SD installer](docs/offline-installer.md) will write a complete verified system image so new users need no EmulationStation setup. The [device distribution roadmap](docs/distro-roadmap.md) separates that goal from the implemented primary session. See [primary startup and recovery](docs/primary-session.md) for the tested integration and pending handheld checks.
 
 See [INSTALL.md](INSTALL.md) for troubleshooting and build-from-source instructions.
 

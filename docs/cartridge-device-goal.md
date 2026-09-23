@@ -5,7 +5,9 @@ experience, with apps and the existing game library, consistent bold visual
 styling, responsive input, efficient idle rendering, Mac development and a
 verified/reversible device boot. The intended destination is a dedicated device
 distribution with Cartridge as the first interactive screen and a reproducible
-system-image recipe; see [distribution roadmap](distro-roadmap.md). Keep the
+system-image recipe and desktop SD installer; see the
+[distribution roadmap](distro-roadmap.md) and
+[installer design](offline-installer.md). Keep the
 original interface isolated in git.
 
 The working replacement card now boots EmulationStation and runs games (confirmed
@@ -34,8 +36,11 @@ reformat it as part of launcher development.
   review remains open. Weather now has custom condition icons and larger current/forecast
   readings; input-aware pacing wakes on SDL events while preserving low idle update
   rates. App scenarios use separate temporary storage. Development/porting guidance is in `app-development.md`.
-- Root-system verification uses a known-good image on the backup SSD. No changes
-  in this branch have been installed on the physical card.
+- Root-system verification uses a known-good image on the backup SSD. The exact
+  VM-tested ARM app bundle was staged on the replacement card ROMS partition on
+  2026-09-23, with the previous Cartridge files backed up. BOOT, Linux root,
+  games and saves were not written. Direct boot is not enabled or physically
+  validated yet.
 
 ## Remaining acceptance gates
 
@@ -58,8 +63,10 @@ reformat it as part of launcher development.
 - [ ] Validate wireless deploy/restart/log/screenshot workflow with the device.
 - [ ] Record the exact board/kernel/DTB/library and boot-service baseline, then
   build and verify a reproducible Cartridge system image with recovery and
-  ROM/save separation. This is a later distribution milestone, not delivered by
-  the current primary-session override.
+  ROM/save separation. Add a desktop SD installer that writes and verifies the
+  image so a fresh card boots directly into Cartridge without ES menu setup.
+  This is a later distribution milestone, not delivered by the current
+  primary-session override.
 - [ ] Document app-development budgets and platform APIs using measured hardware
   behavior and a practical simulator-first release workflow.
 
