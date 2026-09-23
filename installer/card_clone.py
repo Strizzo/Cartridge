@@ -14,7 +14,7 @@ import shutil
 import stat
 import subprocess
 
-from card_inventory import DISK_ID, inventory
+from card_inventory import DISK_ID, InventoryError, inventory
 from offline_prepare import write_manifest
 
 
@@ -139,7 +139,7 @@ def main():
     args = parser.parse_args()
     try:
         result = clone_root(args.disk, args.fingerprint, args.destination)
-    except (CloneError, OSError, subprocess.CalledProcessError) as exc:
+    except (CloneError, InventoryError, OSError, subprocess.CalledProcessError) as exc:
         parser.exit(2, f'Card clone stopped: {exc}\n')
     print(json.dumps(result, indent=2))
 
