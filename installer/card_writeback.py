@@ -224,6 +224,11 @@ def writeback(disk_id, fingerprint, backup_dir, prepared, prepared_sha256, journ
             journal.update(state='rollback_started', error=str(exc))
             try:
                 save_journal(journal_dir/'manifest.json', journal)
+            except OSError as journal_exc:
+                # The durable write_started record already exists. Restore
+                # the original even when updating the journal is impossible.
+                journal['journal_error'] = str(journal_exc)
+            try:
                 check_identity(inventory_fn, disk_id, fingerprint)
                 checked_file(original, size, original_hash, 'Original image')
                 if copy_to_target(original, descriptor, size) != original_hash:
@@ -233,7 +238,10 @@ def writeback(disk_id, fingerprint, backup_dir, prepared, prepared_sha256, journ
                 journal['state'] = 'rolled_back_and_verified'
             except BaseException as rollback_exc:
                 journal.update(state='rollback_incomplete', rollback_error=str(rollback_exc))
-            save_journal(journal_dir/'manifest.json', journal)
+            try:
+                save_journal(journal_dir/'manifest.json', journal)
+            except OSError as journal_exc:
+                journal['journal_error'] = str(journal_exc)
             raise WritebackError(f'Writeback failed; recovery state: {journal["state"]}; journal: {journal_dir}') from exc
         return journal
     finally:

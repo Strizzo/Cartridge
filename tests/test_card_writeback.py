@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -81,6 +82,21 @@ class CardWritebackTest(unittest.TestCase):
             raise RuntimeError(f'injected failure after {written} bytes')
         with self.assertRaisesRegex(card_writeback.WritebackError, 'rolled_back_and_verified'):
             self.apply(chunk_hook=fail_after_first_chunk)
+        self.assertEqual(self.target.read_bytes(), self.original)
+        self.assertEqual(json.loads((self.journal/'manifest.json').read_text())['state'],
+                         'rolled_back_and_verified')
+
+    def test_journal_update_failure_still_attempts_rollback(self):
+        real_save = card_writeback.save_journal
+        def fail_rollback_update(path, value):
+            if value['state'] == 'rollback_started':
+                raise OSError('injected journal update failure')
+            return real_save(path, value)
+        def fail_after_first_chunk(written):
+            raise RuntimeError('injected write failure')
+        with mock.patch.object(card_writeback, 'save_journal', side_effect=fail_rollback_update):
+            with self.assertRaisesRegex(card_writeback.WritebackError, 'rolled_back_and_verified'):
+                self.apply(chunk_hook=fail_after_first_chunk)
         self.assertEqual(self.target.read_bytes(), self.original)
         self.assertEqual(json.loads((self.journal/'manifest.json').read_text())['state'],
                          'rolled_back_and_verified')
