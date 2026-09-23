@@ -53,6 +53,7 @@ def partition_record(partition, whole, info):
         "volume_name": info.get("VolumeName") or partition.get("VolumeName") or "",
         "filesystem": info.get("FilesystemType") or "",
         "volume_uuid": info.get("VolumeUUID") or partition.get("VolumeUUID") or "",
+        "mount_point": info.get("MountPoint") or "",
         "mounted": bool(info.get("MountPoint")),
     }
 

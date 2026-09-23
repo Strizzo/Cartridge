@@ -69,6 +69,19 @@ not prove that the Linux system can boot Cartridge; the cloned-root inspection
 remains mandatory. An unpartitioned removable disk is only a fresh-image
 candidate, not proof that it contains no recoverable data.
 
+[`installer/card_clone.py`](../installer/card_clone.py) is the next read-only
+backend piece. It requires the selected whole-disk ID and the fingerprint from
+inventory, rejects a backup destination on that card, and copies only the
+unmounted Linux partition into a new backup directory. It reads the source
+twice, verifies the saved bytes, runs a no-write ext4 check, and records an
+incomplete manifest if a pass fails. This passed on a disposable 64 MiB ext4
+image with a real `e2fsck`; it has **not** read or written the user's physical
+card. A later transaction must still apply conversion to a clone, update the
+Cartridge-owned ROMS files, write back the prepared Linux partition, verify the
+physical readback, and eject. A disk identifier or partition layout alone is
+not a unique hardware identity, so that transaction must recheck the selected
+media immediately before each write.
+
 The card-writing Mac application still needs to be built. Its Linux helper can
 mount a cloned ext4 system partition and the corresponding exFAT ROMS partition,
 then use [`installer/offline_prepare.py`](../installer/offline_prepare.py) to
