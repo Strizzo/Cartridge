@@ -5,6 +5,7 @@ use cartridge_core::ui::text_input::{TextInput, TextInputResult};
 use cartridge_net::wifi::{WifiNetwork, WifiStatus};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 use super::{LauncherScreen, ScreenAction, ScreenContext};
 use crate::neo::{self, Chip, Hint};
@@ -19,6 +20,7 @@ pub struct WifiScreen {
     selected_row: usize,
     networks: Vec<WifiNetwork>,
     scan_error: Option<String>,
+    scan_result: Option<Receiver<Result<Vec<WifiNetwork>, String>>>,
     status: WifiStatus,
     status_message: Option<String>,
     message_time: Option<std::time::Instant>,
@@ -39,6 +41,7 @@ impl WifiScreen {
             selected_row: 0,
             networks: Vec::new(),
             scan_error: None,
+            scan_result: None,
             status: WifiStatus::Unknown,
             status_message: None,
             message_time: None,
@@ -51,15 +54,43 @@ impl WifiScreen {
 
     fn refresh(&mut self, ctx: &ScreenContext) {
         self.status = ctx.wifi_manager.status();
-        match ctx.wifi_manager.scan_networks() {
-            Ok(networks) => {
+        if self.scan_result.is_some() {
+            return;
+        }
+        self.scan_error = None;
+        let (sender, receiver) = mpsc::channel();
+        self.scan_result = Some(receiver);
+        std::thread::spawn(move || {
+            let result = cartridge_net::wifi::WifiManager::new().scan_networks();
+            let _ = sender.send(result);
+        });
+    }
+
+    fn poll_scan(&mut self, ctx: &ScreenContext) {
+        let completed = self.scan_result.as_ref().map(Receiver::try_recv);
+        match completed {
+            Some(Ok(Ok(networks))) => {
                 self.networks = networks;
                 self.scan_error = None;
+                self.scan_result = None;
+                self.status_message = None;
+                self.message_time = None;
+                self.selected_row = self.selected_row.min(self.total_rows() - 1);
+                self.status = ctx.wifi_manager.status();
             }
-            Err(error) => {
+            Some(Ok(Err(error))) => {
                 self.networks.clear();
                 self.scan_error = Some(error);
+                self.scan_result = None;
+                self.status_message = None;
+                self.message_time = None;
+                self.selected_row = 0;
             }
+            Some(Err(TryRecvError::Disconnected)) => {
+                self.scan_result = None;
+                self.scan_error = Some("Wi-Fi scanner stopped unexpectedly".to_string());
+            }
+            Some(Err(TryRecvError::Empty)) | None => {}
         }
     }
 
@@ -74,11 +105,16 @@ impl WifiScreen {
 }
 
 impl LauncherScreen for WifiScreen {
+    fn is_loading(&self) -> bool {
+        self.scan_result.is_some()
+    }
+
     fn handle_input(&mut self, events: &[InputEvent], ctx: &mut ScreenContext) -> ScreenAction {
         if !self.scanned {
             self.scanned = true;
             self.refresh(ctx);
         }
+        self.poll_scan(ctx);
 
         // If password keyboard is active, route all input there
         if self.password_input.visible {
@@ -177,9 +213,7 @@ impl LauncherScreen for WifiScreen {
                 }
                 Button::Y => {
                     self.refresh(ctx);
-                    if self.scan_error.is_none() {
-                        self.set_message("Rescanned".to_string());
-                    }
+                    self.set_message("Scanning...".to_string());
                 }
                 Button::Select => return ScreenAction::ShowOverlay,
                 _ => {}
@@ -355,12 +389,15 @@ impl LauncherScreen for WifiScreen {
         let visible_count = (available_h / (NET_ROW_H + MARGIN)).max(1) as usize;
 
         if self.networks.is_empty() {
-            let message = self
-                .scan_error
-                .as_deref()
-                .unwrap_or("No networks found. Check the adapter and rescan.");
+            let message = if self.scan_result.is_some() {
+                "Waiting for nearby networks..."
+            } else {
+                self.scan_error
+                    .as_deref()
+                    .unwrap_or("No networks found. Check the adapter and rescan.")
+            };
             screen.draw_text(
-                "NO NETWORKS",
+                if self.scan_result.is_some() { "SCANNING" } else { "NO NETWORKS" },
                 24,
                 list_start_y + 14,
                 Some(theme.text),
@@ -602,11 +639,15 @@ impl WifiScreen {
         );
 
         if self.networks.is_empty() {
-            let message = self
-                .scan_error
-                .as_deref()
-                .unwrap_or("No networks found. Check the adapter and rescan.");
-            neo::display_at_baseline(screen, "NO NETWORKS", tx, NEO_LIST_Y + 32, theme.text, 24);
+            let message = if self.scan_result.is_some() {
+                "Waiting for nearby networks..."
+            } else {
+                self.scan_error
+                    .as_deref()
+                    .unwrap_or("No networks found. Check the adapter and rescan.")
+            };
+            let title = if self.scan_result.is_some() { "SCANNING" } else { "NO NETWORKS" };
+            neo::display_at_baseline(screen, title, tx, NEO_LIST_Y + 32, theme.text, 24);
             for (line, text) in neo::wrap_lines(screen, message, 13, false, width - 32, 3)
                 .iter()
                 .enumerate()

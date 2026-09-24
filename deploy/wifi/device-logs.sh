@@ -26,7 +26,7 @@ ROMS="$(remote_roms_dir)"
 DEST="${ROMS}/Cartridge"
 
 if [[ "$DUMP" == "1" ]]; then
-    for f in "/home/ark/.cartridges/session/session.log" "/home/ark/.cartridges/session/last-session.json" "${DEST}/crash.log" "${DEST}/setup.log" "/tmp/cartridge_wifi.log"; do
+    for f in "/home/ark/.cartridges/session/session.log" "/home/ark/.cartridges/session/last-session.json" "/home/ark/.cartridges/wifi-scan.log" "${DEST}/crash.log" "${DEST}/setup.log" "/tmp/cartridge_wifi.log"; do
         echo
         echo "===== ${f} ====="
         dev_ssh "tail -n 40 '${f}' 2>/dev/null || echo '(not present)'"

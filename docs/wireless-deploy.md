@@ -88,7 +88,9 @@ deploy/wifi/device-logs.sh --dump   # crash.log, setup.log, wifi log, recent jou
 
 Other logs worth knowing: `<roms>/Cartridge/crash.log` (written when a cartridge
 errors), `setup.log` (boot-service installation), `/tmp/cartridge_wifi.log`
-(nmcli failures from the WiFi screen).
+(connection failures from the WiFi screen), and
+`/home/ark/.cartridges/wifi-scan.log` (radio, interface, and rfkill diagnostics
+when a scan returns no networks).
 
 ## Screenshots from the device
 

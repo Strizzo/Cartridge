@@ -244,6 +244,7 @@ pub fn run_launcher_with_config(
         if atmosphere.has_animation() && launcher.animations_enabled() {
             dirty = true;
         }
+        let was_loading = launcher.is_loading();
         if launcher.handle_input(&input_events) {
             if let Some(exit) = launcher.pending_exit.take() {
                 return Ok((exit, build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start)));
@@ -259,6 +260,9 @@ pub fn run_launcher_with_config(
             }
             result = LauncherResult::Quit;
             return Ok((result, build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start)));
+        }
+        if was_loading != launcher.is_loading() {
+            dirty = true;
         }
 
         // Reflect setting changes (sounds toggle).
