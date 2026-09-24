@@ -5,6 +5,8 @@ pub struct WifiNetwork {
     pub signal: u8,
     pub security: String,
     pub is_saved: bool,
+    /// A saved NetworkManager profile that did not appear in the latest scan.
+    pub is_saved_only: bool,
 }
 
 /// Current WiFi connection state.
@@ -36,6 +38,7 @@ fn simulated_networks() -> Vec<WifiNetwork> {
             signal: n.signal,
             security: n.security,
             is_saved: n.saved,
+            is_saved_only: false,
         })
         .collect();
     networks.sort_by(|a, b| b.signal.cmp(&a.signal));
@@ -184,8 +187,16 @@ wifi-sec.psk-flags=0\n";
                 }
                 let output = Command::new("nmcli")
                     .args([
-                        "-t", "-f", "SSID,SIGNAL,SECURITY",
-                        "device", "wifi", "list", "--rescan", "no", "ifname", &interface,
+                        "-t",
+                        "-f",
+                        "SSID,SIGNAL,SECURITY",
+                        "device",
+                        "wifi",
+                        "list",
+                        "--rescan",
+                        "no",
+                        "ifname",
+                        &interface,
                     ])
                     .output()
                     .map_err(|e| format!("Cannot read Wi-Fi networks: {e}"))?;
@@ -220,17 +231,10 @@ wifi-sec.psk-flags=0\n";
                 .args(["-t", "-f", "NAME,TYPE", "con", "show"])
                 .output()
                 .ok();
-            let mut names = Vec::new();
-            if let Some(output) = output {
-                let text = String::from_utf8_lossy(&output.stdout);
-                for line in text.lines() {
-                    let parts: Vec<&str> = line.splitn(2, ':').collect();
-                    if parts.len() == 2 && parts[1].contains("wireless") {
-                        names.push(parts[0].to_string());
-                    }
-                }
-            }
-            names
+            output
+                .filter(|output| output.status.success())
+                .map(|output| parse_saved_connections(&String::from_utf8_lossy(&output.stdout)))
+                .unwrap_or_default()
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -249,6 +253,17 @@ wifi-sec.psk-flags=0\n";
         }
         #[cfg(target_os = "linux")]
         {
+            use std::process::Command;
+            if self.saved_connections().iter().any(|name| name == ssid) {
+                let output = Command::new("nmcli")
+                    .args(["connection", "up", "id", ssid])
+                    .output()
+                    .map_err(|e| format!("Cannot activate saved connection: {e}"))?;
+                if output.status.success() {
+                    return Ok(());
+                }
+                return Err(nmcli_error("Saved connection failed", &output));
+            }
             let psk = Self::read_saved_psk(ssid);
             if let Some(password) = psk {
                 self.connect_with_password(ssid, &password)
@@ -640,6 +655,16 @@ fn nmcli_error(context: &str, output: &std::process::Output) -> String {
 }
 
 #[cfg(any(target_os = "linux", test))]
+fn parse_saved_connections(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| {
+            let (name, kind) = line.rsplit_once(':')?;
+            (kind == "wifi" || kind.contains("wireless")).then(|| name.replace("\\:", ":"))
+        })
+        .collect()
+}
+
+#[cfg(any(target_os = "linux", test))]
 fn parse_wifi_list(text: &str, saved: &[String]) -> Vec<WifiNetwork> {
     let mut networks = Vec::new();
     for line in text.lines() {
@@ -655,6 +680,7 @@ fn parse_wifi_list(text: &str, saved: &[String]) -> Vec<WifiNetwork> {
         }
         networks.push(WifiNetwork {
             is_saved: saved.iter().any(|name| name == &ssid),
+            is_saved_only: false,
             ssid,
             signal: parts[1].parse().unwrap_or(0),
             security: parts[0].to_string(),
@@ -663,6 +689,26 @@ fn parse_wifi_list(text: &str, saved: &[String]) -> Vec<WifiNetwork> {
     networks.sort_by(|a, b| b.signal.cmp(&a.signal));
     let mut seen = std::collections::HashSet::new();
     networks.retain(|network| seen.insert(network.ssid.clone()));
+    networks
+}
+
+/// Keep saved profiles selectable when the radio does not return a scan list.
+pub fn merge_saved_connections(
+    mut networks: Vec<WifiNetwork>,
+    saved: &[String],
+) -> Vec<WifiNetwork> {
+    for name in saved {
+        if name.is_empty() || networks.iter().any(|network| network.ssid == *name) {
+            continue;
+        }
+        networks.push(WifiNetwork {
+            ssid: name.clone(),
+            signal: 0,
+            security: String::new(),
+            is_saved: true,
+            is_saved_only: true,
+        });
+    }
     networks
 }
 
@@ -690,7 +736,8 @@ fn wifi_scan_diagnostic(interface: &str, request_error: Option<&str>) -> String 
         .ok()
         .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
         .unwrap_or_else(|| "unknown".to_string());
-    let mut message = format!("No access points after scan on {interface} (state {state}, radio {radio}).");
+    let mut message =
+        format!("No access points after scan on {interface} (state {state}, radio {radio}).");
     if let Some(error) = request_error {
         message.push(' ');
         message.push_str(error);
@@ -700,18 +747,37 @@ fn wifi_scan_diagnostic(interface: &str, request_error: Option<&str>) -> String 
 
 #[cfg(target_os = "linux")]
 fn save_wifi_scan_diagnostic(summary: &str, interface: &str) {
-    let Some(home) = std::env::var_os("HOME") else { return };
+    let Some(home) = std::env::var_os("HOME") else {
+        return;
+    };
     let dir = std::path::PathBuf::from(home).join(".cartridges");
     if std::fs::create_dir_all(&dir).is_err() {
         return;
     }
     let mut report = format!("{summary}\n");
     for (label, command, args) in [
-        ("devices", "nmcli", vec!["-t", "-f", "DEVICE,TYPE,STATE", "device", "status"]),
+        (
+            "devices",
+            "nmcli",
+            vec!["-t", "-f", "DEVICE,TYPE,STATE", "device", "status"],
+        ),
         ("wifi device", "nmcli", vec!["device", "show", interface]),
         ("networking", "nmcli", vec!["networking"]),
         ("radio", "nmcli", vec!["radio", "wifi"]),
-        ("access points", "nmcli", vec!["-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "no"]),
+        (
+            "access points",
+            "nmcli",
+            vec![
+                "-t",
+                "-f",
+                "SSID,SIGNAL,SECURITY",
+                "device",
+                "wifi",
+                "list",
+                "--rescan",
+                "no",
+            ],
+        ),
         ("rfkill", "rfkill", vec!["list"]),
         ("interfaces", "iw", vec!["dev"]),
     ] {
@@ -750,14 +816,22 @@ fn wifi_interface() -> Result<String, String> {
     let text = String::from_utf8_lossy(&output.stdout);
     wifi_device_from_status(&text)
         .map(str::to_string)
-        .ok_or_else(|| {
-            "No Wi-Fi interface detected. Check the adapter or driver.".to_string()
-        })
+        .ok_or_else(|| "No Wi-Fi interface detected. Check the adapter or driver.".to_string())
 }
 
 #[cfg(test)]
 mod wifi_tests {
-    use super::{parse_wifi_list, wifi_device_from_status};
+    use super::{
+        merge_saved_connections, parse_saved_connections, parse_wifi_list, wifi_device_from_status,
+    };
+
+    #[test]
+    fn finds_wifi_profiles_and_unescapes_profile_names() {
+        let profiles = parse_saved_connections(
+            "Home:802-11-wireless\nCafe\\:WiFi:wifi\nWired:802-3-ethernet\n",
+        );
+        assert_eq!(profiles, ["Home", "Cafe:WiFi"]);
+    }
 
     #[test]
     fn finds_wifi_without_assuming_wlan0() {
@@ -777,6 +851,19 @@ mod wifi_tests {
         assert_eq!(networks[0].ssid, "Cafe:WiFi");
         assert!(networks[0].is_saved);
         assert_eq!(networks[0].signal, 78);
+    }
+
+    #[test]
+    fn keeps_saved_profiles_when_scan_is_empty_without_duplicating_visible_ones() {
+        let saved = vec!["Home".to_string(), "Cafe".to_string()];
+        let scanned = parse_wifi_list("Home:75:WPA2\n", &saved);
+        let networks = merge_saved_connections(scanned, &saved);
+        assert_eq!(networks.len(), 2);
+        assert_eq!(networks[0].ssid, "Home");
+        assert!(!networks[0].is_saved_only);
+        assert_eq!(networks[1].ssid, "Cafe");
+        assert!(networks[1].is_saved_only);
+        assert!(networks[1].is_saved);
     }
 }
 

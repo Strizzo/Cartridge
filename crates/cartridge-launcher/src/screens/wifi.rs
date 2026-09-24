@@ -2,7 +2,7 @@ use cartridge_core::input::{Button, InputAction, InputEvent};
 use cartridge_core::screen::Screen;
 use cartridge_core::theme::{UiStyle, style_of};
 use cartridge_core::ui::text_input::{TextInput, TextInputResult};
-use cartridge_net::wifi::{WifiNetwork, WifiStatus};
+use cartridge_net::wifi::{WifiNetwork, WifiStatus, merge_saved_connections};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -20,7 +20,7 @@ pub struct WifiScreen {
     selected_row: usize,
     networks: Vec<WifiNetwork>,
     scan_error: Option<String>,
-    scan_result: Option<Receiver<Result<Vec<WifiNetwork>, String>>>,
+    scan_result: Option<Receiver<(Result<Vec<WifiNetwork>, String>, Vec<String>)>>,
     status: WifiStatus,
     status_message: Option<String>,
     message_time: Option<std::time::Instant>,
@@ -61,16 +61,18 @@ impl WifiScreen {
         let (sender, receiver) = mpsc::channel();
         self.scan_result = Some(receiver);
         std::thread::spawn(move || {
-            let result = cartridge_net::wifi::WifiManager::new().scan_networks();
-            let _ = sender.send(result);
+            let manager = cartridge_net::wifi::WifiManager::new();
+            let result = manager.scan_networks();
+            let saved = manager.saved_connections();
+            let _ = sender.send((result, saved));
         });
     }
 
     fn poll_scan(&mut self, ctx: &ScreenContext) {
         let completed = self.scan_result.as_ref().map(Receiver::try_recv);
         match completed {
-            Some(Ok(Ok(networks))) => {
-                self.networks = networks;
+            Some(Ok((Ok(networks), saved))) => {
+                self.networks = merge_saved_connections(networks, &saved);
                 self.scan_error = None;
                 self.scan_result = None;
                 self.status_message = None;
@@ -78,8 +80,8 @@ impl WifiScreen {
                 self.selected_row = self.selected_row.min(self.total_rows() - 1);
                 self.status = ctx.wifi_manager.status();
             }
-            Some(Ok(Err(error))) => {
-                self.networks.clear();
+            Some(Ok((Err(error), saved))) => {
+                self.networks = merge_saved_connections(Vec::new(), &saved);
                 self.scan_error = Some(error);
                 self.scan_result = None;
                 self.status_message = None;
@@ -89,6 +91,8 @@ impl WifiScreen {
             Some(Err(TryRecvError::Disconnected)) => {
                 self.scan_result = None;
                 self.scan_error = Some("Wi-Fi scanner stopped unexpectedly".to_string());
+                self.networks =
+                    merge_saved_connections(Vec::new(), &ctx.wifi_manager.saved_connections());
             }
             Some(Err(TryRecvError::Empty)) | None => {}
         }
@@ -188,6 +192,9 @@ impl LauncherScreen for WifiScreen {
                                     Ok(()) => {
                                         self.set_message(format!("Connected to {ssid}"));
                                         self.refresh(ctx);
+                                    }
+                                    Err(e) if network.is_saved_only => {
+                                        self.set_message(format!("Error: {e}"));
                                     }
                                     Err(_) => {
                                         // Saved password missing or failed — ask for password
@@ -374,7 +381,11 @@ impl LauncherScreen for WifiScreen {
         // -- Section label --
         let section_y = start_y + STATUS_ROW_H + MARGIN;
         screen.draw_text(
-            "Available Networks",
+            if self.scan_error.is_some() && !self.networks.is_empty() {
+                "Saved Networks (scan unavailable)"
+            } else {
+                "Available Networks"
+            },
             12,
             section_y,
             Some(theme.text_dim),
@@ -397,7 +408,11 @@ impl LauncherScreen for WifiScreen {
                     .unwrap_or("No networks found. Check the adapter and rescan.")
             };
             screen.draw_text(
-                if self.scan_result.is_some() { "SCANNING" } else { "NO NETWORKS" },
+                if self.scan_result.is_some() {
+                    "SCANNING"
+                } else {
+                    "NO NETWORKS"
+                },
                 24,
                 list_start_y + 14,
                 Some(theme.text),
@@ -460,7 +475,11 @@ impl LauncherScreen for WifiScreen {
             );
 
             // Security + signal
-            let info = format!("{}  Signal: {}%", network.security, network.signal);
+            let info = if network.is_saved_only {
+                "Saved profile - not in scan".to_string()
+            } else {
+                format!("{}  Signal: {}%", network.security, network.signal)
+            };
             screen.draw_text(&info, 24, y + 26, Some(theme.text_dim), 11, false, None);
 
             // Signal bar
@@ -471,13 +490,15 @@ impl LauncherScreen for WifiScreen {
             } else {
                 theme.text_warning
             };
-            screen.draw_progress_bar(
-                Rect::new(bar_x, y + 14, bar_w, 6),
-                network.signal as f32 / 100.0,
-                Some(bar_color),
-                Some(Color::RGBA(40, 40, 60, 180)),
-                3,
-            );
+            if !network.is_saved_only {
+                screen.draw_progress_bar(
+                    Rect::new(bar_x, y + 14, bar_w, 6),
+                    network.signal as f32 / 100.0,
+                    Some(bar_color),
+                    Some(Color::RGBA(40, 40, 60, 180)),
+                    3,
+                );
+            }
 
             // SAVED pill
             if network.is_saved {
@@ -629,7 +650,11 @@ impl WifiScreen {
         // Section label.
         let label_y = y + NEO_STATUS_H + 12;
         screen.draw_text(
-            "AVAILABLE NETWORKS",
+            if self.scan_error.is_some() && !self.networks.is_empty() {
+                "SAVED NETWORKS · SCAN UNAVAILABLE"
+            } else {
+                "AVAILABLE NETWORKS"
+            },
             neo::MARGIN_X,
             label_y,
             Some(theme.text_dim),
@@ -646,7 +671,11 @@ impl WifiScreen {
                     .as_deref()
                     .unwrap_or("No networks found. Check the adapter and rescan.")
             };
-            let title = if self.scan_result.is_some() { "SCANNING" } else { "NO NETWORKS" };
+            let title = if self.scan_result.is_some() {
+                "SCANNING"
+            } else {
+                "NO NETWORKS"
+            };
             neo::display_at_baseline(screen, title, tx, NEO_LIST_Y + 32, theme.text, 24);
             for (line, text) in neo::wrap_lines(screen, message, 13, false, width - 32, 3)
                 .iter()
@@ -702,7 +731,11 @@ impl WifiScreen {
             } else {
                 network.security.to_uppercase()
             };
-            let info = format!("{sec} · SIGNAL {}%", network.signal);
+            let info = if network.is_saved_only {
+                "SAVED PROFILE · NOT IN SCAN".to_string()
+            } else {
+                format!("{sec} · SIGNAL {}%", network.signal)
+            };
             screen.draw_text(
                 &info,
                 tx,
@@ -715,14 +748,16 @@ impl WifiScreen {
 
             // Signal: four bars, filled by strength.
             let bars = ((network.signal as i32 + 24) / 25).clamp(0, 4);
-            for b in 0..4 {
-                let bh = 4 + b * 4;
-                let bx = right - 4 * 8 + b * 8;
-                let c = if b < bars { theme.text } else { theme.border };
-                screen.fill(
-                    Rect::new(bx, ry + NEO_NET_ROW_H / 2 + 8 - bh, 5, bh as u32),
-                    c,
-                );
+            if !network.is_saved_only {
+                for b in 0..4 {
+                    let bh = 4 + b * 4;
+                    let bx = right - 4 * 8 + b * 8;
+                    let c = if b < bars { theme.text } else { theme.border };
+                    screen.fill(
+                        Rect::new(bx, ry + NEO_NET_ROW_H / 2 + 8 - bh, 5, bh as u32),
+                        c,
+                    );
+                }
             }
             if network.is_saved {
                 let w = screen.get_text_width("SAVED", neo::LABEL_SIZE, false) as i32 + 16;

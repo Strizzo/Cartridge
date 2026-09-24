@@ -16,8 +16,10 @@ deploy/wifi/device-shot.sh                              # screenshot -> screensh
 **1. Enable SSH on the device.** In ArkOS: **Options → Enable Remote Services**
 (some builds call it "Enable SSH"). The default login is `ark` / `ark`.
 
-**2. Find its address.** On the device, open Cartridge **Settings → WiFi** — the
-current IP is shown there. A DHCP reservation in your router keeps it stable;
+**2. Find its address.** On the device, activate the saved home connection in
+EmulationStation and open **Options → WiFi → Current Network Info** to read its
+IP address. The network list can be empty even when a saved profile connects.
+A DHCP reservation in your router keeps the address stable;
 otherwise re-run with `--host <new ip> --save` when it changes.
 
 **3. Install your key.**
