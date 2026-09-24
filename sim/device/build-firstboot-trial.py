@@ -48,6 +48,22 @@ def checked_file(path, expected):
     return path
 
 
+def checked_boot_logo(path):
+    path = Path(path)
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError('Boot logo must be an ordinary file')
+    with path.open('rb') as stream:
+        header = stream.read(54)
+    if (len(header) != 54 or header[:2] != b'BM' or
+            struct.unpack_from('<I', header, 2)[0] != path.stat().st_size or
+            struct.unpack_from('<I', header, 10)[0] != 54 or
+            struct.unpack_from('<I', header, 14)[0] != 40 or
+            struct.unpack_from('<ii', header, 18) != (720, 720) or
+            struct.unpack_from('<HHI', header, 26) != (1, 24, 0)):
+        raise RuntimeError('Boot logo must be an uncompressed 720x720 24-bit BMP')
+    return path.resolve(strict=True)
+
+
 def partition(prefix, index):
     off = 446 + 16 * (index - 1)
     return prefix[off + 4], *struct.unpack_from('<II', prefix, off + 8)
@@ -118,9 +134,35 @@ def device_hash(device, position, length):
     return digest.hexdigest()
 
 
+def install_boot_logo(device, logo):
+    """Replace only the stock splash file inside the virtual BOOT partition."""
+    part = device + 's1'
+    with tempfile.TemporaryDirectory(prefix='cartridge-spare-boot-') as mount:
+        command('/usr/sbin/diskutil', 'mount', '-mountPoint', mount, part)
+        try:
+            boot = Path(mount)
+            current = boot / 'logo.bmp'
+            if not current.is_file() or current.is_symlink():
+                raise RuntimeError('Stock BOOT partition has no ordinary logo.bmp')
+            stock_hash = sha256(current)
+            saved = boot / 'logo.bmp.stock'
+            if saved.exists():
+                raise RuntimeError('Stock BOOT already has a logo backup')
+            shutil.copyfile(current, saved)
+            if sha256(saved) != stock_hash:
+                raise RuntimeError('Stock boot logo backup did not verify')
+            shutil.copyfile(logo, current)
+            if sha256(current) != sha256(logo):
+                raise RuntimeError('Cartridge boot logo did not verify on virtual BOOT')
+            return stock_hash
+        finally:
+            command('/usr/sbin/diskutil', 'unmount', part)
+
+
 def build(prefix, prefix_hash, prepared_root, root_hash, backup, bundle,
-          output, card_bytes):
+          output, card_bytes, boot_logo):
     prefix = checked_file(prefix, prefix_hash)
+    boot_logo = checked_boot_logo(boot_logo)
     prepared_root = checked_file(prepared_root, root_hash)
     backup, bundle, output = Path(backup), Path(bundle), Path(output)
     if backup.is_symlink() or bundle.is_symlink() or output.exists() or output.is_symlink():
@@ -156,6 +198,8 @@ def build(prefix, prefix_hash, prepared_root, root_hash, backup, bundle,
         if device_hash(device, 0, BOOT_BYTES) != prefix_hash or \
                 device_hash(device, BOOT_BYTES, prepared_root.stat().st_size) != root_hash:
             raise RuntimeError('Virtual BOOT or Linux root readback differs')
+        stock_logo_hash = install_boot_logo(device, boot_logo)
+        boot_hash = device_hash(device, 0, BOOT_BYTES)
         part = device + 's3'
         for _ in range(20):
             try:
@@ -185,11 +229,15 @@ def build(prefix, prefix_hash, prepared_root, root_hash, backup, bundle,
             finally:
                 command('/usr/sbin/diskutil', 'unmount', part)
         command('/sbin/fsck_exfat', '-n', part)
-        if device_hash(device, 0, BOOT_BYTES) != prefix_hash or \
+        if device_hash(device, 0, BOOT_BYTES) != boot_hash or \
                 device_hash(device, BOOT_BYTES, prepared_root.stat().st_size) != root_hash:
             raise RuntimeError('Virtual system partitions changed during ROMS staging')
         report = {'state': 'virtual_firstboot_image_verified', 'image': str(output),
-                  'logical_bytes': card_bytes, 'boot_sha256': prefix_hash,
+                  'logical_bytes': card_bytes, 'boot_sha256': boot_hash,
+                  'root_bytes': prepared_root.stat().st_size,
+                  'stock_boot_sha256': prefix_hash,
+                  'stock_boot_logo_sha256': stock_logo_hash,
+                  'cartridge_boot_logo_sha256': sha256(boot_logo),
                   'root_sha256': root_hash, 'games_offset': games_offset,
                   'games_bytes': games_bytes, 'bundle_sha256': bundle_digest(bundle),
                   'build_revision': manifest['build_revision'], 'physical_card_written': False}
@@ -210,11 +258,12 @@ def main():
     parser.add_argument('--bundle', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--card-bytes', type=int, required=True)
+    parser.add_argument('--boot-logo', type=Path, default=ROOT / 'assets/logo.bmp')
     args = parser.parse_args()
     try:
         print(json.dumps(build(args.prefix, args.prefix_sha256, args.prepared_root,
                                args.root_sha256, args.preparation_backup, args.bundle,
-                               args.output, args.card_bytes), indent=2))
+                               args.output, args.card_bytes, args.boot_logo), indent=2))
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
         parser.exit(2, f'First-boot image build stopped: {exc}\n')
 

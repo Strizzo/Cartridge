@@ -29,9 +29,15 @@ fn simulated_status() -> WifiStatus {
 }
 
 fn simulated_networks() -> Vec<WifiNetwork> {
-    let mut networks: Vec<_> = cartridge_core::sim::wifi_networks().into_iter().map(|n| WifiNetwork {
-        ssid: n.ssid, signal: n.signal, security: n.security, is_saved: n.saved,
-    }).collect();
+    let mut networks: Vec<_> = cartridge_core::sim::wifi_networks()
+        .into_iter()
+        .map(|n| WifiNetwork {
+            ssid: n.ssid,
+            signal: n.signal,
+            security: n.security,
+            is_saved: n.saved,
+        })
+        .collect();
     networks.sort_by(|a, b| b.signal.cmp(&a.signal));
     networks
 }
@@ -39,7 +45,9 @@ fn simulated_networks() -> Vec<WifiNetwork> {
 impl WifiManager {
     pub fn new() -> Self {
         #[cfg(target_os = "linux")]
-        if !cartridge_core::sim::is_sim() { Self::ensure_nm_headless_config(); }
+        if !cartridge_core::sim::is_sim() {
+            Self::ensure_nm_headless_config();
+        }
         Self
     }
 
@@ -115,57 +123,82 @@ wifi-sec.psk-flags=0\n";
         }
     }
 
-    pub fn scan_networks(&self) -> Vec<WifiNetwork> {
+    pub fn scan_networks(&self) -> Result<Vec<WifiNetwork>, String> {
         if cartridge_core::sim::is_sim() {
-            return simulated_networks();
+            return Ok(simulated_networks());
         }
         #[cfg(target_os = "linux")]
         {
             use std::process::Command;
-
-            let _ = Command::new("nmcli").args(["device", "wifi", "rescan"]).output();
-            std::thread::sleep(std::time::Duration::from_millis(500));
-
-            let output = Command::new("nmcli")
-                .args(["-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list"])
+            let interface = wifi_interface()?;
+            let radio = Command::new("nmcli")
+                .args(["radio", "wifi"])
                 .output()
-                .ok();
+                .map_err(|e| format!("Cannot check Wi-Fi radio: {e}"))?;
+            if !radio.status.success() {
+                return Err(nmcli_error("Cannot check Wi-Fi radio", &radio));
+            }
+            if String::from_utf8_lossy(&radio.stdout).trim() == "disabled" {
+                let enabled = Command::new("nmcli")
+                    .args(["radio", "wifi", "on"])
+                    .output()
+                    .map_err(|e| format!("Cannot enable Wi-Fi: {e}"))?;
+                if !enabled.status.success() {
+                    return Err(nmcli_error("Cannot enable Wi-Fi", &enabled));
+                }
+            }
+            let output = Command::new("nmcli")
+                .args([
+                    "-t",
+                    "-f",
+                    "SSID,SIGNAL,SECURITY",
+                    "device",
+                    "wifi",
+                    "list",
+                    "--rescan",
+                    "yes",
+                    "ifname",
+                    &interface,
+                ])
+                .output()
+                .map_err(|e| format!("Cannot scan Wi-Fi: {e}"))?;
+            if !output.status.success() {
+                return Err(nmcli_error("Wi-Fi scan failed", &output));
+            }
 
             let saved = self.saved_connections();
             let mut networks = Vec::new();
 
-            if let Some(output) = output {
-                let text = String::from_utf8_lossy(&output.stdout);
-                for line in text.lines() {
-                    if line.trim().is_empty() {
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let parts: Vec<&str> = line.split(':').collect();
+                if parts.len() >= 3 {
+                    let security = parts[parts.len() - 1].to_string();
+                    let signal: u8 = parts[parts.len() - 2].parse().unwrap_or(0);
+                    let ssid = parts[..parts.len() - 2].join(":").replace("\\:", ":");
+                    if ssid.is_empty() {
                         continue;
                     }
-                    let parts: Vec<&str> = line.split(':').collect();
-                    if parts.len() >= 3 {
-                        let security = parts[parts.len() - 1].to_string();
-                        let signal: u8 = parts[parts.len() - 2].parse().unwrap_or(0);
-                        let ssid = parts[..parts.len() - 2].join(":");
-                        if ssid.is_empty() {
-                            continue;
-                        }
-                        let is_saved = saved.iter().any(|s| s == &ssid);
-                        networks.push(WifiNetwork {
-                            ssid,
-                            signal,
-                            security,
-                            is_saved,
-                        });
-                    }
+                    let is_saved = saved.iter().any(|s| s == &ssid);
+                    networks.push(WifiNetwork {
+                        ssid,
+                        signal,
+                        security,
+                        is_saved,
+                    });
                 }
             }
 
             networks.sort_by(|a, b| b.signal.cmp(&a.signal));
             networks.dedup_by(|a, b| a.ssid == b.ssid);
-            networks
+            Ok(networks)
         }
         #[cfg(not(target_os = "linux"))]
         {
-            simulated_networks()
+            Ok(simulated_networks())
         }
     }
 
@@ -240,13 +273,20 @@ wifi-sec.psk-flags=0\n";
         }
         #[cfg(target_os = "linux")]
         {
+            let interface = wifi_interface()?;
             Self::save_psk(ssid, password);
 
             let mut log = String::new();
-            log.push_str(&format!("=== WiFi connect: '{}' at {} ===\n", ssid, chrono_now()));
+            log.push_str(&format!(
+                "=== WiFi connect: '{}' at {} ===\n",
+                ssid,
+                chrono_now()
+            ));
 
             // Step 0: Ensure NM headless config exists
-            if !cartridge_core::sim::is_sim() { Self::ensure_nm_headless_config(); }
+            if !cartridge_core::sim::is_sim() {
+                Self::ensure_nm_headless_config();
+            }
 
             // Step 1: Clean up ALL stale profiles
             let cleanup = Self::cleanup_profiles(ssid);
@@ -254,7 +294,7 @@ wifi-sec.psk-flags=0\n";
 
             // Step 2: Primary — ArkOS importwifi.sh pattern (add → modify → up)
             log.push_str("Trying ArkOS add/modify/up pattern...\n");
-            match Self::connect_arkos_pattern(ssid, password, &mut log) {
+            match Self::connect_arkos_pattern(ssid, password, &interface, &mut log) {
                 Ok(()) => {
                     log.push_str("SUCCESS via add/modify/up\n");
                     let _ = std::fs::write("/tmp/cartridge_wifi.log", &log);
@@ -270,7 +310,7 @@ wifi-sec.psk-flags=0\n";
             let cleanup2 = Self::cleanup_profiles(ssid);
             log.push_str(&format!("cleanup2: {cleanup2}\n"));
 
-            match Self::connect_via_keyfile(ssid, password, &mut log) {
+            match Self::connect_via_keyfile(ssid, password, &interface, &mut log) {
                 Ok(()) => {
                     log.push_str("SUCCESS via keyfile\n");
                     let _ = std::fs::write("/tmp/cartridge_wifi.log", &log);
@@ -294,19 +334,28 @@ wifi-sec.psk-flags=0\n";
     /// ArkOS importwifi.sh pattern — the proven fix for issue #580.
     /// Exact sequence: add bare connection → modify to add WPA-PSK → activate.
     #[cfg(target_os = "linux")]
-    fn connect_arkos_pattern(ssid: &str, password: &str, log: &mut String) -> Result<(), String> {
+    fn connect_arkos_pattern(
+        ssid: &str,
+        password: &str,
+        interface: &str,
+        log: &mut String,
+    ) -> Result<(), String> {
         use std::process::Command;
 
         // Step A: Create bare wifi connection (NO security params in add)
         let add_out = Command::new("nmcli")
-            .args(["c", "add", "con-name", ssid, "type", "wifi", "ssid", ssid, "ifname", "wlan0"])
+            .args([
+                "c", "add", "con-name", ssid, "type", "wifi", "ssid", ssid, "ifname", interface,
+            ])
             .output()
             .map_err(|e| format!("nmcli add: {e}"))?;
 
         let add_ok = add_out.status.success();
         let add_msg = String::from_utf8_lossy(&add_out.stdout).trim().to_string();
         let add_err = String::from_utf8_lossy(&add_out.stderr).trim().to_string();
-        log.push_str(&format!("add ok={add_ok} out='{add_msg}' err='{add_err}'\n"));
+        log.push_str(&format!(
+            "add ok={add_ok} out='{add_msg}' err='{add_err}'\n"
+        ));
 
         if !add_ok {
             return Err(format!("add failed: {add_err}"));
@@ -314,14 +363,24 @@ wifi-sec.psk-flags=0\n";
 
         // Step B: Modify to add WPA-PSK (using wifi-sec.* shorthand)
         let mod_out = Command::new("nmcli")
-            .args(["c", "modify", ssid, "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", password])
+            .args([
+                "c",
+                "modify",
+                ssid,
+                "wifi-sec.key-mgmt",
+                "wpa-psk",
+                "wifi-sec.psk",
+                password,
+            ])
             .output()
             .map_err(|e| format!("nmcli modify: {e}"))?;
 
         let mod_ok = mod_out.status.success();
         let mod_msg = String::from_utf8_lossy(&mod_out.stdout).trim().to_string();
         let mod_err = String::from_utf8_lossy(&mod_out.stderr).trim().to_string();
-        log.push_str(&format!("modify ok={mod_ok} out='{mod_msg}' err='{mod_err}'\n"));
+        log.push_str(&format!(
+            "modify ok={mod_ok} out='{mod_msg}' err='{mod_err}'\n"
+        ));
 
         if !mod_ok {
             // Clean up the profile we just created
@@ -349,7 +408,12 @@ wifi-sec.psk-flags=0\n";
 
     /// Fallback: write a NM keyfile directly and load it.
     #[cfg(target_os = "linux")]
-    fn connect_via_keyfile(ssid: &str, password: &str, log: &mut String) -> Result<(), String> {
+    fn connect_via_keyfile(
+        ssid: &str,
+        password: &str,
+        interface: &str,
+        log: &mut String,
+    ) -> Result<(), String> {
         use std::process::Command;
 
         let uuid = std::fs::read_to_string("/proc/sys/kernel/random/uuid")
@@ -358,11 +422,12 @@ wifi-sec.psk-flags=0\n";
             .to_string();
 
         let conn_file = format!("/etc/NetworkManager/system-connections/{ssid}.nmconnection");
-        let content = format!("[connection]\n\
+        let content = format!(
+            "[connection]\n\
 id={ssid}\n\
 uuid={uuid}\n\
 type=wifi\n\
-interface-name=wlan0\n\
+interface-name={interface}\n\
 autoconnect=true\n\
 \n\
 [wifi]\n\
@@ -378,11 +443,11 @@ psk-flags=0\n\
 method=auto\n\
 \n\
 [ipv6]\n\
-method=auto\n");
+method=auto\n"
+        );
 
         log.push_str(&format!("Writing {conn_file}\n"));
-        std::fs::write(&conn_file, &content)
-            .map_err(|e| format!("write failed: {e}"))?;
+        std::fs::write(&conn_file, &content).map_err(|e| format!("write failed: {e}"))?;
         let _ = Command::new("chmod").args(["600", &conn_file]).output();
 
         // Load the specific file
@@ -396,7 +461,9 @@ method=auto\n");
         log.push_str(&format!("load ok={load_ok} err='{load_err}'\n"));
 
         if !load_ok {
-            let _ = Command::new("nmcli").args(["connection", "reload"]).output();
+            let _ = Command::new("nmcli")
+                .args(["connection", "reload"])
+                .output();
         }
 
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -454,22 +521,40 @@ method=auto\n");
     fn save_psk(ssid: &str, password: &str) {
         let dir = "/var/lib/cartridge/wifi";
         let _ = std::fs::create_dir_all(dir);
-        let safe_name: String = ssid.chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        let safe_name: String = ssid
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         let path = format!("{dir}/{safe_name}.psk");
         let _ = std::fs::write(&path, password);
-        let _ = std::process::Command::new("chmod").args(["600", &path]).output();
+        let _ = std::process::Command::new("chmod")
+            .args(["600", &path])
+            .output();
     }
 
     /// Read a previously saved PSK.
     #[cfg(target_os = "linux")]
     fn read_saved_psk(ssid: &str) -> Option<String> {
-        let safe_name: String = ssid.chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        let safe_name: String = ssid
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         let path = format!("/var/lib/cartridge/wifi/{safe_name}.psk");
-        std::fs::read_to_string(&path).ok().map(|s| s.trim().to_string())
+        std::fs::read_to_string(&path)
+            .ok()
+            .map(|s| s.trim().to_string())
     }
 
     /// Verify that we're actually connected.
@@ -511,8 +596,9 @@ method=auto\n");
         #[cfg(target_os = "linux")]
         {
             use std::process::Command;
+            let interface = wifi_interface()?;
             let output = Command::new("nmcli")
-                .args(["dev", "disconnect", "wlan0"])
+                .args(["dev", "disconnect", &interface])
                 .output()
                 .map_err(|e| format!("nmcli disconnect failed: {e}"))?;
             if output.status.success() {
@@ -533,6 +619,57 @@ method=auto\n");
 impl Default for WifiManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn nmcli_error(context: &str, output: &std::process::Output) -> String {
+    let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if detail.is_empty() {
+        context.to_string()
+    } else {
+        format!("{context}: {detail}")
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn wifi_device_from_status(text: &str) -> Option<&str> {
+    text.lines().find_map(|line| {
+        let mut parts = line.splitn(3, ':');
+        match (parts.next(), parts.next(), parts.next()) {
+            (Some(device), Some("wifi"), Some(_)) if !device.is_empty() => Some(device),
+            _ => None,
+        }
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn wifi_interface() -> Result<String, String> {
+    let output = std::process::Command::new("nmcli")
+        .args(["-t", "-f", "DEVICE,TYPE,STATE", "device", "status"])
+        .output()
+        .map_err(|e| format!("NetworkManager is unavailable: {e}"))?;
+    if !output.status.success() {
+        return Err(nmcli_error("NetworkManager is unavailable", &output));
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    wifi_device_from_status(&text)
+        .map(str::to_string)
+        .ok_or_else(|| {
+            "No Wi-Fi interface detected. Check the adapter or driver.".to_string()
+        })
+}
+
+#[cfg(test)]
+mod wifi_tests {
+    use super::wifi_device_from_status;
+
+    #[test]
+    fn finds_wifi_without_assuming_wlan0() {
+        let status =
+            "lo:loopback:connected\neth0:ethernet:connected\nwlx001122:wifi:disconnected\n";
+        assert_eq!(wifi_device_from_status(status), Some("wlx001122"));
+        assert_eq!(wifi_device_from_status("eth0:ethernet:connected\n"), None);
     }
 }
 

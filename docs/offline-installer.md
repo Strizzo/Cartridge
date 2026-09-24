@@ -7,11 +7,12 @@ the result, eject, then power on directly into Cartridge. Both paths configure
 the next boot offline. EmulationStation's Options/Tools menu is a development
 path, not the shipping first-boot experience.
 
-This is a **planned deliverable**. The primary-session branch and CI ARM bundle
-are not a bootable card image. Copying the current app bundle to the visible ROMS
-partition alone cannot change a stock card's Linux startup service. The first
-image must include the board boot files, Linux system and Cartridge startup
-configuration before it is written to the card.
+The first direct-boot hardware trial succeeded on a disposable 128 GB card on
+2026-09-24: the handheld started in Cartridge without a Tools-menu step. This
+is a development milestone, not a distributable image. The trial uses a
+locally recovered board boot prefix and Linux root; a public release still
+needs a licensed, reproducible system base and supported panel variants.
+Copying an app bundle to EASYROMS alone cannot change a stock card's startup.
 
 ## Fresh card
 
@@ -122,7 +123,7 @@ against disposable files, then checks the original root and game/save/key
 hashes. It takes a CI bundle from the same code revision and never inventories
 or opens a physical disk.
 
-The backend remains a developer CLI, not a graphical one-step installer. The
+The preserve-card backend remains a developer CLI. The
 intended sequence is read-only `card_inventory.py`, read-only `card_clone.py`,
 `host_prepare.py root`, `host_prepare.py roms`, then
 `install_transaction.py`. The root workspace needs free space for one more
@@ -160,19 +161,32 @@ that root with a separately verified board boot prefix, creates a new virtual
 read-only preflight, requires an exact empty-card fingerprint and volume UUID,
 refuses internal/virtual media, uses a disk-specific mount veto, and requires
 administrator access for a full-card write and SHA-256 readback. Its disposable
-file write/readback test and the physical card's read-only preflight passed;
-**the spare card has not yet been written or booted**. The recovered boot prefix
-is a local test input, not a redistributable fresh OS image.
+file write/readback test and the physical card's read-only preflight passed.
+The full 128 GB spare was written; a subsequent full-card readback found exact
+Linux-root equality and differences confined to BOOT and other macOS-mounted
+filesystem metadata. Read-only checks then confirmed both BOOT and EASYROMS
+filesystems were clean and all expected files matched the source image. The
+card was ejected and booted Cartridge directly on the handheld. The builder now
+replaces `logo.bmp` in the **virtual** BOOT partition with the Cartridge logo,
+keeping a verified stock-logo backup there. The already-booted trial card was
+built before this change, so it still shows the R36S splash. The recovered boot
+prefix remains a local test input, not a redistributable fresh OS image.
+
+The [macOS installer app](../mac-installer/README.md) now provides an initial
+native UI for a verified local image and explicitly selected empty spare card.
+It exposes read-only inventory and preflight, gates any raw write behind an
+erase acknowledgment, and requires full readback before claiming success. It
+does not yet implement the preserve-games path or download/build a public image.
 
 This backend passed a complete ARM VM transaction using separate disposable
 ext4 and exFAT images plus a CI device bundle. The test performed preparation,
 an exFAT rollback and re-prepare, wrote the prepared root to a disposable s2
 file, read it back, verified the boot files inside it, and checked both
 filesystems and game/save/key hashes. The normal desktop simulator and ARM VM
-still cannot emulate the handheld's exact board and display. **No physical SD
-card was written or booted by this transaction.** The Mac graphical installer,
-safe eject, fresh bootable image and spare-card
-first-boot validation remain to be built before this can be offered to users.
+still cannot emulate the handheld's exact board and display. This VM
+transaction did not write a physical SD card; the later spare-card trial above
+provided the first on-device direct-boot validation. A redistributable image,
+preserve-games Mac UI, and broader hardware testing remain release work.
 
 The converter has passed unit checks and an ARM VM check on separate mounted
 ext4 and exFAT images using the actual CI bundle. A second VM rehearsal used a

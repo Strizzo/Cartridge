@@ -274,8 +274,22 @@ def flash(args):
                                 'card_bytes': args.card_bytes})
         print('Writing only the identified empty spare card...', flush=True)
         expected_full = copy_card(source, raw, args.card_bytes, report, guard)
+        write_manifest(report, {'state': 'write_complete_pending_readback',
+                                'target_disk': args.disk, 'card_bytes': args.card_bytes,
+                                'expected_sha256': expected_full})
         guard.check()
-        require_unmounted(args.disk)
+        try:
+            require_unmounted(args.disk)
+        except subprocess.CalledProcessError:
+            # macOS can eject a card as it discovers the newly written MBR.
+            # The full write has already flushed, but it is not verified.
+            if not raw.exists():
+                result = {'state': 'reinsert_for_readback', 'target_disk': args.disk,
+                          'card_bytes': args.card_bytes,
+                          'expected_sha256': expected_full}
+                write_manifest(report, result)
+                return result
+            raise
         write_manifest(report, {'state': 'reading_back_card', 'target_disk': args.disk,
                                 'expected_sha256': expected_full})
         print('Reading back the entire card for SHA-256 verification...', flush=True)
@@ -331,6 +345,8 @@ def main():
             raise RuntimeError('--write requires --mount-guard')
         result = preflight(args) if args.preflight else flash(args)
         print(json.dumps(result, indent=2))
+        if args.write and result['state'] != 'verified_and_ejected':
+            parser.exit(2, 'Card write finished but readback is pending; reinsert the card and verify before booting.\n')
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
         parser.exit(2, f'Spare-card trial stopped: {exc}\n')
 
