@@ -132,7 +132,6 @@ wifi-sec.psk-flags=0\n";
             use std::process::Command;
             use std::time::Duration;
 
-            let interface = wifi_interface()?;
             let networking = Command::new("nmcli")
                 .arg("networking")
                 .output()
@@ -149,6 +148,7 @@ wifi-sec.psk-flags=0\n";
                     return Err(nmcli_error("Cannot enable networking", &enabled));
                 }
             }
+            let interface = wifi_interface()?;
             let radio = Command::new("nmcli")
                 .args(["radio", "wifi"])
                 .output()
