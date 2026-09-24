@@ -386,6 +386,7 @@ install_to_device() {
     mkdir -p "$dest"
     mkdir -p "$dest/assets/fonts"
     mkdir -p "$dest/assets/overlays"
+    mkdir -p "$dest/assets/brand"
     mkdir -p "$tools_dir"
 
     # Copy binaries
@@ -416,6 +417,9 @@ install_to_device() {
     fi
     if [[ -d "assets/overlays" ]]; then
         cp -r assets/overlays/* "$dest/assets/overlays/"
+    fi
+    if [[ -d "assets/brand" ]]; then
+        cp -r assets/brand/* "$dest/assets/brand/"
     fi
     if [[ -f "assets/boot_logo.png" ]]; then
         cp assets/boot_logo.png "$dest/assets/"

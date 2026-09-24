@@ -33,6 +33,7 @@ jobs:
         run: |
           mkdir -p release/Cartridge/assets/fonts
           mkdir -p release/Cartridge/assets/overlays
+          mkdir -p release/Cartridge/assets/brand
           # Binaries
           cp target/aarch64-unknown-linux-gnu/release/cartridge release/Cartridge/
           cp target/aarch64-unknown-linux-gnu/release/cartridge-boot release/Cartridge/
@@ -53,6 +54,7 @@ jobs:
           # Assets
           cp -r assets/fonts/* release/Cartridge/assets/fonts/
           cp -r assets/overlays/* release/Cartridge/assets/overlays/
+          cp -r assets/brand/* release/Cartridge/assets/brand/
           cp assets/boot_logo.png release/Cartridge/assets/
           cp assets/logo.bmp release/Cartridge/assets/
 

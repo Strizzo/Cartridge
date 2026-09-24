@@ -60,7 +60,7 @@ push() {
     tools="${roms}/tools"
     info "Device roms dir: ${roms}"
 
-    dev_ssh "mkdir -p '${dest}/assets/fonts' '${dest}/assets/overlays' '${dest}/lua_cartridges' '${tools}'"
+    dev_ssh "mkdir -p '${dest}/assets/fonts' '${dest}/assets/overlays' '${dest}/assets/brand' '${dest}/lua_cartridges' '${tools}'"
 
     # rsync in one pass. --no-perms because exFAT can't store the exec bit;
     # we chmod +x on the device afterwards instead.
@@ -77,6 +77,7 @@ push() {
         "${USER_NAME}@${HOST}:${dest}/"
     rsync "${rsync_opts[@]}" --delete assets/fonts/ "${USER_NAME}@${HOST}:${dest}/assets/fonts/"
     rsync "${rsync_opts[@]}" --delete assets/overlays/ "${USER_NAME}@${HOST}:${dest}/assets/overlays/"
+    rsync "${rsync_opts[@]}" --delete assets/brand/ "${USER_NAME}@${HOST}:${dest}/assets/brand/"
     [[ -f assets/boot_logo.png ]] && rsync "${rsync_opts[@]}" assets/boot_logo.png "${USER_NAME}@${HOST}:${dest}/assets/"
     [[ -f assets/gamecontrollerdb.txt ]] && rsync "${rsync_opts[@]}" assets/gamecontrollerdb.txt "${USER_NAME}@${HOST}:${dest}/assets/"
 

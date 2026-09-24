@@ -15,6 +15,7 @@ use cartridge_core::sysinfo::SystemInfo;
 use cartridge_core::theme::{Theme, UiStyle};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
+use std::sync::OnceLock;
 
 use crate::ui_constants::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
@@ -269,9 +270,28 @@ pub fn draw_header(screen: &mut Screen, title: &str, subtitle: &str, sysinfo: Op
     screen.fill(Rect::new(0, 0, SCREEN_WIDTH, HEADER_H as u32), theme.bg);
     let baseline = HEADER_H - 10;
 
-    let tw = display_at_baseline(screen, title, MARGIN_X, baseline, theme.text, 36) as i32;
+    static BRAND_MARK: OnceLock<String> = OnceLock::new();
+    let brand_mark = BRAND_MARK.get_or_init(|| {
+        cartridge_core::paths::assets_dir()
+            .join("brand/cartridge-mark.png")
+            .to_string_lossy()
+            .into_owned()
+    });
+    // Crop the transparent border from the generated artwork at draw time.
+    let title_x = if screen.draw_image(
+        brand_mark,
+        MARGIN_X,
+        10,
+        Some((46, 44)),
+        Some(Rect::new(45, 46, 167, 159)),
+    ) {
+        MARGIN_X + 52
+    } else {
+        MARGIN_X
+    };
+    let tw = display_at_baseline(screen, title, title_x, baseline, theme.text, 36) as i32;
     if !subtitle.is_empty() {
-        text_at_baseline(screen, &subtitle.to_uppercase(), MARGIN_X + tw + 12, baseline - 2, theme.text_dim, LABEL_SIZE, false);
+        text_at_baseline(screen, &subtitle.to_uppercase(), title_x + tw + 12, baseline - 2, theme.text_dim, LABEL_SIZE, false);
     }
 
     // Clock, right-aligned.
