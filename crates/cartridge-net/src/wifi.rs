@@ -133,6 +133,22 @@ wifi-sec.psk-flags=0\n";
             use std::time::Duration;
 
             let interface = wifi_interface()?;
+            let networking = Command::new("nmcli")
+                .arg("networking")
+                .output()
+                .map_err(|e| format!("Cannot check networking state: {e}"))?;
+            if !networking.status.success() {
+                return Err(nmcli_error("Cannot check networking state", &networking));
+            }
+            if String::from_utf8_lossy(&networking.stdout).trim() == "disabled" {
+                let enabled = Command::new("nmcli")
+                    .args(["networking", "on"])
+                    .output()
+                    .map_err(|e| format!("Cannot enable networking: {e}"))?;
+                if !enabled.status.success() {
+                    return Err(nmcli_error("Cannot enable networking", &enabled));
+                }
+            }
             let radio = Command::new("nmcli")
                 .args(["radio", "wifi"])
                 .output()
@@ -162,7 +178,7 @@ wifi-sec.psk-flags=0\n";
             };
 
             let saved = self.saved_connections();
-            for attempt in 0..8 {
+            for attempt in 0..10 {
                 if attempt > 0 {
                     std::thread::sleep(Duration::from_millis(500));
                 }
@@ -184,7 +200,7 @@ wifi-sec.psk-flags=0\n";
 
             let diagnostic = wifi_scan_diagnostic(&interface, request_error.as_deref());
             log::warn!("{diagnostic}");
-            save_wifi_scan_diagnostic(&diagnostic);
+            save_wifi_scan_diagnostic(&diagnostic, &interface);
             Err(diagnostic)
         }
         #[cfg(not(target_os = "linux"))]
@@ -683,7 +699,7 @@ fn wifi_scan_diagnostic(interface: &str, request_error: Option<&str>) -> String 
 }
 
 #[cfg(target_os = "linux")]
-fn save_wifi_scan_diagnostic(summary: &str) {
+fn save_wifi_scan_diagnostic(summary: &str, interface: &str) {
     let Some(home) = std::env::var_os("HOME") else { return };
     let dir = std::path::PathBuf::from(home).join(".cartridges");
     if std::fs::create_dir_all(&dir).is_err() {
@@ -692,6 +708,8 @@ fn save_wifi_scan_diagnostic(summary: &str) {
     let mut report = format!("{summary}\n");
     for (label, command, args) in [
         ("devices", "nmcli", vec!["-t", "-f", "DEVICE,TYPE,STATE", "device", "status"]),
+        ("wifi device", "nmcli", vec!["device", "show", interface]),
+        ("networking", "nmcli", vec!["networking"]),
         ("radio", "nmcli", vec!["radio", "wifi"]),
         ("access points", "nmcli", vec!["-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "no"]),
         ("rfkill", "rfkill", vec!["list"]),
