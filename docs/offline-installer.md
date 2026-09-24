@@ -168,8 +168,10 @@ filesystem metadata. Read-only checks then confirmed both BOOT and EASYROMS
 filesystems were clean and all expected files matched the source image. The
 card was ejected and booted Cartridge directly on the handheld. The builder now
 replaces `logo.bmp` in the **virtual** BOOT partition with the Cartridge logo,
-keeping a verified stock-logo backup there. The already-booted trial card was
-built before this change, so it still shows the R36S splash. The recovered boot
+keeping a verified stock-logo backup there. The already-booted spare was then
+updated in place with the new splash, selector art and ARM executable. The
+three file hashes and both filesystems verified before it was ejected; the new
+splash and Wi-Fi behavior still await a handheld retest. The recovered boot
 prefix remains a local test input, not a redistributable fresh OS image.
 
 The [macOS installer app](../mac-installer/README.md) now provides an initial
