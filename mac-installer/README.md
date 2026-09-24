@@ -20,3 +20,11 @@ separate. This app does not build a distributable OS image or download one.
 The app runs `installer/mac_bridge.py`, which delegates to the tested device
 image preflight, writer, and readback scripts. Only the selected disk can be
 held unmounted by the bundled Disk Arbitration guard during writing.
+
+For the already-booted disposable spare, `installer/update_spare_card.py` is a
+separate guarded maintenance tool. It requires an independently verified backup
+of that exact card, checks the current file hashes and disk fingerprint, then
+updates only the Cartridge executable, selector artwork and BOOT splash. It
+reads the replacements back, checks both filesystems and ejects on success.
+It deliberately refuses a card containing games or other ROMS data; it is not
+the preserve-games installer or the future on-device updater.

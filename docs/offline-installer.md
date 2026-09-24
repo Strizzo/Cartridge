@@ -224,3 +224,8 @@ not write to the user's card or boot a physical handheld.
 Development continues through the [simulator and ARM VM](arm-vm.md) and then
 wireless on-device tests. Those checks help build the image; they do not replace
 the spare-card first-boot gate.
+
+After the first offline installation, the [online update design](online-updates.md)
+stages Cartridge releases on EASYROMS and uses the existing session recovery
+path. It deliberately leaves BOOT and the Linux system to a separate update
+process.
