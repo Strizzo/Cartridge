@@ -5,6 +5,7 @@ The source image is opened read-only. Only a temporary copy on the chosen
 workspace volume is modified. No physical SD partition is opened or written.
 """
 import argparse
+from contextlib import nullcontext
 import json
 import os
 from pathlib import Path
@@ -52,7 +53,8 @@ def copy_verified(source, destination, expected_sha256):
         raise RuntimeError('Temporary root copy failed size or independent readback verification')
 
 
-def rehearse(source, expected_sha256, bundle, workspace_parent, *, app_path='/roms/Cartridge'):
+def rehearse(source, expected_sha256, bundle, workspace_parent, *,
+            app_path='/roms/Cartridge', keep_work_dir=None):
     source = checked_source(source, expected_sha256)
     bundle, workspace_parent = Path(bundle), Path(workspace_parent)
     if bundle.is_symlink() or workspace_parent.is_symlink():
@@ -68,7 +70,17 @@ def rehearse(source, expected_sha256, bundle, workspace_parent, *, app_path='/ro
     if shutil.disk_usage(workspace_parent).free < source.stat().st_size + 1024**3:
         raise RuntimeError('Temporary workspace needs image size plus 1 GiB free')
     source_bundle_hash = bundle_digest(bundle)
-    with tempfile.TemporaryDirectory(prefix='cartridge-full-root-check-', dir=workspace_parent) as temporary:
+    if keep_work_dir is None:
+        workspace = tempfile.TemporaryDirectory(prefix='cartridge-full-root-check-',
+                                                dir=workspace_parent)
+    else:
+        kept = Path(keep_work_dir)
+        if (not kept.is_absolute() or kept.parent.resolve(strict=True) != workspace_parent or
+                kept.exists() or kept.is_symlink()):
+            raise RuntimeError('Retained work directory must be a new direct child of the workspace')
+        kept.mkdir(mode=0o700)
+        workspace = nullcontext(str(kept))
+    with workspace as temporary:
         work = Path(temporary).resolve()
         image = work/'prepared-root.ext4'
         print('Making an independently verified temporary root copy...', flush=True)
@@ -103,7 +115,10 @@ def rehearse(source, expected_sha256, bundle, workspace_parent, *, app_path='/ro
                   'root_bytes': image.stat().st_size,
                   'stock_es_service_preserved': True,
                   'raw_card_device_opened': False,
-                  'temporary_copy_removed': True}
+                  'temporary_copy_removed': keep_work_dir is None}
+        if keep_work_dir is not None:
+            report['prepared_image'] = str(image)
+            report['preparation_backup'] = str(work/'preparation-backup')
     results = ROOT/'.sim/vm/results'
     results.mkdir(parents=True, exist_ok=True)
     write_manifest(results/'full-root-check.json', report)
@@ -116,12 +131,15 @@ def main():
     parser.add_argument('--sha256', required=True)
     parser.add_argument('--bundle', type=Path, required=True)
     parser.add_argument('--workspace-parent', type=Path, required=True)
+    parser.add_argument('--keep-work-dir', type=Path,
+                        help='Retain the verified prepared image in a new direct child of the workspace')
     parser.add_argument('--app-path', choices=('/roms/Cartridge', '/roms2/Cartridge'),
                         default='/roms/Cartridge')
     args = parser.parse_args()
     try:
         result = rehearse(args.source, args.sha256, args.bundle,
-                          args.workspace_parent, app_path=args.app_path)
+                          args.workspace_parent, app_path=args.app_path,
+                          keep_work_dir=args.keep_work_dir)
     except (RuntimeError, OSError, ValueError, subprocess.CalledProcessError) as exc:
         parser.exit(2, f'Full-size root rehearsal stopped: {exc}\n')
     print(json.dumps(result, indent=2))

@@ -150,6 +150,20 @@ The [VM instructions](arm-vm.md#offline-root-preparation-vm) include the command
 and hashes. This strengthens the Linux-root preparation gate; it does not test
 ROMS staging or raw writeback on a physical card.
 
+For a separate spare-card hardware trial, the same check can retain its verified
+root with `--keep-work-dir`. The development-only
+[`build-firstboot-trial.py`](../sim/device/build-firstboot-trial.py) then combines
+that root with a separately verified board boot prefix, creates a new virtual
+128 GB card, formats an empty EASYROMS partition and stages the CI bundle. On
+2026-09-24 this virtual image passed BOOT/root readback and exFAT checks. The
+[`flash-firstboot-trial.py`](../sim/device/flash-firstboot-trial.py) writer has a
+read-only preflight, requires an exact empty-card fingerprint and volume UUID,
+refuses internal/virtual media, uses a disk-specific mount veto, and requires
+administrator access for a full-card write and SHA-256 readback. Its disposable
+file write/readback test and the physical card's read-only preflight passed;
+**the spare card has not yet been written or booted**. The recovered boot prefix
+is a local test input, not a redistributable fresh OS image.
+
 This backend passed a complete ARM VM transaction using separate disposable
 ext4 and exFAT images plus a CI device bundle. The test performed preparation,
 an exFAT rollback and re-prepare, wrote the prepared root to a disposable s2

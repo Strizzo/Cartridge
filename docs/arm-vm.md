@@ -80,6 +80,12 @@ The workspace was emptied afterward and the VM stopped with no host mount.
 The physical card was not accessed. This verifies full-size root preparation,
 not the handheld's boot, display or game launch.
 
+For a spare-card trial, `--keep-work-dir /path/to/new-directory` retains the
+verified prepared root and its VM manifest on the workspace volume. The
+[offline installer notes](offline-installer.md) describe how the test-only
+virtual card image uses that root. A retained image uses another 10.35 GB until
+removed; the source recovery image stays unchanged.
+
 The first boot downloads a checksum-pinned 217 MiB Ubuntu 24.04 ARM minimal
 image and installs SDL runtime libraries. `curl` uses the Mac resolver because
 Lima's Go resolver timed out on this network. Apple NAT is configured because
