@@ -37,19 +37,35 @@ def disk_info(name):
     return plistlib.loads(command('/usr/sbin/diskutil', 'info', '-plist', str(name)).stdout)
 
 
-def check_target(args, *, mounted=True):
+def stable_target_identity(row):
+    """Fields macOS continues to report after a volume is unmounted."""
+    part = row['partitions'][0]
+    return (row['identifier'], row['media_name'], row['bus'],
+            row['size_bytes'], row['partition_map'], part['identifier'],
+            part['content'], part['size_bytes'], part['filesystem'],
+            part['volume_uuid'])
+
+
+def check_target(args, *, mounted=True, original=None):
     records = inventory()
     matches = [row for row in records if row['identifier'] == args.disk]
     if len(matches) != 1:
         raise RuntimeError('Selected spare is absent or ambiguous')
     row = matches[0]
     part = row['partitions']
-    if (row['inventory_fingerprint'] != args.fingerprint or
-            row['status'] != 'unsupported_layout' or
+    if (row['status'] != 'unsupported_layout' or
             row['size_bytes'] != args.card_bytes or len(part) != 1 or
             part[0]['filesystem'] != 'exfat' or
             part[0]['volume_uuid'] != args.empty_uuid):
         raise RuntimeError('Selected card is not the recorded empty spare')
+    if mounted:
+        if row['inventory_fingerprint'] != args.fingerprint:
+            raise RuntimeError('Selected card is not the recorded empty spare')
+    elif original is None or stable_target_identity(row) != stable_target_identity(original):
+        # diskutil changes VolumeName and TotalSize on some exFAT volumes when
+        # they unmount. Compare the fields that stay stable, after the full
+        # fingerprint and empty-content check performed while mounted.
+        raise RuntimeError('Target identity changed after unmount')
     whole = disk_info(args.disk)
     if (whole.get('DeviceIdentifier') != args.disk or
             whole.get('ParentWholeDisk') != args.disk or
@@ -227,7 +243,7 @@ def flash(args):
             prior.get('target_empty_volume_uuid') != args.empty_uuid or
             prior.get('source_image') != str(Path(args.image).resolve())):
         raise RuntimeError('A matching read-only preflight is required')
-    check_target(args)
+    target = check_target(args)
     source = None
     guard = None
     report = args.report_dir / 'spare-write-report.json'
@@ -239,7 +255,7 @@ def flash(args):
         guard = MountGuard(args.mount_guard, args.disk,
                            args.report_dir / 'mount-guard.log')
         command('/usr/sbin/diskutil', 'unmountDisk', 'force', args.disk)
-        check_target(args, mounted=False)
+        check_target(args, mounted=False, original=target)
         require_unmounted(args.disk)
         raw = Path('/dev/r' + args.disk)
         if not stat.S_ISCHR(raw.stat().st_mode):
