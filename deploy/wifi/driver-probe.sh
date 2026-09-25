@@ -36,6 +36,13 @@ wifi_state() {
         awk -F: '$1 == "wlan0" && $2 == "wifi" { print $3; exit }'
 }
 
+wifi_is_available() {
+    case "$(wifi_state)" in
+        connected|connecting|disconnected) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 show_state() {
     echo '--- NetworkManager devices ---'
     nmcli -t -f DEVICE,TYPE,STATE device status || true
@@ -81,7 +88,7 @@ probe() {
     sudo -n systemctl restart wpa_supplicant || true
     sleep 3
     show_state
-    if [ "$(wifi_state)" != unavailable ]; then
+    if wifi_is_available; then
         try_scan
         echo 'Wi-Fi left the unavailable state after the service restart.'
         return 0
@@ -117,10 +124,10 @@ probe() {
     sudo -n systemctl status wpa_supplicant --no-pager -l 2>&1 | tail -n 35 || true
     echo '--- recent Wi-Fi kernel messages ---'
     sudo -n dmesg 2>&1 | grep -Ei '8188|wlan|wifi|firmware|cfg80211|0bda' | tail -n 50 || true
-    if [ "$(wifi_state)" = unavailable ]; then
-        echo 'RESULT: wlan0 is still unavailable. The log identifies the next repair.'
+    if wifi_is_available; then
+        echo 'RESULT: NetworkManager reports a usable wlan0 interface. Check the scan above.'
     else
-        echo 'RESULT: wlan0 is available. Try a scan in Cartridge.'
+        echo 'RESULT: wlan0 is missing or unavailable. The driver switch did not restore Wi-Fi.'
     fi
     echo 'Rebooting restores the original driver selection.'
 }
