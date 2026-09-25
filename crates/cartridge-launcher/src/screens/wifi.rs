@@ -14,7 +14,7 @@ use crate::ui_constants::*;
 const NEO_STATUS_H: i32 = 60;
 const NEO_NET_ROW_H: i32 = 48;
 const NEO_LIST_Y: i32 = neo::CONTENT_Y + 12 + NEO_STATUS_H + 34;
-const NEO_VISIBLE: usize = ((neo::FOOTER_Y - 30 - NEO_LIST_Y) / NEO_NET_ROW_H) as usize;
+const NEO_DIAGNOSTIC_H: i32 = 76;
 
 pub struct WifiScreen {
     selected_row: usize,
@@ -105,6 +105,15 @@ impl WifiScreen {
 
     fn total_rows(&self) -> usize {
         1 + self.networks.len()
+    }
+
+    fn visible_neo_rows(&self) -> usize {
+        let diagnostic_height = if self.status_message.is_some() || self.scan_error.is_some() {
+            NEO_DIAGNOSTIC_H
+        } else {
+            0
+        };
+        ((neo::FOOTER_Y - 30 - NEO_LIST_Y - diagnostic_height) / NEO_NET_ROW_H).max(1) as usize
     }
 }
 
@@ -234,7 +243,7 @@ impl LauncherScreen for WifiScreen {
             let list_start = CONTENT_TOP + 12 + STATUS_ROW_H + MARGIN + 20;
             let available = CONTENT_BOTTOM - 28 - list_start;
             let visible_count = if style_of(&ctx.settings.theme_id) == UiStyle::Neo {
-                NEO_VISIBLE.max(1)
+                self.visible_neo_rows()
             } else {
                 (available / (NET_ROW_H + MARGIN)).max(1) as usize
             };
@@ -694,7 +703,8 @@ impl WifiScreen {
         }
 
         // Network rows.
-        for (vi, i) in (self.scroll_offset..).take(NEO_VISIBLE.max(1)).enumerate() {
+        let visible_count = self.visible_neo_rows();
+        for (vi, i) in (self.scroll_offset..).take(visible_count).enumerate() {
             if i >= self.networks.len() {
                 break;
             }
@@ -765,10 +775,10 @@ impl WifiScreen {
             }
         }
 
-        if self.scroll_offset + NEO_VISIBLE < self.networks.len() {
+        if self.scroll_offset + visible_count < self.networks.len() {
             let more = format!(
                 "{} MORE",
-                self.networks.len() - self.scroll_offset - NEO_VISIBLE
+                self.networks.len() - self.scroll_offset - visible_count
             );
             neo::text_right(
                 screen,
@@ -781,16 +791,39 @@ impl WifiScreen {
             );
         }
 
-        if let Some(msg) = &self.status_message {
+        if let Some(msg) = self
+            .status_message
+            .as_deref()
+            .or(self.scan_error.as_deref())
+        {
+            let label = if self.status_message.is_some() {
+                "CONNECTION"
+            } else {
+                "SCAN"
+            };
             screen.draw_text(
-                &msg.to_uppercase(),
+                label,
                 neo::MARGIN_X,
-                neo::FOOTER_Y - 26,
+                neo::FOOTER_Y - 68,
                 Some(theme.accent),
                 neo::LABEL_SIZE,
-                false,
-                Some(width - 120),
+                true,
+                None,
             );
+            for (line, text) in neo::wrap_lines(screen, msg, 11, false, width, 3)
+                .iter()
+                .enumerate()
+            {
+                screen.draw_text(
+                    text,
+                    neo::MARGIN_X,
+                    neo::FOOTER_Y - 51 + line as i32 * 15,
+                    Some(theme.accent),
+                    11,
+                    false,
+                    None,
+                );
+            }
         }
 
         let a_hint = if self.selected_row == 0 {

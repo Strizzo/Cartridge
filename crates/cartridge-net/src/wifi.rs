@@ -132,87 +132,93 @@ wifi-sec.psk-flags=0\n";
         }
         #[cfg(target_os = "linux")]
         {
-            use std::process::Command;
-            use std::time::Duration;
+            let result = (|| -> Result<Vec<WifiNetwork>, String> {
+                use std::process::Command;
+                use std::time::Duration;
 
-            let networking = Command::new("nmcli")
-                .arg("networking")
-                .output()
-                .map_err(|e| format!("Cannot check networking state: {e}"))?;
-            if !networking.status.success() {
-                return Err(nmcli_error("Cannot check networking state", &networking));
-            }
-            if String::from_utf8_lossy(&networking.stdout).trim() == "disabled" {
-                let enabled = Command::new("nmcli")
-                    .args(["networking", "on"])
+                let networking = Command::new("nmcli")
+                    .arg("networking")
                     .output()
-                    .map_err(|e| format!("Cannot enable networking: {e}"))?;
-                if !enabled.status.success() {
-                    return Err(nmcli_error("Cannot enable networking", &enabled));
+                    .map_err(|e| format!("Cannot check networking state: {e}"))?;
+                if !networking.status.success() {
+                    return Err(nmcli_error("Cannot check networking state", &networking));
                 }
-            }
-            let interface = wifi_interface()?;
-            let radio = Command::new("nmcli")
-                .args(["radio", "wifi"])
-                .output()
-                .map_err(|e| format!("Cannot check Wi-Fi radio: {e}"))?;
-            if !radio.status.success() {
-                return Err(nmcli_error("Cannot check Wi-Fi radio", &radio));
-            }
-            if String::from_utf8_lossy(&radio.stdout).trim() == "disabled" {
-                let enabled = Command::new("nmcli")
-                    .args(["radio", "wifi", "on"])
+                if String::from_utf8_lossy(&networking.stdout).trim() == "disabled" {
+                    let enabled = Command::new("nmcli")
+                        .args(["networking", "on"])
+                        .output()
+                        .map_err(|e| format!("Cannot enable networking: {e}"))?;
+                    if !enabled.status.success() {
+                        return Err(nmcli_error("Cannot enable networking", &enabled));
+                    }
+                }
+                let interface = wifi_interface()?;
+                let radio = Command::new("nmcli")
+                    .args(["radio", "wifi"])
                     .output()
-                    .map_err(|e| format!("Cannot enable Wi-Fi: {e}"))?;
-                if !enabled.status.success() {
-                    return Err(nmcli_error("Cannot enable Wi-Fi", &enabled));
+                    .map_err(|e| format!("Cannot check Wi-Fi radio: {e}"))?;
+                if !radio.status.success() {
+                    return Err(nmcli_error("Cannot check Wi-Fi radio", &radio));
                 }
-            }
-            // NetworkManager acknowledges a scan request before the AP list is
-            // updated. Reading it immediately can report an empty network list
-            // on the handheld even when nearby networks are present.
-            let scan_request = Command::new("nmcli")
-                .args(["device", "wifi", "rescan", "ifname", &interface])
-                .output();
-            let request_error = match scan_request {
-                Ok(output) if output.status.success() => None,
-                Ok(output) => Some(nmcli_error("Scan request failed", &output)),
-                Err(error) => Some(format!("Cannot request Wi-Fi scan: {error}")),
-            };
+                if String::from_utf8_lossy(&radio.stdout).trim() == "disabled" {
+                    let enabled = Command::new("nmcli")
+                        .args(["radio", "wifi", "on"])
+                        .output()
+                        .map_err(|e| format!("Cannot enable Wi-Fi: {e}"))?;
+                    if !enabled.status.success() {
+                        return Err(nmcli_error("Cannot enable Wi-Fi", &enabled));
+                    }
+                }
+                // NetworkManager acknowledges a scan request before the AP list is
+                // updated. Reading it immediately can report an empty network list
+                // on the handheld even when nearby networks are present.
+                let scan_request = Command::new("nmcli")
+                    .args(["device", "wifi", "rescan", "ifname", &interface])
+                    .output();
+                let request_error = match scan_request {
+                    Ok(output) if output.status.success() => None,
+                    Ok(output) => Some(nmcli_error("Scan request failed", &output)),
+                    Err(error) => Some(format!("Cannot request Wi-Fi scan: {error}")),
+                };
 
-            let saved = self.saved_connections();
-            for attempt in 0..10 {
-                if attempt > 0 {
-                    std::thread::sleep(Duration::from_millis(500));
+                let saved = self.saved_connections();
+                for attempt in 0..10 {
+                    if attempt > 0 {
+                        std::thread::sleep(Duration::from_millis(500));
+                    }
+                    let output = Command::new("nmcli")
+                        .args([
+                            "-t",
+                            "-f",
+                            "SSID,SIGNAL,SECURITY",
+                            "device",
+                            "wifi",
+                            "list",
+                            "--rescan",
+                            "no",
+                            "ifname",
+                            &interface,
+                        ])
+                        .output()
+                        .map_err(|e| format!("Cannot read Wi-Fi networks: {e}"))?;
+                    if !output.status.success() {
+                        return Err(nmcli_error("Cannot read Wi-Fi networks", &output));
+                    }
+                    let networks =
+                        parse_wifi_list(&String::from_utf8_lossy(&output.stdout), &saved);
+                    if !networks.is_empty() {
+                        return Ok(networks);
+                    }
                 }
-                let output = Command::new("nmcli")
-                    .args([
-                        "-t",
-                        "-f",
-                        "SSID,SIGNAL,SECURITY",
-                        "device",
-                        "wifi",
-                        "list",
-                        "--rescan",
-                        "no",
-                        "ifname",
-                        &interface,
-                    ])
-                    .output()
-                    .map_err(|e| format!("Cannot read Wi-Fi networks: {e}"))?;
-                if !output.status.success() {
-                    return Err(nmcli_error("Cannot read Wi-Fi networks", &output));
-                }
-                let networks = parse_wifi_list(&String::from_utf8_lossy(&output.stdout), &saved);
-                if !networks.is_empty() {
-                    return Ok(networks);
-                }
-            }
 
-            let diagnostic = wifi_scan_diagnostic(&interface, request_error.as_deref());
-            log::warn!("{diagnostic}");
-            save_wifi_scan_diagnostic(&diagnostic, &interface);
-            Err(diagnostic)
+                let diagnostic = wifi_scan_diagnostic(&interface, request_error.as_deref());
+                Err(diagnostic)
+            })();
+            if let Err(error) = &result {
+                log::warn!("Wi-Fi scan failed: {error}");
+                save_wifi_scan_diagnostic(error);
+            }
+            result
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -746,7 +752,7 @@ fn wifi_scan_diagnostic(interface: &str, request_error: Option<&str>) -> String 
 }
 
 #[cfg(target_os = "linux")]
-fn save_wifi_scan_diagnostic(summary: &str, interface: &str) {
+fn save_wifi_scan_diagnostic(summary: &str) {
     let Some(home) = std::env::var_os("HOME") else {
         return;
     };
@@ -761,7 +767,7 @@ fn save_wifi_scan_diagnostic(summary: &str, interface: &str) {
             "nmcli",
             vec!["-t", "-f", "DEVICE,TYPE,STATE", "device", "status"],
         ),
-        ("wifi device", "nmcli", vec!["device", "show", interface]),
+        ("wifi devices", "nmcli", vec!["device", "show"]),
         ("networking", "nmcli", vec!["networking"]),
         ("radio", "nmcli", vec!["radio", "wifi"]),
         (
@@ -780,6 +786,26 @@ fn save_wifi_scan_diagnostic(summary: &str, interface: &str) {
         ),
         ("rfkill", "rfkill", vec!["list"]),
         ("interfaces", "iw", vec!["dev"]),
+        ("loaded modules", "lsmod", vec![]),
+        (
+            "network services",
+            "systemctl",
+            vec!["is-active", "NetworkManager", "wpa_supplicant"],
+        ),
+        (
+            "network service log",
+            "journalctl",
+            vec![
+                "-b",
+                "-u",
+                "NetworkManager",
+                "-u",
+                "wpa_supplicant",
+                "-n",
+                "120",
+                "--no-pager",
+            ],
+        ),
     ] {
         report.push_str(&format!("\n[{label}]\n"));
         match std::process::Command::new(command).args(args).output() {
@@ -789,6 +815,65 @@ fn save_wifi_scan_diagnostic(summary: &str, interface: &str) {
             }
             Err(error) => report.push_str(&format!("{error}\n")),
         }
+    }
+    if let Ok(interface) = wifi_interface() {
+        report.push_str(&format!("\n[interface {interface}]\n"));
+        for (label, command, args) in [
+            ("link", "ip", vec!["-d", "link", "show", &interface]),
+            ("wireless extensions", "iwconfig", vec![&interface]),
+            (
+                "NetworkManager reason",
+                "nmcli",
+                vec![
+                    "-t",
+                    "-f",
+                    "GENERAL.STATE,GENERAL.REASON",
+                    "device",
+                    "show",
+                    &interface,
+                ],
+            ),
+        ] {
+            report.push_str(&format!("\n[{label}]\n"));
+            match std::process::Command::new(command).args(args).output() {
+                Ok(output) => {
+                    report.push_str(&String::from_utf8_lossy(&output.stdout));
+                    report.push_str(&String::from_utf8_lossy(&output.stderr));
+                }
+                Err(error) => report.push_str(&format!("{error}\n")),
+            }
+        }
+        let driver = std::path::Path::new("/sys/class/net")
+            .join(&interface)
+            .join("device/driver");
+        report.push_str(&format!("\n[driver]\n{:?}\n", std::fs::read_link(driver)));
+    }
+    report.push_str("\n[kernel wireless messages]\n");
+    match std::process::Command::new("journalctl")
+        .args(["-b", "-k", "-n", "2000", "--no-pager"])
+        .output()
+    {
+        Ok(output) => {
+            let kernel_log = String::from_utf8_lossy(&output.stdout);
+            let matches: Vec<_> = kernel_log
+                .lines()
+                .filter(|line| {
+                    let line = line.to_ascii_lowercase();
+                    [
+                        "wlan", "wifi", "wireless", "firmware", "rtl", "brcm", "rfkill", "sdio",
+                        "cfg80211", "80211", "mmc", "usb",
+                    ]
+                    .iter()
+                    .any(|term| line.contains(term))
+                })
+                .collect();
+            for line in &matches[matches.len().saturating_sub(100)..] {
+                report.push_str(line);
+                report.push('\n');
+            }
+            report.push_str(&String::from_utf8_lossy(&output.stderr));
+        }
+        Err(error) => report.push_str(&format!("{error}\n")),
     }
     let _ = std::fs::write(dir.join("wifi-scan.log"), report);
 }
