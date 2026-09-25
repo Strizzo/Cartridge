@@ -880,13 +880,26 @@ fn save_wifi_scan_diagnostic(summary: &str) {
 
 #[cfg(any(target_os = "linux", test))]
 fn wifi_device_from_status(text: &str) -> Option<&str> {
-    text.lines().find_map(|line| {
+    let mut unavailable = None;
+    for line in text.lines() {
         let mut parts = line.splitn(3, ':');
-        match (parts.next(), parts.next(), parts.next()) {
-            (Some(device), Some("wifi"), Some(_)) if !device.is_empty() => Some(device),
-            _ => None,
+        if let (Some(device), Some("wifi"), Some(state)) =
+            (parts.next(), parts.next(), parts.next())
+        {
+            // The RTL8188EU driver can expose p2p0 before its station interface.
+            // Do not use the peer-to-peer device for ordinary AP scans.
+            if device.is_empty() || device.starts_with("p2p") {
+                continue;
+            }
+            if matches!(state, "connected" | "connecting" | "disconnected") {
+                return Some(device);
+            }
+            if unavailable.is_none() {
+                unavailable = Some(device);
+            }
         }
-    })
+    }
+    unavailable
 }
 
 #[cfg(target_os = "linux")]
@@ -901,7 +914,7 @@ fn wifi_interface() -> Result<String, String> {
     let text = String::from_utf8_lossy(&output.stdout);
     wifi_device_from_status(&text)
         .map(str::to_string)
-        .ok_or_else(|| "No Wi-Fi interface detected. Check the adapter or driver.".to_string())
+        .ok_or_else(|| "No station Wi-Fi interface detected. Check the adapter or driver.".to_string())
 }
 
 #[cfg(test)]
@@ -924,6 +937,21 @@ mod wifi_tests {
             "lo:loopback:connected\neth0:ethernet:connected\nwlx001122:wifi:disconnected\n";
         assert_eq!(wifi_device_from_status(status), Some("wlx001122"));
         assert_eq!(wifi_device_from_status("eth0:ethernet:connected\n"), None);
+    }
+
+    #[test]
+    fn scans_station_interface_instead_of_p2p_or_unavailable_device() {
+        let status = "p2p0:wifi:unavailable\nwlan0:wifi:disconnected\n";
+        assert_eq!(wifi_device_from_status(status), Some("wlan0"));
+        assert_eq!(wifi_device_from_status("p2p0:wifi:unavailable\n"), None);
+        assert_eq!(
+            wifi_device_from_status("wlan0:wifi:unavailable\nwlx123:wifi:disconnected\n"),
+            Some("wlx123")
+        );
+        assert_eq!(
+            wifi_device_from_status("wlan0:wifi:unavailable\n"),
+            Some("wlan0")
+        );
     }
 
     #[test]
