@@ -26,3 +26,7 @@ The trial log is saved beside Cartridge on EASYROMS.
 These are hardware diagnostics, not a general online update. No BOOT/kernel,
 Linux-root or driver change belongs in the online updater until the handheld
 passes a scan, connection and reboot test with a documented rollback.
+
+The subsequent service trial failed and retained no override. The ARM VM
+reproduced a corrupted WPA executable; see [the package recovery evidence and
+procedure](wifi-package-recovery.md).
