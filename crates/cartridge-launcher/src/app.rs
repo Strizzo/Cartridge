@@ -24,6 +24,7 @@ pub struct LauncherApp {
     overlay: Option<BootOverlay>,
     /// Set when a screen requests launching an app; checked by the main loop.
     pub pending_launch: Option<String>,
+    pub pending_exit: Option<crate::LauncherResult>,
 }
 
 impl LauncherApp {
@@ -54,8 +55,9 @@ impl LauncherApp {
         let installer_http = cartridge_net::HttpClient::new(cache_dir);
         let installer = cartridge_net::AppInstaller::new(installer_http);
 
-        // Try to load registry from network first, fall back to local file
-        let registry = load_registry_from_net(&registry_client, assets_dir);
+        // Startup must work offline and present immediately. Store refresh is
+        // explicit; the bundled registry already describes installed apps.
+        let registry = load_registry_from_file(assets_dir);
 
         // Load installed apps from storage, then sync with what's on disk
         let mut installed: InstalledApps = storage
@@ -108,7 +110,16 @@ impl LauncherApp {
             ctx,
             overlay: None,
             pending_launch: None,
+            pending_exit: None,
         }
+    }
+
+    pub fn is_loading(&self) -> bool {
+        self.screen_stack.last().map(|s| s.is_loading()).unwrap_or(false)
+    }
+
+    pub fn show_games(&mut self, resume: Option<crate::games::GameRequest>) {
+        self.screen_stack.push(Box::new(crate::screens::games::GamesScreen::new(resume)));
     }
 
     /// Handle input events. Returns true if the app should quit.
@@ -123,16 +134,17 @@ impl LauncherApp {
                     return false;
                 }
                 OverlayResult::SwitchToES => {
-                    // Write flag file and signal quit
-                    let _ = std::fs::write("/tmp/.cartridge_switch_to_es", "1");
+                    self.pending_exit = Some(crate::LauncherResult::EmulationStation);
                     return true;
                 }
                 OverlayResult::Reboot => {
                     request_power_action(PowerAction::Reboot);
+                    self.pending_exit = Some(crate::LauncherResult::PowerRequested);
                     return true;
                 }
                 OverlayResult::Shutdown => {
                     request_power_action(PowerAction::Shutdown);
+                    self.pending_exit = Some(crate::LauncherResult::PowerRequested);
                     return true;
                 }
             }
@@ -155,6 +167,10 @@ impl LauncherApp {
                 ScreenAction::ShowOverlay => {
                     self.overlay = Some(BootOverlay::new());
                 }
+                ScreenAction::LaunchGame(game) => {
+                    self.pending_exit = Some(crate::LauncherResult::LaunchGame(game));
+                    return true;
+                }
                 ScreenAction::LaunchApp(app_id) => {
                     self.pending_launch = Some(app_id);
                     return true;
@@ -172,7 +188,9 @@ impl LauncherApp {
     /// Cheap; safe to call every frame. Returns true if data updated
     /// (caller can use this to mark the UI dirty).
     pub fn refresh_sysinfo(&mut self) -> bool {
-        self.ctx.sysinfo.refresh()
+        let changed = self.ctx.sysinfo.refresh();
+        let screen_changed = self.screen_stack.last_mut().map(|s| s.update(&mut self.ctx)).unwrap_or(false);
+        changed || screen_changed
     }
 
     /// Read the user's currently selected theme id.
@@ -231,6 +249,10 @@ enum PowerAction {
 /// On other platforms (macOS dev) it just logs and exits cleanly so the
 /// developer can iterate without rebooting their workstation.
 fn request_power_action(action: PowerAction) {
+    if cartridge_core::sim::is_sim() {
+        log::info!("Simulator power action requested; host unchanged");
+        return;
+    }
     #[cfg(target_os = "linux")]
     {
         let arg = match action {
@@ -253,36 +275,12 @@ fn request_power_action(action: PowerAction) {
 fn create_screen(id: ScreenId) -> Box<dyn LauncherScreen> {
     match id {
         ScreenId::Home => Box::new(HomeScreen::new()),
+        ScreenId::Games => Box::new(crate::screens::games::GamesScreen::new(None)),
         ScreenId::Store => Box::new(StoreScreen::new()),
         ScreenId::Detail(idx) => Box::new(DetailScreen::new(idx)),
         ScreenId::Settings => Box::new(SettingsScreen::new()),
         ScreenId::WiFi => Box::new(WifiScreen::new()),
     }
-}
-
-/// Try to load the registry from the network via RegistryClient, falling
-/// back to a local registry.json file on disk if the network is unavailable.
-fn load_registry_from_net(
-    client: &cartridge_net::RegistryClient,
-    assets_dir: &Path,
-) -> Registry {
-    log::info!("Attempting to fetch registry from network...");
-    match client.fetch() {
-        Ok(net_reg) => {
-            log::info!(
-                "Fetched registry v{} with {} apps from network",
-                net_reg.version,
-                net_reg.apps.len(),
-            );
-            return Registry::from_net(&net_reg);
-        }
-        Err(e) => {
-            log::warn!("Network registry fetch failed: {e}");
-            log::info!("Falling back to local registry file...");
-        }
-    }
-
-    load_registry_from_file(assets_dir)
 }
 
 /// Load registry from a local JSON file on disk.

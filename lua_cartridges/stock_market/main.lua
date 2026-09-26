@@ -126,40 +126,25 @@ local ROW_HEIGHT = 56
 -- ── Helpers ──────────────────────────────────────────────────────────────────
 
 local function draw_header(title, right_text, right_color)
-    screen.draw_gradient_rect(0, 0, 720, 40,
-        theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
-        theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
-    screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
-    if right_text then
-        local rc = right_color or theme.text_dim
-        local rw = screen.get_text_width(right_text, 12, false)
-        screen.draw_text(right_text, 704 - rw, 14, {color=rc, size=12})
-    end
+    ui.header(title, right_text, right_color)
 end
 
 local function draw_footer(hints)
-    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 684, 720, 684, {color=theme.border})
-    local x = 10
-    for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
-        x = x + w + 14
-    end
+    ui.footer(hints)
 end
 
 local function draw_tab_bar(tabs, active_idx, y)
-    screen.draw_rect(0, y, 720, 30, {color=theme.bg_header, filled=true})
+    ui.rect(0, y, 720, 30, {color=theme.bg_header, filled=true})
     local tx = 10
     for i, label in ipairs(tabs) do
         local is_active = (i == active_idx)
         local tw = screen.get_text_width(label, 12, is_active)
         local tab_w = tw + 16
         if is_active then
-            screen.draw_rect(tx, y + 4, tab_w, 22, {color=theme.accent, filled=true, radius=4})
+            ui.rect(tx, y + 4, tab_w, 22, {color=theme.accent, filled=true, radius=4})
             screen.draw_text(label, tx + 8, y + 7, {color={20, 20, 30}, size=12, bold=true})
         else
-            screen.draw_rect(tx, y + 4, tab_w, 22, {color=theme.card_bg, filled=true, radius=4})
+            ui.rect(tx, y + 4, tab_w, 22, {color=theme.card_bg, filled=true, radius=4})
             screen.draw_text(label, tx + 8, y + 7, {color=theme.text_dim, size=12})
         end
         tx = tx + tab_w + 6
@@ -176,7 +161,7 @@ local function draw_scroll_indicator(y_start, height, cursor, total, visible)
     local thumb_h = math.max(8, math.floor(bar_h * visible / total))
     local progress = (cursor - 1) / math.max(1, total - 1)
     local thumb_y = bar_top + math.floor((bar_h - thumb_h) * progress)
-    screen.draw_rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
+    ui.rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
 end
 
 local function is_in_watchlist(symbol)
@@ -385,13 +370,13 @@ local function draw_quote_row(q, y, is_selected)
 
     -- Card background
     if is_selected then
-        screen.draw_card(card_x, y, card_w, card_h, {bg=theme.card_highlight, border=theme.accent, radius=CARD_RADIUS})
+        ui.card(card_x, y, card_w, card_h, {bg=theme.card_highlight, border=theme.accent, radius=CARD_RADIUS})
     else
-        screen.draw_card(card_x, y, card_w, card_h, {bg=theme.card_bg, radius=CARD_RADIUS})
+        ui.card(card_x, y, card_w, card_h, {bg=theme.card_bg, radius=CARD_RADIUS})
     end
 
     -- Colored left border strip
-    screen.draw_rect(card_x, y + 4, 3, card_h - 8, {color=direction_color, filled=true, radius=1})
+    ui.rect(card_x, y + 4, 3, card_h - 8, {color=direction_color, filled=true, radius=1})
 
     -- Symbol (strip -USD suffix for crypto)
     local display_symbol = q.symbol:gsub("%-USD$", "")
@@ -475,7 +460,7 @@ local function draw_watchlist_screen()
 
     -- Period pills at bottom of list area
     local period_y = footer_y - 28
-    screen.draw_rect(0, period_y, 720, 28, {color=theme.bg_header, filled=true})
+    ui.rect(0, period_y, 720, 28, {color=theme.bg_header, filled=true})
     screen.draw_line(0, period_y, 720, period_y, {color=theme.border})
     local px = 10
     for i, p in ipairs(PERIODS) do
@@ -484,10 +469,10 @@ local function draw_watchlist_screen()
         local tw = screen.get_text_width(label, 11, is_active)
         local tab_w = tw + 12
         if is_active then
-            screen.draw_rect(px, period_y + 3, tab_w, 20, {color=theme.accent, filled=true, radius=4})
+            ui.rect(px, period_y + 3, tab_w, 20, {color=theme.accent, filled=true, radius=4})
             screen.draw_text(label, px + 6, period_y + 5, {color={20, 20, 30}, size=11, bold=true})
         else
-            screen.draw_rect(px, period_y + 3, tab_w, 20, {color=theme.card_bg, filled=true, radius=4})
+            ui.rect(px, period_y + 3, tab_w, 20, {color=theme.card_bg, filled=true, radius=4})
             screen.draw_text(label, px + 6, period_y + 5, {color=theme.text_dim, size=11})
         end
         px = px + tab_w + 4
@@ -550,10 +535,10 @@ local function draw_detail_screen()
         local tw = screen.get_text_width(label, 12, is_active)
         local tab_w = tw + 16
         if is_active then
-            screen.draw_rect(tab_x, y, tab_w, 22, {color=theme.accent, filled=true, radius=4})
+            ui.rect(tab_x, y, tab_w, 22, {color=theme.accent, filled=true, radius=4})
             screen.draw_text(label, tab_x + 8, y + 3, {color={20, 20, 30}, size=12, bold=true})
         else
-            screen.draw_rect(tab_x, y, tab_w, 22, {color=theme.card_bg, filled=true, radius=4})
+            ui.rect(tab_x, y, tab_w, 22, {color=theme.card_bg, filled=true, radius=4})
             screen.draw_text(label, tab_x + 8, y + 3, {color=theme.text_dim, size=12})
         end
         tab_x = tab_x + tab_w + 6
@@ -566,7 +551,7 @@ local function draw_detail_screen()
     -- Chart area
     local chart_y = 108
     local chart_h = 180
-    screen.draw_card(8, chart_y, 704, chart_h, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    ui.card(8, chart_y, 704, chart_h, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
 
     local spark_data = state.sparklines[q.symbol]
     if state.detail_loading then
@@ -583,7 +568,7 @@ local function draw_detail_screen()
     local stats_y = chart_y + chart_h + 12
 
     -- Day range card
-    screen.draw_card(8, stats_y, 344, 60, {bg=theme.card_bg, border=theme.border, radius=6})
+    ui.card(8, stats_y, 344, 60, {bg=theme.card_bg, border=theme.border, radius=6})
     screen.draw_text("Day Range", 18, stats_y + 6, {color=theme.text_dim, size=11})
     local low_str = q.low > 0 and string.format("$%.2f", q.low) or "---"
     local high_str = q.high > 0 and string.format("$%.2f", q.high) or "---"
@@ -596,7 +581,7 @@ local function draw_detail_screen()
     end
 
     -- 52-week range card
-    screen.draw_card(368, stats_y, 344, 60, {bg=theme.card_bg, border=theme.border, radius=6})
+    ui.card(368, stats_y, 344, 60, {bg=theme.card_bg, border=theme.border, radius=6})
     screen.draw_text("52-Week Range", 378, stats_y + 6, {color=theme.text_dim, size=11})
     local w52_low = q.week52_low > 0 and string.format("$%.2f", q.week52_low) or "---"
     local w52_high = q.week52_high > 0 and string.format("$%.2f", q.week52_high) or "---"
@@ -635,10 +620,10 @@ local function draw_browse_screen()
         local tw = screen.get_text_width(label, 11, is_active)
         local tab_w = tw + 12
         if is_active then
-            screen.draw_rect(tab_x, y, tab_w, 20, {color=theme.accent, filled=true, radius=4})
+            ui.rect(tab_x, y, tab_w, 20, {color=theme.accent, filled=true, radius=4})
             screen.draw_text(label, tab_x + 6, y + 3, {color={20, 20, 30}, size=11, bold=true})
         else
-            screen.draw_rect(tab_x, y, tab_w, 20, {color=theme.card_bg, filled=true, radius=4})
+            ui.rect(tab_x, y, tab_w, 20, {color=theme.card_bg, filled=true, radius=4})
             screen.draw_text(label, tab_x + 6, y + 3, {color=theme.text_dim, size=11})
         end
         tab_x = tab_x + tab_w + 4
@@ -677,9 +662,9 @@ local function draw_browse_screen()
             local card_h = browse_row_h - 4
 
             if is_selected then
-                screen.draw_card(card_x, cy, card_w, card_h, {bg=theme.card_highlight, border=theme.accent, radius=CARD_RADIUS})
+                ui.card(card_x, cy, card_w, card_h, {bg=theme.card_highlight, border=theme.accent, radius=CARD_RADIUS})
             else
-                screen.draw_card(card_x, cy, card_w, card_h, {bg=theme.card_bg, radius=CARD_RADIUS})
+                ui.card(card_x, cy, card_w, card_h, {bg=theme.card_bg, radius=CARD_RADIUS})
             end
 
             -- Symbol
@@ -689,12 +674,12 @@ local function draw_browse_screen()
 
             -- Tier badge
             local tier_color = TIER_COLORS[stock.tier] or {140, 140, 160}
-            screen.draw_pill(stock.tier:upper(), card_x + card_w - 140, cy + (card_h - 16) / 2,
+            ui.pill(stock.tier:upper(), card_x + card_w - 140, cy + (card_h - 16) / 2,
                 tier_color[1], tier_color[2], tier_color[3], {text_color={20,20,30}, size=10})
 
             -- Watchlist status
             if in_wl then
-                screen.draw_pill("IN LIST", card_x + card_w - 70, cy + (card_h - 16) / 2,
+                ui.pill("IN LIST", card_x + card_w - 70, cy + (card_h - 16) / 2,
                     theme.positive.r, theme.positive.g, theme.positive.b, {text_color={20,20,30}, size=10})
             end
 

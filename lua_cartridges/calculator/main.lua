@@ -293,25 +293,20 @@ local state = {
 
 -- ── Drawing Helpers ──────────────────────────────────────────────────────────
 
-local function draw_header(title)
-    screen.draw_gradient_rect(0, 0, 720, 40,
-        theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
-        theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
-    screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
+local function draw_header(title, right_text, right_color)
+    ui.header(title, right_text, right_color)
 end
 
 local function draw_footer(hints)
-    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 684, 720, 684, {color=theme.border})
-    local x = 10
-    for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
-        x = x + w + 14
-    end
+    ui.footer(hints)
 end
 
 local function get_button_colors(btn_type, is_selected)
+    if theme.ui == "neo" then
+        if is_selected then return theme.accent, theme.bg, theme.accent end
+        local fg=(btn_type == TYPE_DIGIT) and theme.text or theme.accent
+        return theme.card_bg, fg, theme.border
+    end
     if is_selected then
         if btn_type == TYPE_EQUAL then
             return {60,170,60}, {255,255,255}, theme.accent
@@ -501,7 +496,7 @@ local function draw_calc_screen()
     -- Display area
     local display_y = 44
     local display_h = 116
-    screen.draw_card(12, display_y, 696, display_h, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
+    ui.card(12, display_y, 696, display_h, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
 
     -- Format expression for display
     local formatted = ""
@@ -571,12 +566,12 @@ local function draw_calc_screen()
 
                 -- Selection glow
                 if is_selected then
-                    screen.draw_rect(x - 2, y - 2, btn_w + 4, btn_h + 4, {color=theme.accent, filled=true, radius=10})
+                    ui.rect(x - 2, y - 2, btn_w + 4, btn_h + 4, {color=theme.accent, filled=true, radius=10})
                 end
 
-                screen.draw_rect(x, y, btn_w, btn_h, {color=bg, filled=true, radius=8})
+                ui.rect(x, y, btn_w, btn_h, {color=bg, filled=true, radius=8})
                 if border_color then
-                    screen.draw_rect(x, y, btn_w, btn_h, {color=border_color, filled=false, radius=8})
+                    ui.rect(x, y, btn_w, btn_h, {color=border_color, filled=false, radius=8})
                 end
 
                 -- Label
@@ -640,9 +635,9 @@ local function draw_history_screen()
         local is_selected = (i == state.history_selected)
 
         if is_selected then
-            screen.draw_card(x_pad, y, card_w, item_h, {bg=theme.card_highlight, border=theme.accent, radius=8, shadow=true})
+            ui.card(x_pad, y, card_w, item_h, {bg=theme.card_highlight, border=theme.accent, radius=8, shadow=true})
         else
-            screen.draw_card(x_pad, y, card_w, item_h, {bg=theme.card_bg, border=theme.border, radius=8})
+            ui.card(x_pad, y, card_w, item_h, {bg=theme.card_bg, border=theme.border, radius=8})
         end
 
         -- Expression

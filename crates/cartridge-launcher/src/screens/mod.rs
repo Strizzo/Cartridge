@@ -1,4 +1,5 @@
 pub mod home;
+pub mod games;
 pub mod store;
 pub mod detail;
 pub mod settings;
@@ -23,11 +24,13 @@ pub enum ScreenAction {
     Quit,
     /// Launch an installed app by its id.
     LaunchApp(String),
+    LaunchGame(crate::games::GameRequest),
 }
 
 /// Identifies which screen to push.
 pub enum ScreenId {
     Home,
+    Games,
     Store,
     Detail(usize), // index into registry apps
     Settings,
@@ -36,6 +39,9 @@ pub enum ScreenId {
 
 /// Common trait for all launcher screens.
 pub trait LauncherScreen {
+    /// Poll background work; true requests a redraw. Must never block.
+    fn update(&mut self, _ctx: &mut ScreenContext) -> bool { false }
+    fn is_loading(&self) -> bool { false }
     fn handle_input(&mut self, events: &[InputEvent], ctx: &mut ScreenContext) -> ScreenAction;
     fn render(&mut self, screen: &mut Screen, ctx: &ScreenContext);
 }

@@ -4,6 +4,8 @@
 # Usage:
 #   ./sim.sh                          # launcher (FPS overlay on)
 #   ./sim.sh app lua_cartridges/hacker_news   # one cartridge, hot reload on
+#   ./sim.sh check                    # automated navigation/app screenshots
+#   ./sim.sh session                  # real startup supervisor + native UI
 #   ./sim.sh boot                     # the 5 s boot selector
 #   ./sim.sh demo                     # drawing-primitives demo
 #
@@ -12,6 +14,7 @@
 #   --true-size      scale so the window is 71.8 mm wide on the main display
 #   --fullscreen     desktop fullscreen, 720x720 letterboxed
 #   --release        release build (closer to device perf; still not device numbers)
+#   --fixture <json> deterministic HTTP replies for interactive apps (no sockets)
 #   --profile <json> simulated device profile (default sim/profiles/r36s-plus.json)
 #   --battery N      override battery percent
 #   --wifi off|ssid  override WiFi state
@@ -43,6 +46,7 @@ TRUE_SIZE=0
 FULLSCREEN=0
 RELEASE=0
 PROFILE=""
+HTTP_FIXTURE=""
 BATTERY=""
 WIFI=""
 SIM_HOME=""
@@ -56,6 +60,8 @@ usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; }
 while [[ $# -gt 0 ]]; do
     case "$1" in
         app)          MODE="app"; APP_DIR="${2:-}"; [[ -n "$APP_DIR" ]] || { echo "app: missing cartridge dir" >&2; exit 2; }; shift 2 ;;
+        check)        MODE="check"; HIDDEN=1; SOFTWARE=1; SHOW_FPS=0; shift ;;
+        session)      MODE="session"; shift ;;
         boot)         MODE="boot"; shift ;;
         demo)         MODE="demo"; shift ;;
         --scale)      SCALE="$2"; shift 2 ;;
@@ -63,6 +69,7 @@ while [[ $# -gt 0 ]]; do
         --true-size)  TRUE_SIZE=1; shift ;;
         --fullscreen) FULLSCREEN=1; shift ;;
         --release)    RELEASE=1; shift ;;
+        --fixture)    HTTP_FIXTURE="$2"; shift 2 ;;
         --profile)    PROFILE="$2"; shift 2 ;;
         --profile=*)  PROFILE="${1#--profile=}"; shift ;;
         --battery)    BATTERY="$2"; shift 2 ;;
@@ -142,10 +149,19 @@ if [[ -z "$PROFILE" && -f "$ROOT/sim/profiles/r36s-plus.json" ]]; then
     PROFILE="$ROOT/sim/profiles/r36s-plus.json"
 fi
 
+# Small generated library lets game discovery and launch/return work offline.
+if [[ -z "${CARTRIDGE_ES_SYSTEMS:-}" ]]; then
+    python3 "$ROOT/sim/setup-game-fixture.py" "$SIM_HOME/device"
+    export CARTRIDGE_ES_SYSTEMS="$SIM_HOME/device/es_systems.cfg"
+    export CARTRIDGE_ES_SETTINGS="$SIM_HOME/device/es_settings.cfg"
+    export CARTRIDGE_ES_HOME="$SIM_HOME/device"
+    export CARTRIDGE_ROMS="$SIM_HOME/device/roms"
+fi
 export CARTRIDGE_SIM=1
 export CARTRIDGE_ASSETS="$ROOT/assets"
 export CARTRIDGE_HOME="$SIM_HOME"
 export RUST_LOG="${RUST_LOG:-cartridge=info,cartridge_launcher=info,cartridge_core=info,cartridge_lua=info}"
+[[ -n "$HTTP_FIXTURE" ]]   && export CARTRIDGE_HTTP_FIXTURE="$HTTP_FIXTURE"
 [[ -n "$PROFILE" ]]        && export CARTRIDGE_SIM_PROFILE="$PROFILE"
 [[ -n "$BATTERY" ]]        && export CARTRIDGE_SIM_BATTERY="$BATTERY"
 [[ -n "$WIFI" ]]           && export CARTRIDGE_SIM_WIFI="$WIFI"
@@ -164,6 +180,15 @@ echo "sim: home=$CARTRIDGE_HOME profile=${CARTRIDGE_SIM_PROFILE:-<defaults>} bat
 echo
 
 case "$MODE" in
+    check)
+        export CARTRIDGE_READY_FILE="$SIM_HOME/check-ready"
+        rm -f "$CARTRIDGE_READY_FILE"
+        exec cargo run -q ${CARGO_FLAGS[@]+"${CARGO_FLAGS[@]}"} --bin sim-check -- ${PASS[@]+"${PASS[@]}"}
+        ;;
+    session)
+        export CARTRIDGE_SIM_RELEASE="$RELEASE"
+        exec bash "$ROOT/sim/session.sh" ${PASS[@]+"${PASS[@]}"}
+        ;;
     launcher) exec cargo run -q ${CARGO_FLAGS[@]+"${CARGO_FLAGS[@]}"} --bin cartridge -- ${PASS[@]+"${PASS[@]}"} ;;
     app)      exec cargo run -q ${CARGO_FLAGS[@]+"${CARGO_FLAGS[@]}"} --bin cartridge -- run --path "$APP_DIR" ${PASS[@]+"${PASS[@]}"} ;;
     demo)     exec cargo run -q ${CARGO_FLAGS[@]+"${CARGO_FLAGS[@]}"} --bin cartridge -- demo ${PASS[@]+"${PASS[@]}"} ;;

@@ -1,4 +1,5 @@
 pub mod app;
+pub mod games;
 pub mod data;
 pub mod neo;
 pub mod screens;
@@ -35,6 +36,11 @@ pub enum LauncherResult {
     Quit,
     /// User wants to launch a Lua app at this path.
     LaunchApp(PathBuf),
+    LaunchGame(games::GameRequest),
+    /// Hand display ownership to the stock launcher through the session wrapper.
+    EmulationStation,
+    /// A shutdown/reboot was requested; never start the fallback during shutdown.
+    PowerRequested,
 }
 
 /// Stats collected during a launcher run -- used by perf benches and tests.
@@ -52,6 +58,10 @@ pub struct ScriptStep {
 /// Configuration for headless / scripted runs.
 #[derive(Default)]
 pub struct LauncherConfig {
+    /// Restore the game library selection after the emulator exits.
+    pub resume_game: Option<games::GameRequest>,
+    /// Scripted scenarios await real background I/O, with a 15s deadline.
+    pub script_wait_for_background: bool,
     /// Stop after this many frames (None = run forever).
     pub max_frames: Option<u64>,
     /// Pre-scripted input. Each ScriptStep injects buttons then waits N frames.
@@ -61,7 +71,7 @@ pub struct LauncherConfig {
     pub capture_dir: Option<PathBuf>,
     /// Frames at which to capture (e.g. [10, 30, 60]).
     pub capture_frames: Vec<u64>,
-    /// Skip the frame-rate sleep so benches run as fast as possible.
+    /// Skip frame pacing so benches run as fast as possible.
     pub uncapped: bool,
     /// Print perf stats every 5 seconds (or before exit).
     pub print_stats: bool,
@@ -88,7 +98,7 @@ pub fn run_launcher_with_config(
     // Window + canvas via the shared helper: honors CARTRIDGE_HIDDEN (headless
     // capture), CARTRIDGE_SOFTWARE (reliable read_pixels), CARTRIDGE_SCALE and
     // CARTRIDGE_FULLSCREEN (simulator). Never vsync (unreliable on RK3326;
-    // the sleep-based frame cap below provides timing).
+    // the event-aware frame cap below provides timing).
     let mut canvas = cartridge_core::window::create_canvas(
         &video_subsystem,
         "CartridgeOS",
@@ -105,8 +115,10 @@ pub fn run_launcher_with_config(
         input_manager.set_ignore_joystick(true);
     }
     let mut event_pump = sdl_context.event_pump()?;
+    let mut event_inbox = cartridge_core::event_wait::EventInbox::default();
 
     let mut launcher = LauncherApp::new(assets_dir);
+    if let Some(game) = config.resume_game.clone() { launcher.show_games(Some(game)); }
     // Build the theme AFTER the launcher so we honor the user's saved
     // theme_id. Atmosphere is pre-composited from theme colors, so it
     // must be re-built whenever the user picks a different preset.
@@ -132,13 +144,15 @@ pub fn run_launcher_with_config(
     let mut frame_count: u64 = 0;
     let mut script_idx = 0usize;
     let mut script_wait_frames: u32 = 0;
-    let mut all_frame_ms: Vec<f32> = Vec::with_capacity(1024);
+    let mut all_frame_ms = cartridge_core::perf::FrameSamples::new(config.max_frames.is_some());
+    let mut render_frame_ms = cartridge_core::perf::FrameSamples::new(config.max_frames.is_some());
     let bench_start = Instant::now();
     let result;
 
     // Dirty rendering: skip render+present when nothing has changed.
     // Always render the first few frames (warmup, asset loading).
     let mut dirty = true;
+    let mut ready_file = std::env::var_os("CARTRIDGE_READY_FILE").map(PathBuf::from);
     let mut last_render = Instant::now();
     // Force a re-render at least every N seconds even when idle (sysinfo
     // history grows, clock ticks, etc.). 1 second is fine -- still saves
@@ -147,6 +161,7 @@ pub fn run_launcher_with_config(
 
     loop {
         let frame_start = Instant::now();
+        let mut capture_time = std::time::Duration::ZERO;
         let dt = frame_start.duration_since(last_frame).as_secs_f32();
         last_frame = frame_start;
         atmosphere.update(dt);
@@ -157,21 +172,21 @@ pub fn run_launcher_with_config(
         }
 
         // Collect SDL events
-        let events: Vec<sdl2::event::Event> = event_pump.poll_iter().collect();
+        let events = event_inbox.collect(&mut event_pump);
 
         // Check for quit / escape
-        for event in &events {
+        for event in events {
             match event {
                 sdl2::event::Event::Quit { .. } => {
                     result = LauncherResult::Quit;
-                    return Ok((result, build_stats(frame_count, &all_frame_ms, &text_cache, bench_start)));
+                    return Ok((result, build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start)));
                 }
                 sdl2::event::Event::KeyDown {
                     keycode: Some(sdl2::keyboard::Keycode::Escape),
                     ..
                 } => {
                     result = LauncherResult::Quit;
-                    return Ok((result, build_stats(frame_count, &all_frame_ms, &text_cache, bench_start)));
+                    return Ok((result, build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start)));
                 }
                 _ => {}
             }
@@ -179,16 +194,16 @@ pub fn run_launcher_with_config(
 
         // Screenshot hotkey (F12) or SIGUSR1: force a render this frame and
         // capture it just before present.
-        let screenshot_requested = cartridge_core::screenshot::requested(&events);
+        let screenshot_requested = cartridge_core::screenshot::requested(events);
         if screenshot_requested {
             dirty = true;
         }
 
         // Process input
-        let mut input_events = input_manager.process_events(&events);
+        let mut input_events = input_manager.process_events(events);
 
         // Inject scripted input if applicable
-        if !config.script.is_empty() && script_idx < config.script.len() {
+        if !config.script.is_empty() && script_idx < config.script.len() && !(config.script_wait_for_background && launcher.is_loading()) {
             if script_wait_frames == 0 {
                 let step = &config.script[script_idx];
                 for b in &step.buttons {
@@ -229,7 +244,11 @@ pub fn run_launcher_with_config(
         if atmosphere.has_animation() && launcher.animations_enabled() {
             dirty = true;
         }
+        let was_loading = launcher.is_loading();
         if launcher.handle_input(&input_events) {
+            if let Some(exit) = launcher.pending_exit.take() {
+                return Ok((exit, build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start)));
+            }
             if let Some(app_id) = launcher.pending_launch() {
                 sounds.launch();
                 // Give the audio device ~150ms to actually emit the
@@ -237,10 +256,13 @@ pub fn run_launcher_with_config(
                 std::thread::sleep(std::time::Duration::from_millis(120));
                 let app_dir = resolve_app_dir(app_id, assets_dir);
                 result = LauncherResult::LaunchApp(app_dir);
-                return Ok((result, build_stats(frame_count, &all_frame_ms, &text_cache, bench_start)));
+                return Ok((result, build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start)));
             }
             result = LauncherResult::Quit;
-            return Ok((result, build_stats(frame_count, &all_frame_ms, &text_cache, bench_start)));
+            return Ok((result, build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start)));
+        }
+        if was_loading != launcher.is_loading() {
+            dirty = true;
         }
 
         // Reflect setting changes (sounds toggle).
@@ -284,6 +306,7 @@ pub fn run_launcher_with_config(
             }
 
             // Capture frame BEFORE present so we get exactly what was drawn.
+            let capture_start = Instant::now();
             if should_capture {
                 if let Some(ref dir) = config.capture_dir {
                     let path = dir.join(format!("frame_{frame_count:04}.png"));
@@ -300,7 +323,13 @@ pub fn run_launcher_with_config(
                 }
             }
 
+            capture_time += capture_start.elapsed();
             canvas.present();
+            // Startup watchdog acknowledges actual presentation, not process creation.
+            if let Some(path) = ready_file.take() {
+                std::fs::write(&path, "ready\n")
+                    .map_err(|e| format!("Cannot acknowledge first frame: {e}"))?;
+            }
             dirty = false;
             last_render = Instant::now();
         }
@@ -309,8 +338,9 @@ pub fn run_launcher_with_config(
         if had_input {
             last_input = Instant::now();
         }
-        let frame_time = Instant::now().duration_since(frame_start);
+        let frame_time = frame_start.elapsed().saturating_sub(capture_time);
         all_frame_ms.push(frame_time.as_secs_f32() * 1000.0);
+        if render_this_frame { render_frame_ms.push(frame_time.as_secs_f32() * 1000.0); }
 
         if !config.uncapped {
             let idle_secs = last_input.elapsed().as_secs_f32();
@@ -325,8 +355,8 @@ pub fn run_launcher_with_config(
                 ACTIVE_FPS
             };
             let target_time = std::time::Duration::from_secs_f64(1.0 / target_fps as f64);
-            if !had_input && frame_time < target_time {
-                std::thread::sleep(target_time - frame_time);
+            if !had_input {
+                event_inbox.wait(&mut event_pump, target_time.saturating_sub(frame_start.elapsed()));
             }
         }
 
@@ -334,19 +364,22 @@ pub fn run_launcher_with_config(
         if show_fps {
             frame_times.push(frame_time.as_secs_f32());
             if last_stats_log.elapsed().as_secs() >= 5 {
-                let stats = build_stats(frame_count, &all_frame_ms, &text_cache, bench_start);
+                let stats = build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start);
                 log::info!("{}", stats.log_line());
                 last_stats_log = Instant::now();
             }
         }
 
-        frame_count += 1;
+        if config.script_wait_for_background && launcher.is_loading() {
+            if bench_start.elapsed().as_secs() > 15 { return Err("Simulator background work timed out".into()); }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        } else { frame_count += 1; }
 
         // Check exit conditions for benches
         if let Some(max) = config.max_frames {
             if frame_count >= max {
                 result = LauncherResult::Quit;
-                let stats = build_stats(frame_count, &all_frame_ms, &text_cache, bench_start);
+                let stats = build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start);
                 if config.print_stats {
                     print_stats_summary(&stats);
                 }
@@ -358,11 +391,12 @@ pub fn run_launcher_with_config(
 
 fn build_stats(
     frames: u64,
-    frame_ms: &[f32],
+    frame_ms: &cartridge_core::perf::FrameSamples,
+    render_ms: &cartridge_core::perf::FrameSamples,
     text_cache: &TextCache,
     start: Instant,
 ) -> LauncherStats {
-    LauncherStats::build(frames, frame_ms, text_cache, start)
+    LauncherStats::build(frames, frame_ms, render_ms, text_cache, start)
 }
 
 fn print_stats_summary(stats: &LauncherStats) {

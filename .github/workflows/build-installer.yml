@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, redesign/neo-tokyo]
 
 jobs:
   build:
@@ -30,7 +30,12 @@ jobs:
       - name: Test manual launcher
         run: |
           bash -n deploy/tools/Cartridge.sh
-          python3 tests/test_tools_launcher.py
+          python3 -m unittest discover -s tests -p 'test_*.py'
+
+      - name: Simulator smoke (software renderer, no host hardware access)
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: ./sim.sh check
 
       - name: Upload cartridge binary
         uses: actions/upload-artifact@v4
@@ -70,15 +75,22 @@ jobs:
         run: |
           mkdir -p bundle/Cartridge/assets/fonts
           mkdir -p bundle/Cartridge/assets/overlays
+          mkdir -p bundle/Cartridge/assets/brand
           # Binaries
           cp target/aarch64-unknown-linux-gnu/release/cartridge bundle/Cartridge/
           cp target/aarch64-unknown-linux-gnu/release/cartridge-boot bundle/Cartridge/
           chmod +x bundle/Cartridge/cartridge
           chmod +x bundle/Cartridge/cartridge-boot
 
+          # Developer checks run the exact ARM binary in an isolated Linux VM.
+          mkdir -p bundle/Cartridge/dev
+          cp target/aarch64-unknown-linux-gnu/release/sim-check bundle/Cartridge/dev/
+          printf '%s\n' "$GITHUB_SHA" > bundle/Cartridge/dev/build-revision
+
           # Boot scripts
           cp deploy/cartridge-boot.sh bundle/Cartridge/
           cp deploy/cartridge-boot.service bundle/Cartridge/
+          cp deploy/game-library.py deploy/setup-primary.py deploy/cartridge-session.py bundle/Cartridge/
           cp deploy/autosetup.sh bundle/Cartridge/
           chmod +x bundle/Cartridge/cartridge-boot.sh
           chmod +x bundle/Cartridge/autosetup.sh
@@ -89,6 +101,7 @@ jobs:
           # Assets
           cp -r assets/fonts/* bundle/Cartridge/assets/fonts/ 2>/dev/null || true
           cp -r assets/overlays/* bundle/Cartridge/assets/overlays/ 2>/dev/null || true
+          cp -r assets/brand/* bundle/Cartridge/assets/brand/ 2>/dev/null || true
           cp assets/boot_logo.png bundle/Cartridge/assets/ 2>/dev/null || true
           cp assets/logo.bmp bundle/Cartridge/assets/ 2>/dev/null || true
 

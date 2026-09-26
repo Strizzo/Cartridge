@@ -1,0 +1,27 @@
+# ARM/Linux compatibility VM. No host mounts or recovery disks.
+minimumLimaVersion: 2.0.0
+vmType: vz
+arch: aarch64
+cpus: 2
+memory: 1GiB
+disk: 8GiB
+images:
+- location: https://cloud-images.ubuntu.com/minimal/releases/noble/release-20260716/ubuntu-24.04-minimal-cloudimg-arm64.img
+  arch: aarch64
+  digest: sha256:7e938df669e3b1923595eeda97aa28569350c5283e05a835cc912a2486a54934
+mounts: []
+# Apple NAT avoids usernet outbound/DNS failures on this Mac.
+networks:
+- vzNAT: true
+containerd:
+  system: false
+  user: false
+provision:
+- mode: system
+  script: |
+    #!/bin/sh
+    set -eu
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    apt-get install -y --no-install-recommends python3 libsdl2-2.0-0 libsdl2-ttf-2.0-0 libsdl2-image-2.0-0 libsdl2-gfx-1.0-0 libasound2t64 exfatprogs exfat-fuse
+    touch /etc/cartridge-compat-vm

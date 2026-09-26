@@ -10,7 +10,11 @@ pub struct AppStorage {
 
 impl AppStorage {
     pub fn new(app_id: &str) -> Self {
-        let base = dirs_home().join(".cartridges");
+        Self::at_root(app_id, dirs_home().join(".cartridges"))
+    }
+
+    /// Explicit root for isolated app scenarios; no process-wide HOME changes.
+    pub fn at_root(app_id: &str, base: PathBuf) -> Self {
         let data_dir = base.join(app_id).join("data");
         let cache_dir = base.join(app_id).join("cache");
         fs::create_dir_all(&data_dir).ok();
