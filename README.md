@@ -206,11 +206,13 @@ CARTRIDGE_FPS=1 ./dev-run.sh            # on-screen FPS overlay
 
 ### Publishing to the registry
 
-The app registry is the `registry.json` file in this repo. To list your cartridge:
+CartridgeOS 0.6.0 uses the [official signed catalogue](https://github.com/Strizzo/cartridge-apps), with independent app repositories and GitHub Release packages. `registry.json` is the bundled offline fallback.
 
-1. Host your cartridge in a public GitHub repo
-2. Add a release workflow that creates a `.zip` artifact (see any existing cartridge repo for reference)
-3. Open a PR adding your app entry to `registry.json`
+1. Develop and test in the app's repository, then publish a matching `vX.Y.Z` release with `<cartridge-id>.tar.gz`, package metadata and checksums.
+2. Submit the release version, checksum, size and permissions for review in `cartridge-apps/apps.json`.
+3. Publish the signed catalogue; devices install compatible updates from Store over Wi-Fi.
+
+See [GitHub-backed Store](docs/app-store.md) for the three official app repos, packaging rules, signing, rollback, simulator checks and bundled snapshot provenance.
 
 ## Project Structure
 

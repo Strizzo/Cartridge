@@ -70,7 +70,8 @@ and workload before changing governors or disabling services.
 
 The runtime already skips clean frames, wakes idle waits on input, bounds timing
 history and network queues, and keeps bundled app HTTP off the UI thread. Store
-installation, WiFi operations, SSH setup and repeated SDL/font startup remain
+installation and catalogue refresh now run on workers with verified staged packages
+(see [App Store](app-store.md)). WiFi operations, SSH setup and repeated SDL/font startup remain
 candidates for measured work. [App development](app-development.md) covers the
 API, original graphics, asynchronous workflows and provisional frame budgets.
 

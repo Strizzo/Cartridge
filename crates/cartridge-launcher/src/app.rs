@@ -38,8 +38,7 @@ impl LauncherApp {
             .unwrap_or_default();
 
         // Migrate stale registry URL
-        if settings.registry_url.contains("cartridge.dev") {
-            settings.registry_url = LauncherSettings::default().registry_url;
+        if settings.migrate_registry_url() {
             let json = serde_json::to_value(&settings).unwrap_or_default();
             storage.save("settings", &json);
         }
@@ -52,32 +51,15 @@ impl LauncherApp {
             settings.registry_url.clone(),
         );
 
-        let installer_http = cartridge_net::HttpClient::new(cache_dir);
-        let installer = cartridge_net::AppInstaller::new(installer_http);
+
 
         // Startup must work offline and present immediately. Store refresh is
         // explicit; the bundled registry already describes installed apps.
         let registry = load_registry_from_file(assets_dir);
 
-        // Load installed apps from storage, then sync with what's on disk
-        let mut installed: InstalledApps = storage
-            .load("installed")
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap_or_default();
-
-        // Merge filesystem state into the in-memory list
-        let on_disk = installer.list_installed();
-        if !on_disk.is_empty() {
-            log::info!("Found {} apps installed on disk", on_disk.len());
-            for id in &on_disk {
-                if !installed.is_installed(id) {
-                    installed.install(id);
-                }
-            }
-        }
-
-        // Auto-discover bundled cartridges in lua_cartridges/
-        discover_bundled_cartridges(&mut installed, &registry);
+        // Disk scanning and installed-manifest reconciliation run in a shared
+        // background job. Startup renders immediately, even when offline.
+        let installed = InstalledApps::default();
 
         // Load recents
         let recents = storage
@@ -91,17 +73,26 @@ impl LauncherApp {
 
         let wifi_manager = cartridge_net::WifiManager::new();
 
-        let ctx = ScreenContext {
+        let mut ctx = ScreenContext {
+            bundled_app_ids: registry.apps.iter().map(|app| app.id.clone()).collect(),
             registry,
             installed,
+            local_apps: Default::default(),
+            store_jobs: Default::default(),
+            registry_revision: 0,
+            invalidated_textures: Vec::new(),
+            notice_pages: 0,
+            automatic_store_refresh: true,
             settings,
             recents,
             storage,
             registry_client: Some(registry_client),
-            installer: Some(installer),
+            installer: None,
             sysinfo,
             wifi_manager,
         };
+
+        ctx.sync_installed_from_disk();
 
         let home = Box::new(HomeScreen::new()) as Box<dyn LauncherScreen>;
 
@@ -114,8 +105,16 @@ impl LauncherApp {
         }
     }
 
+    pub(crate) fn set_automatic_store_refresh(&mut self, enabled: bool) {
+        self.ctx.automatic_store_refresh = enabled;
+    }
+
+    pub(crate) fn is_starting(&self) -> bool {
+        self.ctx.registry_revision == 0 && self.ctx.store_jobs.is_busy()
+    }
+
     pub fn is_loading(&self) -> bool {
-        self.screen_stack.last().map(|s| s.is_loading()).unwrap_or(false)
+        self.ctx.store_jobs.is_busy() || self.screen_stack.last().map(|s| s.is_loading()).unwrap_or(false)
     }
 
     pub fn show_games(&mut self, resume: Option<crate::games::GameRequest>) {
@@ -150,9 +149,23 @@ impl LauncherApp {
             }
         }
 
+        // R2 pages/dismisses persistent Store outcomes on every screen.
+        let filtered_events: Vec<_> = events.iter().copied().filter(|event| {
+            if event.button == cartridge_core::input::Button::R2 && !self.ctx.store_jobs.notices.is_empty() {
+                if event.action == cartridge_core::input::InputAction::Press {
+                    self.ctx.store_jobs.notice_page += 1;
+                    if self.ctx.store_jobs.notice_page >= self.ctx.notice_pages.max(1) {
+                        self.ctx.store_jobs.notices.pop_front();
+                        self.ctx.store_jobs.notice_page = 0;
+                    }
+                }
+                false
+            } else { true }
+        }).collect();
+
         // Route to current screen
         if let Some(current) = self.screen_stack.last_mut() {
-            let action = current.handle_input(events, &mut self.ctx);
+            let action = current.handle_input(&filtered_events, &mut self.ctx);
             match action {
                 ScreenAction::None => {}
                 ScreenAction::Push(screen_id) => {
@@ -168,10 +181,13 @@ impl LauncherApp {
                     self.overlay = Some(BootOverlay::new());
                 }
                 ScreenAction::LaunchGame(game) => {
+                    if self.ctx.store_jobs.is_busy() { return false }
                     self.pending_exit = Some(crate::LauncherResult::LaunchGame(game));
                     return true;
                 }
                 ScreenAction::LaunchApp(app_id) => {
+                    if self.ctx.store_jobs.is_busy() { return false }
+                    if !self.ctx.installed.is_installed(&app_id) { return false }
                     self.pending_launch = Some(app_id);
                     return true;
                 }
@@ -189,8 +205,9 @@ impl LauncherApp {
     /// (caller can use this to mark the UI dirty).
     pub fn refresh_sysinfo(&mut self) -> bool {
         let changed = self.ctx.sysinfo.refresh();
+        let store_changed = self.ctx.poll_store_jobs();
         let screen_changed = self.screen_stack.last_mut().map(|s| s.update(&mut self.ctx)).unwrap_or(false);
-        changed || screen_changed
+        changed || screen_changed || store_changed
     }
 
     /// Read the user's currently selected theme id.
@@ -216,6 +233,7 @@ impl LauncherApp {
     /// Render the current screen (and overlay if active).
     pub fn render(&mut self, screen: &mut Screen, atmosphere: &Atmosphere) {
         let animations_enabled = self.ctx.settings.animations_enabled;
+        for path in self.ctx.invalidated_textures.drain(..) { screen.images.remove(&path); }
         // Draw atmospheric background instead of flat clear
         atmosphere.draw_background(screen);
 
@@ -223,6 +241,8 @@ impl LauncherApp {
         if let Some(current) = self.screen_stack.last_mut() {
             current.render(screen, &self.ctx);
         }
+
+        self.render_store_status(screen);
 
         // Render overlay on top if active
         if let Some(overlay) = &self.overlay {
@@ -236,6 +256,31 @@ impl LauncherApp {
         // Drawn last so the sweep line sits above scanlines/vignette.
         atmosphere.draw_animated(screen, animations_enabled);
     }
+
+    fn render_store_status(&mut self, screen: &mut Screen) {
+        use sdl2::rect::Rect;
+        let jobs = &self.ctx.store_jobs;
+        if jobs.progress.is_none() && jobs.notices.is_empty() { return }
+        let theme = screen.theme;
+        let y = if crate::neo::is_neo(theme) { crate::neo::FOOTER_Y - 104 } else { 580 };
+        screen.fill(Rect::new(8, y, 704, 100), theme.card_bg);
+        screen.draw_outline(Rect::new(8, y, 704, 100), theme.border, 1);
+        let title = jobs.progress.as_deref().unwrap_or("Store result");
+        screen.draw_text(title, 18, y + 7, Some(theme.text), 12, true, Some(680));
+        if let Some(notice) = jobs.notices.front() {
+            let lines = crate::neo::wrap_lines(screen, &notice.message, 12, false, 680, usize::MAX);
+            self.ctx.notice_pages = lines.len().div_ceil(3).max(1);
+            let color = if notice.is_error { theme.negative } else { theme.positive };
+            for (index, line) in lines.iter().skip(jobs.notice_page * 3).take(3).enumerate() {
+                screen.draw_text(line, 18, y + 26 + index as i32 * 16, Some(color), 12, false, Some(680));
+            }
+            let label = if jobs.notice_page + 1 < self.ctx.notice_pages { "R2 More" } else { "R2 Dismiss" };
+            screen.draw_text(label, 18, y + 79, Some(theme.text_dim), 11, false, None);
+        } else {
+            screen.draw_text("You can continue browsing while this finishes.", 18, y + 31, Some(theme.text_dim), 12, false, None);
+        }
+    }
+
 }
 
 /// Power actions that can be triggered from the BootOverlay.
@@ -277,7 +322,7 @@ fn create_screen(id: ScreenId) -> Box<dyn LauncherScreen> {
         ScreenId::Home => Box::new(HomeScreen::new()),
         ScreenId::Games => Box::new(crate::screens::games::GamesScreen::new(None)),
         ScreenId::Store => Box::new(StoreScreen::new()),
-        ScreenId::Detail(idx) => Box::new(DetailScreen::new(idx)),
+        ScreenId::Detail(id) => Box::new(DetailScreen::new(id)),
         ScreenId::Settings => Box::new(SettingsScreen::new()),
         ScreenId::WiFi => Box::new(WifiScreen::new()),
     }
@@ -317,34 +362,75 @@ fn home_dir() -> PathBuf {
     cartridge_core::paths::home_dir()
 }
 
-/// Scan lua_cartridges/ (next to the binary, else cwd) for bundled apps
-/// and mark them as installed.
-fn discover_bundled_cartridges(installed: &mut InstalledApps, registry: &Registry) {
-    let lua_dir = cartridge_core::paths::bundled_cartridges_dir();
-    let entries = match std::fs::read_dir(&lua_dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
+#[cfg(test)]
+mod store_navigation_tests {
+    use super::*;
+    use crate::data::AppEntry;
+    use crate::store_jobs::{Completion, LocalApps};
+    use cartridge_core::input::{Button, InputAction};
+
+    #[test]
+    fn failed_job_completes_after_detail_is_popped_without_hiding_installed_app() {
+        let entry: AppEntry = serde_json::from_value(serde_json::json!({"id":"dev.cartridge.test","name":"Test","version":"1.0.0"})).unwrap();
+        let mut ctx = crate::screens::test_context();
+        ctx.registry.apps.push(entry.clone());
+        ctx.local_apps.apps.push(entry.clone());
+        ctx.installed.install(&entry.id);
+        let (tx, rx) = std::sync::mpsc::channel();
+        ctx.store_jobs.simulate(rx);
+        let mut app = LauncherApp { screen_stack:vec![Box::new(HomeScreen::new()),Box::new(DetailScreen::new(entry.id.clone()))],
+            ctx, overlay:None, pending_launch:None, pending_exit:None };
+        assert!(app.is_loading());
+        app.handle_input(&[InputEvent {button:Button::B,action:InputAction::Press}]);
+        assert_eq!(app.screen_stack.len(),1);
+        assert!(app.is_loading());
+        tx.send(Completion { local:LocalApps {apps:vec![entry.clone()],overrides:[entry.id.clone()].into(),..Default::default()},
+            installer:None,registry:None,outcome:Err("Remove failed: permission denied".into()) }).unwrap();
+        let deadline = std::time::Instant::now()+std::time::Duration::from_secs(2);
+        while app.is_loading() {
+            app.refresh_sysinfo();
+            assert!(std::time::Instant::now()<deadline);
+            std::thread::yield_now();
         }
-        let json_path = path.join("cartridge.json");
-        if !json_path.exists() {
-            continue;
-        }
-        // Read the cartridge.json to get the app_id
-        if let Ok(content) = std::fs::read_to_string(&json_path) {
-            if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(id) = meta.get("id").and_then(|v| v.as_str()) {
-                    if registry.apps.iter().any(|a| a.id == id) && !installed.is_installed(id) {
-                        log::info!("Auto-discovered bundled cartridge: {}", id);
-                        installed.install(id);
-                    }
-                }
-            }
-        }
+        assert!(app.ctx.installed.is_installed(&entry.id));
+        assert!(app.ctx.has_override(&entry.id));
+        assert_eq!(app.ctx.store_jobs.notices.front().unwrap().message,"Remove failed: permission denied");
+        assert!(app.ctx.store_jobs.notices.front().unwrap().is_error);
+        app.handle_input(&[InputEvent {button:Button::R2,action:InputAction::Press}]);
+        assert!(app.ctx.store_jobs.notices.is_empty());
+        std::fs::remove_dir_all(app.ctx.storage.data_dir.parent().unwrap().parent().unwrap()).unwrap();
     }
+
+    #[test]
+    fn snapshot_startup_waits_for_published_sync_even_without_explicit_wait_flag() {
+        let entry: AppEntry = serde_json::from_value(serde_json::json!({"id":"dev.cartridge.test","name":"Test","version":"1.0.0"})).unwrap();
+        let mut ctx = crate::screens::test_context();
+        ctx.registry.apps.push(entry.clone());
+        let (tx, rx) = std::sync::mpsc::channel();
+        ctx.store_jobs.simulate(rx);
+        let mut app = LauncherApp { screen_stack:vec![Box::new(HomeScreen::new())], ctx,
+            overlay:None, pending_launch:None, pending_exit:None };
+        let config = crate::LauncherConfig { max_frames:Some(40), capture_frames:vec![0,30], ..Default::default() };
+        assert!(!config.script_wait_for_background);
+        // A deliberately blocked Sync cannot advance scripts or frame captures.
+        for _ in 0..20 {
+            app.refresh_sysinfo();
+            assert!(config.waits_for_background(&app));
+            assert!(app.ctx.installed_apps().is_empty());
+        }
+        tx.send(Completion {local:LocalApps {apps:vec![entry.clone()],..Default::default()},
+            installer:None,registry:None,outcome:Ok(None)}).unwrap();
+        let deadline = std::time::Instant::now()+std::time::Duration::from_secs(2);
+        while config.waits_for_background(&app) {
+            app.refresh_sysinfo();
+            assert!(std::time::Instant::now()<deadline);
+            std::thread::yield_now();
+        }
+        assert!(app.ctx.installed.is_installed(&entry.id));
+        assert!(!app.is_starting());
+        assert!(app.ctx.store_jobs.notices.is_empty());
+        std::fs::remove_dir_all(app.ctx.storage.data_dir.parent().unwrap().parent().unwrap()).unwrap();
+    }
+
 }

@@ -13,7 +13,7 @@
 use std::path::PathBuf;
 
 use cartridge_core::input::Button;
-use cartridge_launcher::{run_launcher_with_config, LauncherConfig, ScriptStep};
+use cartridge_launcher::{LauncherConfig, ScriptStep, run_launcher_with_config};
 
 fn assets_dir() -> PathBuf {
     let dir = cartridge_core::paths::assets_dir();
@@ -32,6 +32,7 @@ fn snap_home(assets: &PathBuf, dir: &PathBuf) -> Result<(), String> {
     let config = LauncherConfig {
         max_frames: Some(40),
         uncapped: true,
+        script_wait_for_background: true,
         capture_dir: Some(dir.clone()),
         capture_frames: vec![30],
         ..Default::default()
@@ -46,11 +47,18 @@ fn snap_store(assets: &PathBuf, dir: &PathBuf) -> Result<(), String> {
     let config = LauncherConfig {
         max_frames: Some(80),
         uncapped: true,
+        script_wait_for_background: true,
         capture_dir: Some(dir.clone()),
         capture_frames: vec![60],
         script: vec![
-            ScriptStep { buttons: vec![], frames_after: 30 },
-            ScriptStep { buttons: vec![Button::Y], frames_after: 30 },
+            ScriptStep {
+                buttons: vec![],
+                frames_after: 30,
+            },
+            ScriptStep {
+                buttons: vec![Button::Y],
+                frames_after: 30,
+            },
         ],
         ..Default::default()
     };
@@ -64,11 +72,18 @@ fn snap_settings(assets: &PathBuf, dir: &PathBuf) -> Result<(), String> {
     let config = LauncherConfig {
         max_frames: Some(80),
         uncapped: true,
+        script_wait_for_background: true,
         capture_dir: Some(dir.clone()),
         capture_frames: vec![60],
         script: vec![
-            ScriptStep { buttons: vec![], frames_after: 30 },
-            ScriptStep { buttons: vec![Button::Start], frames_after: 30 },
+            ScriptStep {
+                buttons: vec![],
+                frames_after: 30,
+            },
+            ScriptStep {
+                buttons: vec![Button::Start],
+                frames_after: 30,
+            },
         ],
         ..Default::default()
     };
@@ -83,11 +98,18 @@ fn snap_power_menu(assets: &PathBuf, dir: &PathBuf) -> Result<(), String> {
     let config = LauncherConfig {
         max_frames: Some(80),
         uncapped: true,
+        script_wait_for_background: true,
         capture_dir: Some(dir.clone()),
         capture_frames: vec![60],
         script: vec![
-            ScriptStep { buttons: vec![], frames_after: 30 },
-            ScriptStep { buttons: vec![Button::Select], frames_after: 30 },
+            ScriptStep {
+                buttons: vec![],
+                frames_after: 30,
+            },
+            ScriptStep {
+                buttons: vec![Button::Select],
+                frames_after: 30,
+            },
         ],
         ..Default::default()
     };
@@ -102,12 +124,22 @@ fn snap_detail(assets: &PathBuf, dir: &PathBuf) -> Result<(), String> {
     let config = LauncherConfig {
         max_frames: Some(160),
         uncapped: true,
+        script_wait_for_background: true,
         capture_dir: Some(dir.clone()),
         capture_frames: vec![140],
         script: vec![
-            ScriptStep { buttons: vec![], frames_after: 30 },
-            ScriptStep { buttons: vec![Button::Y], frames_after: 30 },
-            ScriptStep { buttons: vec![Button::A], frames_after: 60 },
+            ScriptStep {
+                buttons: vec![],
+                frames_after: 30,
+            },
+            ScriptStep {
+                buttons: vec![Button::Y],
+                frames_after: 30,
+            },
+            ScriptStep {
+                buttons: vec![Button::A],
+                frames_after: 60,
+            },
         ],
         ..Default::default()
     };
@@ -124,8 +156,32 @@ fn rename(from: &PathBuf, to: &PathBuf) {
 
 fn main() -> Result<(), String> {
     env_logger::init();
+    // Isolated deterministic device state; snapshots must not read or mutate
+    // the developer's real installed apps, recents, network or power settings.
+    struct Scratch(PathBuf);
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let scratch = Scratch(std::env::temp_dir().join(format!(
+        "cartridge-snapshots-{}-{nonce}",
+        std::process::id()
+    )));
+    std::fs::create_dir_all(&scratch.0).map_err(|e| e.to_string())?;
     // Hidden window + software renderer (read_pixels works reliably).
     unsafe {
+        std::env::set_var("CARTRIDGE_SIM", "1");
+        std::env::set_var("CARTRIDGE_HOME", &scratch.0);
+        std::env::set_var("CARTRIDGE_SIM_PROFILE", "sim/profiles/r36s-plus.json");
+        std::env::set_var("CARTRIDGE_SIM_HOSTNAME", "r36s-plus");
+        std::env::set_var("CARTRIDGE_SIM_CLOCK", "12:00");
+        std::env::set_var("CARTRIDGE_SIM_BATTERY", "72");
+        std::env::set_var("CARTRIDGE_SIM_WIFI", "HomeNet");
         std::env::set_var("CARTRIDGE_HIDDEN", "1");
         std::env::set_var("CARTRIDGE_SOFTWARE", "1");
     }
@@ -136,7 +192,13 @@ fn main() -> Result<(), String> {
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     let scenarios = if args.is_empty() {
-        vec!["home".into(), "store".into(), "settings".into(), "detail".into(), "power_menu".into()]
+        vec![
+            "home".into(),
+            "store".into(),
+            "settings".into(),
+            "detail".into(),
+            "power_menu".into(),
+        ]
     } else {
         args
     };

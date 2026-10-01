@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "apps": [
+    {
+      "id": "dev.cartridge.frequency",
+      "repo_url": "https://github.com/Strizzo/frequency-cartridge",
+      "version": "1.0.0",
+      "package": {
+        "url": "https://github.com/Strizzo/frequency-cartridge/releases/download/v1.0.0/dev.cartridge.frequency.tar.gz",
+        "sha256": "1f75712128857605a87fd37c62980005b797b1303347aee56afbd041b2818aac",
+        "size": 140208,
+        "min_runtime": "0.6.0"
+      },
+      "files": {
+        "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+        "assets/attribution.json": "7c8b360d35bf22dc8ac4e317d9df63865080773a7510ce899e87852a7bdd2c9d",
+        "assets/icon.png": "8647553d152eed27990b9f66f7546efb33477ff0184b684e7a04ae47aca650e5",
+        "assets/pin-selected.png": "3b454ec3c3731b633627d511de7261682ec8c0ef57d77b13e8a9fced58d8df36",
+        "assets/pin.png": "edcda38ec0d7317a4eb3423e5f9f20355dfa81c0708172d8aa998830c437c7de",
+        "assets/world.png": "1ddde1b32c4e620daa8869932c12769ba85be17793a3d313536a38fcb69cf36c",
+        "cartridge.json": "f02477f20f733ddc4e2f29a2fd6cb8df11997a3336b83d6fe6446d3583611982",
+        "directory.lua": "f9f3a359e9f391c0e697ceb388c84f2303351996152c05d7d8674ff9222486dc",
+        "icon.png": "8647553d152eed27990b9f66f7546efb33477ff0184b684e7a04ae47aca650e5",
+        "main.lua": "762425c0519147ca25acb5beb34c09f96cef860f908ad23632420a53ce941c03",
+        "station.lua": "4c3f4c20d3ff7d8ba7a58424d723a33399898906cd4797f50c0d1952bdd86a51",
+        "view.lua": "d58d5fb72f7e60f66fcb4b755865709062f5dae9fe360609884aae8034386a2d"
+      }
+    },
+    {
+      "id": "dev.cartridge.mission-control",
+      "repo_url": "https://github.com/Strizzo/mission-control-cartridge",
+      "version": "1.0.0",
+      "package": {
+        "url": "https://github.com/Strizzo/mission-control-cartridge/releases/download/v1.0.0/dev.cartridge.mission-control.tar.gz",
+        "sha256": "ed6c5244c06ed5d4dfcb1b4524b3cd15a558f8bcf7b99b670b95c890f054299f",
+        "size": 23942,
+        "min_runtime": "0.6.0"
+      },
+      "files": {
+        "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+        "cartridge.json": "82b8528bc7a57bd10ad5c0e482e3a03af073f8d7026500be06164fc53468d7e2",
+        "icon.png": "e0faba94585556279acbecfc85344df3fb7527a750c7aa84151d1e8cb9ad9795",
+        "main.lua": "df12f58a43f82f416e0b63990ac05c1fd380423da79e41d59914f3f1c79c2ba4",
+        "model.lua": "38c4209b0bf95e8a252d715df3fe9f891500cf890bec1112c6d785f1b038e69a",
+        "view.lua": "130a3c7041825148ce33a5ccedd9a9a38f51ba75d4d56632ecbe204e3ef2a261"
+      }
+    },
+    {
+      "id": "dev.cartridge.outside",
+      "repo_url": "https://github.com/Strizzo/outside-cartridge",
+      "version": "1.0.0",
+      "package": {
+        "url": "https://github.com/Strizzo/outside-cartridge/releases/download/v1.0.0/dev.cartridge.outside.tar.gz",
+        "sha256": "b6b6f361c651ed1492db5fcf741b8393734d1f557c72f4cc46267aaf885208f7",
+        "size": 38066,
+        "min_runtime": "0.6.0"
+      },
+      "files": {
+        "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+        "assets/icon.png": "1b4b1891e9c3a114eba9871ffca6048c74d3fc1f9fa22ac1c1661aa2caa120fa",
+        "assets/icon.svg": "20546587513300486b220a75dc4a38615f389600cefc5c03075577750db67ad9",
+        "cartridge.json": "b3ba4ecfcd27b276b5a9ddc0750a6bf2089ebdbb2d460ec9c71c1d37e4f40c9f",
+        "icon.png": "1b4b1891e9c3a114eba9871ffca6048c74d3fc1f9fa22ac1c1661aa2caa120fa",
+        "main.lua": "c66069f4dd30f67a4e1c209bd90e410d2af860c81dca2b62d67688e1792226cf",
+        "model.lua": "43fd3fc027cc7e2ebd954211af729eee55e935ce4a90b0091beb1c7849495054",
+        "view.lua": "38fdb70ed698799204806d7ce8efeb05eb1c83481a466bb7a5663667aff14098"
+      }
+    }
+  ]
+}

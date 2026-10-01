@@ -19,6 +19,8 @@ pub struct StoreScreen {
     category_index: usize,
     selected_index: i32,
     scroll_offset: i32,
+    app_order: Vec<String>,
+    refresh_started: bool,
 }
 
 impl Default for StoreScreen {
@@ -33,7 +35,20 @@ impl StoreScreen {
             category_index: 0,
             selected_index: 0,
             scroll_offset: 0,
+            app_order: Vec::new(),
+            refresh_started: false,
         }
+    }
+
+    fn reconcile_selection(&mut self, ctx: &ScreenContext) {
+        let order: Vec<_> = self.filtered_indices(ctx).iter().map(|i| ctx.registry.apps[*i].id.clone()).collect();
+        self.selected_index = super::preserve_selection(&self.app_order, &order, self.selected_index);
+        self.app_order = order;
+        if self.selected_index < self.scroll_offset { self.scroll_offset = self.selected_index; }
+        let visible = if style_of(&ctx.settings.theme_id) == UiStyle::Neo { NEO_VISIBLE_ROWS } else {
+            (CONTENT_HEIGHT - TAB_HEIGHT - MARGIN) / (STORE_CARD_HEIGHT + STORE_CARD_GAP)
+        };
+        if self.selected_index >= self.scroll_offset + visible { self.scroll_offset = self.selected_index - visible + 1; }
     }
 
     /// Get the filtered list of app indices (into registry.apps) for the current category.
@@ -56,11 +71,20 @@ impl StoreScreen {
 }
 
 impl LauncherScreen for StoreScreen {
-    fn handle_input(&mut self, events: &[InputEvent], ctx: &mut ScreenContext) -> ScreenAction {
-        let filtered = self.filtered_indices(ctx);
-        let count = filtered.len() as i32;
+    fn update(&mut self, ctx: &mut ScreenContext) -> bool {
+        self.reconcile_selection(ctx);
+        if !self.refresh_started && !ctx.store_jobs.is_busy() {
+            self.refresh_started = true;
+            if ctx.settings.auto_refresh && ctx.automatic_store_refresh { ctx.refresh_registry(); return true }
+        }
+        false
+    }
 
+    fn handle_input(&mut self, events: &[InputEvent], ctx: &mut ScreenContext) -> ScreenAction {
+        self.reconcile_selection(ctx);
         for ie in events {
+            let filtered = self.filtered_indices(ctx);
+            let count = filtered.len() as i32;
             if ie.action != InputAction::Press && ie.action != InputAction::Repeat {
                 continue;
             }
@@ -84,17 +108,24 @@ impl LauncherScreen for StoreScreen {
                     }
                     self.selected_index = 0;
                     self.scroll_offset = 0;
+                    self.app_order.clear();
                 }
                 Button::R1 => {
                     self.category_index = (self.category_index + 1) % CATEGORIES.len();
                     self.selected_index = 0;
                     self.scroll_offset = 0;
+                    self.app_order.clear();
                 }
                 Button::A => {
                     if count > 0 {
-                        let reg_index = filtered[self.selected_index as usize];
-                        return ScreenAction::Push(ScreenId::Detail(reg_index));
+                        if let Some(&reg_index) = filtered.get(self.selected_index as usize) {
+                            return ScreenAction::Push(ScreenId::Detail(ctx.registry.apps[reg_index].id.clone()));
+                        }
                     }
+                }
+                Button::Y if ie.action == InputAction::Press => {
+                    self.refresh_started = true;
+                    ctx.refresh_registry();
                 }
                 Button::B => {
                     return ScreenAction::Pop;
@@ -107,6 +138,7 @@ impl LauncherScreen for StoreScreen {
                 }
                 _ => {}
             }
+            self.reconcile_selection(ctx);
         }
 
         // Adjust scroll to keep selection visible
@@ -327,13 +359,9 @@ impl LauncherScreen for StoreScreen {
                     11,
                 );
 
-                // INSTALLED / UPDATE pill. Update detection lives in
-                // the installer; if the on-disk version differs from the
-                // registry's, we show an UPDATE pill in place of INSTALLED.
+                // Cached manifest versions avoid disk I/O during rendering.
                 if ctx.installed.is_installed(&app.id) {
-                    let has_update = ctx.installer.as_ref().map_or(false, |inst| {
-                        inst.installed_version(&app.id).as_deref() != Some(&app.version)
-                    });
+                    let has_update = ctx.has_update(&app.id);
                     let (label, color) = if has_update {
                         ("UPDATE", theme.text_warning)
                     } else {
@@ -411,10 +439,7 @@ impl StoreScreen {
             let is_selected = vis_i as i32 == self.selected_index;
             let app = &ctx.registry.apps[reg_i];
             let installed = ctx.installed.is_installed(&app.id);
-            let has_update = installed
-                && ctx.installer.as_ref().map_or(false, |inst| {
-                    inst.installed_version(&app.id).as_deref() != Some(&app.version)
-                });
+            let has_update = ctx.has_update(&app.id);
 
             let (fg, dim, num) = if is_selected {
                 screen.fill(Rect::new(0, y, SCREEN_WIDTH, NEO_ROW_H as u32), theme.accent);
@@ -473,7 +498,7 @@ impl StoreScreen {
 
         neo::draw_footer(
             screen,
-            &[Hint::wide("L1 / R1", "Category"), Hint::a("Detail"), Hint::b("Back")],
+            &[Hint::wide("L1 / R1", "Category"), Hint::a("Detail"), Hint::y("Refresh"), Hint::b("Back")],
         );
     }
 }
@@ -496,5 +521,25 @@ fn draw_store_footer(screen: &mut Screen) {
     fx += w as i32 + 12;
     let w = screen.draw_button_hint("A", "Detail", fx, footer_y + 8, Some(theme.btn_a), 12);
     fx += w as i32 + 12;
+    let w = screen.draw_button_hint("Y", "Refresh", fx, footer_y + 8, Some(theme.btn_y), 12);
+    fx += w as i32 + 12;
     screen.draw_button_hint("B", "Back", fx, footer_y + 8, Some(theme.btn_b), 12);
+}
+
+#[cfg(test)]
+mod store_refresh_tests {
+    use super::*;
+    #[test]
+    fn scripted_store_does_not_auto_refresh_or_retry_each_frame() {
+        let mut ctx = super::super::test_context();
+        ctx.settings.auto_refresh = true;
+        ctx.automatic_store_refresh = false;
+        let mut screen = StoreScreen::new();
+        for _ in 0..100 {
+            assert!(!screen.update(&mut ctx));
+            assert!(!ctx.store_jobs.is_busy());
+        }
+        assert!(screen.refresh_started);
+        std::fs::remove_dir_all(ctx.storage.data_dir.parent().unwrap().parent().unwrap()).unwrap();
+    }
 }

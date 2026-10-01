@@ -14,3 +14,4 @@ log.workspace = true
 env_logger.workspace = true
 rodio.workspace = true
 symphonia = { version = "0.5.5", default-features = false, features = ["mp3", "aac", "ogg", "vorbis", "flac", "wav", "pcm"] }
+semver = "1"

@@ -7,6 +7,6 @@ pub mod wifi;
 
 pub use client::{HttpClient, HttpResponse};
 pub use installer::AppInstaller;
-pub use registry::{Registry, RegistryApp, RegistryClient};
+pub use registry::{AppPackage, Registry, RegistryApp, RegistryClient};
 pub use ssh::SshTunnel;
 pub use wifi::WifiManager;

@@ -1,7 +1,8 @@
 # CartridgeOS updates over Wi-Fi
 
 The spare-card trial currently updates Cartridge by copying a verified ARM
-bundle from a Mac. Installed store apps already have a network installer, but
+bundle from a Mac. CartridgeOS 0.6.0 adds a [signed GitHub-backed Store](app-store.md) for independent
+app updates, with verified packages and rollback. However,
 the launcher executable and bundled assets have no on-device update path.
 The first online updater should change only Cartridge-owned files on EASYROMS.
 It must not rewrite BOOT, the Linux root, the partition table, ROMs or saves.

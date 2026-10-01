@@ -90,3 +90,7 @@ measure input/render time, memory and idle power. No SD card was written during
 this app implementation. HLS/HE-AAC/Opus and local speech/LLM inference are outside
 these apps' supported features. Mission Control's server acknowledgment still
 requires checking terminal output to confirm the requested operation happened.
+
+## Independent repositories and Store releases
+
+Frequency, Mission Control and Outside now have separate source repositories and versioned packages. See [GitHub-backed Store](app-store.md) for repository links, compatibility, installation, and the release workflow. The bundled directories are pinned snapshots; develop in each app repository and run it through the shared simulator.

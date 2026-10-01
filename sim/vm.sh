@@ -60,7 +60,9 @@ with tarfile.open(out,'w:gz') as t:
     t.add(bundle/'Cartridge',arcname='bundle/Cartridge')
     # Root-level unit tests verify the actual splash shipped in this bundle.
     t.add(bundle/'Cartridge/assets/logo.bmp',arcname='assets/logo.bmp')
-    for name in ['deploy','tests','sim','installer']:
+    t.add(root/'store-apps.lock.json',arcname='store-apps.lock.json')
+    t.add(bundle/'Cartridge/lua_cartridges',arcname='lua_cartridges')
+    for name in ['deploy','tests','sim','installer','scripts']:
         t.add(root/name,arcname=name,filter=lambda info: None if '__pycache__' in info.name else info)
 PY
         limactl copy "$STATE/payload.tar.gz" "$VM:/tmp/cartridge-vm-payload.tar.gz"

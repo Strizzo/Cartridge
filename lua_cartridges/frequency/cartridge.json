@@ -17,5 +17,6 @@
     "storage"
   ],
   "entry": "main.lua",
-  "icon": "icon.png"
+  "icon": "icon.png",
+  "min_runtime": "0.6.0"
 }

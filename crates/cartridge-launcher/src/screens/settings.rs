@@ -277,7 +277,7 @@ impl LauncherScreen for SettingsScreen {
 
             screen.draw_text("Auto Refresh", 24, y + 8, Some(theme.text), 14, true, None);
             screen.draw_text(
-                "Automatically refresh registry on launch",
+                "Automatically refresh when opening Store",
                 24,
                 y + 30,
                 Some(theme.text_dim),
@@ -684,7 +684,7 @@ impl SettingsScreen {
         };
         let rows: [(&str, String, RowValue); SETTINGS_ROWS] = [
             ("Registry URL", ctx.settings.registry_url.clone(), RowValue::Text(String::new())),
-            ("Auto Refresh", "Refresh the registry on launch".into(), RowValue::Toggle(ctx.settings.auto_refresh)),
+            ("Auto Refresh", "Refresh when opening Store".into(), RowValue::Toggle(ctx.settings.auto_refresh)),
             ("Cache Duration", "How long to keep registry data".into(), RowValue::Cycle(format_cache_duration(ctx.settings.cache_duration_mins))),
             ("Process Panel", "Show top processes on the home screen".into(), RowValue::Toggle(ctx.settings.show_processes)),
             ("Theme", "Visual style for the launcher".into(), RowValue::Cycle(theme_display_name(&ctx.settings.theme_id).to_string())),

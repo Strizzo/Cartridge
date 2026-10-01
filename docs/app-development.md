@@ -61,7 +61,8 @@ keep request IDs, ignore responses belonging to a cancelled view, and retry only
 when a previous attempt finished. Catch queue-full errors using `pcall` and retry
 later. Parsing and Lua callbacks still run on the UI thread: asynchronous transfer
 does not make a large JSON decode or HTML layout free. The synchronous compatibility
-HTTP methods and store/download/SSH paths remain separate work to audit.
+HTTP methods and SSH setup remain separate work to audit. Store downloads now use
+a background worker with verified staged installation; see [App Store](app-store.md).
 
 ## Iterate without an SD-card swap
 

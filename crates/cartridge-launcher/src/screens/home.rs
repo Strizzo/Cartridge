@@ -47,6 +47,7 @@ pub struct HomeScreen {
     dock_index: i32,
     recent_index: i32,
     zone: HomeZone,
+    app_order: Vec<String>,
 }
 
 impl Default for HomeScreen {
@@ -61,6 +62,7 @@ impl HomeScreen {
             dock_index: 0,
             recent_index: 0,
             zone: HomeZone::Dock,
+            app_order: Vec::new(),
         }
     }
 }
@@ -99,21 +101,7 @@ impl HomeScreen {
         let apps = ctx.installed_apps();
         let Some(app) = apps.get(self.dock_index as usize) else { return };
         let app_id = app.id.clone();
-        if let Some(installer) = &ctx.installer {
-            log::info!("Removing {} from disk...", app_id);
-            match installer.remove(&app_id) {
-                Ok(()) => log::info!("Removed {} from disk", app_id),
-                Err(e) => log::warn!("Disk removal failed: {e}"),
-            }
-        }
-        ctx.installed.remove(&app_id);
-        ctx.save_installed();
-        let new_count = ctx.installed_apps().len() as i32;
-        if self.dock_index >= new_count && new_count > 0 {
-            self.dock_index = new_count - 1;
-        } else if new_count == 0 {
-            self.dock_index = 0;
-        }
+        ctx.start_store_job(crate::store_jobs::StoreOperation::Remove(app_id));
     }
 
     /// Input for the Neo-Tokyo grid: left/right step, up/down move a row,
@@ -203,6 +191,15 @@ impl HomeScreen {
 }
 
 impl LauncherScreen for HomeScreen {
+    fn update(&mut self, ctx: &mut ScreenContext) -> bool {
+        let order: Vec<_> = ctx.installed_apps().iter().map(|a| a.id.clone()).collect();
+        let changed = order != self.app_order;
+        self.dock_index = super::preserve_selection(&self.app_order, &order, self.dock_index);
+        self.app_order = order;
+        self.recent_index = self.recent_index.min(ctx.recents.len().saturating_sub(1) as i32);
+        changed
+    }
+
     fn handle_input(&mut self, events: &[InputEvent], ctx: &mut ScreenContext) -> ScreenAction {
         if style_of(&ctx.settings.theme_id) == UiStyle::Neo {
             return self.handle_input_neo(events, ctx);
@@ -280,29 +277,7 @@ impl LauncherScreen for HomeScreen {
                 Button::Y => {
                     return ScreenAction::Push(ScreenId::Store);
                 }
-                Button::X => {
-                    if self.zone == HomeZone::Dock && installed_count > 0 {
-                        let apps = ctx.installed_apps();
-                        if let Some(app) = apps.get(self.dock_index as usize) {
-                            let app_id = app.id.clone();
-                            if let Some(installer) = &ctx.installer {
-                                log::info!("Removing {} from disk...", app_id);
-                                match installer.remove(&app_id) {
-                                    Ok(()) => log::info!("Removed {} from disk", app_id),
-                                    Err(e) => log::warn!("Disk removal failed: {e}"),
-                                }
-                            }
-                            ctx.installed.remove(&app_id);
-                            ctx.save_installed();
-                            let new_count = ctx.installed_apps().len() as i32;
-                            if self.dock_index >= new_count && new_count > 0 {
-                                self.dock_index = new_count - 1;
-                            } else if new_count == 0 {
-                                self.dock_index = 0;
-                            }
-                        }
-                    }
-                }
+                Button::X if ie.action == InputAction::Press => self.remove_focused(ctx),
                 Button::Start => {
                     return ScreenAction::Push(ScreenId::Settings);
                 }
@@ -348,16 +323,7 @@ impl LauncherScreen for HomeScreen {
             None,
         );
         // Clock — centered in header
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let local_offset_secs = local_tz_offset_secs();
-        let local = now as i64 + local_offset_secs;
-        let secs_today = local.rem_euclid(86400);
-        let hh = secs_today / 3600;
-        let mm = (secs_today % 3600) / 60;
-        let clock_str = format!("{hh:02}:{mm:02}");
+        let clock_str = neo::clock_string();
         let cw = screen.get_text_width(&clock_str, 18, true);
         screen.draw_text(
             &clock_str,
@@ -482,7 +448,8 @@ impl LauncherScreen for HomeScreen {
         }
 
         // ===== FOOTER =====
-        draw_footer(screen);
+        let removable = self.zone == HomeZone::Dock && ctx.installed_apps().get(self.dock_index as usize).is_some_and(|app| ctx.has_override(&app.id));
+        draw_footer(screen, removable);
     }
 }
 
@@ -678,9 +645,7 @@ fn draw_dock_panel(
 
         // Update-available badge: small filled dot in the top-right
         // corner of the icon. Visible from a glance without crowding.
-        let has_update = ctx.installer.as_ref().map_or(false, |inst| {
-            inst.installed_version(&app.id).as_deref() != Some(&app.version)
-        });
+        let has_update = ctx.has_update(&app.id);
         if has_update {
             let cx = icon_x + icon_size as i32 - 6;
             let cy = icon_y + 6;
@@ -1070,7 +1035,7 @@ fn draw_process_panel(screen: &mut Screen, sysinfo: &SystemInfo) {
     }
 }
 
-fn draw_footer(screen: &mut Screen) {
+fn draw_footer(screen: &mut Screen, removable: bool) {
     let theme = screen.theme;
     let footer_y = SCREEN_HEIGHT as i32 - FOOTER_H;
 
@@ -1090,8 +1055,10 @@ fn draw_footer(screen: &mut Screen) {
     fx += w as i32 + 10;
     let w = screen.draw_button_hint("Y", "Store", fx, footer_y + 7, Some(theme.btn_y), 11);
     fx += w as i32 + 10;
-    let w = screen.draw_button_hint("X", "Remove", fx, footer_y + 7, Some(theme.btn_b), 11);
-    fx += w as i32 + 10;
+    if removable {
+        let w = screen.draw_button_hint("X", "Remove", fx, footer_y + 7, Some(theme.btn_b), 11);
+        fx += w as i32 + 10;
+    }
     screen.draw_button_hint("START", "Settings", fx, footer_y + 7, Some(theme.btn_l), 11);
 }
 
@@ -1123,16 +1090,16 @@ fn render_neo(screen: &mut Screen, ctx: &ScreenContext, dock_index: i32, recent_
 
     draw_neo_detail(screen, ctx, &installed_apps, dock_index as usize, zone, recent_index);
     neo::draw_readout(screen, sysinfo);
-    neo::draw_footer(
-        screen,
-        &[Hint::a("Open"), Hint::wide("L2", "Games"), Hint::y("Store"), Hint::x("Remove"), Hint::start("Settings")],
-    );
+    let mut hints = vec![Hint::a("Open"), Hint::wide("L2", "Games"), Hint::y("Store")];
+    if focused.and_then(|index| installed_apps.get(index)).is_some_and(|app| ctx.has_override(&app.id)) {
+        hints.push(Hint::x("Remove"));
+    }
+    hints.push(Hint::start("Settings"));
+    neo::draw_footer(screen, &hints);
 }
 
 fn has_update(ctx: &ScreenContext, app: &crate::data::AppEntry) -> bool {
-    ctx.installer
-        .as_ref()
-        .map_or(false, |inst| inst.installed_version(&app.id).as_deref() != Some(&app.version))
+    ctx.has_update(&app.id)
 }
 
 fn draw_neo_grid(

@@ -24,7 +24,7 @@ def main():
     if report_dir.exists(): shutil.rmtree(report_dir)
     report_dir.mkdir()
     # GitHub artifact ZIPs do not preserve executable permissions.
-    for executable in [app/'cartridge', app/'dev/sim-check', app/'dev/app-check']:
+    for executable in [app/'cartridge', app/'dev/sim-check', app/'dev/app-check', app/'dev/store-check']:
         executable.chmod(0o755)
     run(str(app/'cartridge'), '--version')
     linked = run('ldd',str(app/'cartridge'),capture_output=True).stdout
@@ -43,6 +43,8 @@ def main():
                CARTRIDGE_ES_HOME=str(home/'device'),CARTRIDGE_ROMS=str(home/'device/roms'))
     shutil.copytree(root/'sim/fixtures',app/'sim/fixtures',dirs_exist_ok=True)
     run(str(app/'dev/sim-check'),env=env,cwd=app)
+    store_result = run(str(app/'dev/store-check'),'--live',env=env,cwd=app,capture_output=True)
+    (report_dir/'store-check.log').write_text(store_result.stdout + store_result.stderr)
     run('python3',str(root/'sim/vm/offline-image-check.py'))
     # Install an explicitly fake stock service in this disposable VM, then run
     # the real setup/undo against Linux systemd rather than an offline fixture.
@@ -103,7 +105,7 @@ def main():
             'binary_sha256':hashlib.sha256((app/'cartridge').read_bytes()).hexdigest(),
             'build_revision':(app/'dev/build-revision').read_text().strip(),
             'os_release':Path('/etc/os-release').read_text(),
-            'checks':['ARM ELF libraries','Python unit tests','native ARM simulator scenarios',
+            'checks':['ARM ELF libraries','Python unit tests','native ARM simulator scenarios','signed catalogue and live app installation',
                       'real systemd setup','rendered ES handoff','startup failure and latch','undo'],
             'hardware_performance_validated':False}
     (report_dir/'verification.json').write_text(json.dumps(result,indent=2)+'\n')

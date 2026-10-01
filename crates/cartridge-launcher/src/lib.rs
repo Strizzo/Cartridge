@@ -1,6 +1,7 @@
 pub mod app;
 pub mod games;
 pub mod data;
+mod store_jobs;
 pub mod neo;
 pub mod screens;
 pub mod ui_constants;
@@ -10,7 +11,7 @@ use cartridge_core::atmosphere::Atmosphere;
 use cartridge_core::font::FontCache;
 use cartridge_core::image_cache::ImageCache;
 use cartridge_core::input::{Button, InputAction, InputEvent, InputManager};
-use cartridge_core::screen::{Screen, HEIGHT, WIDTH};
+use cartridge_core::screen::Screen;
 use cartridge_core::text_cache::TextCache;
 use cartridge_core::theme::Theme;
 use std::path::{Path, PathBuf};
@@ -60,7 +61,8 @@ pub struct ScriptStep {
 pub struct LauncherConfig {
     /// Restore the game library selection after the emulator exits.
     pub resume_game: Option<games::GameRequest>,
-    /// Scripted scenarios await real background I/O, with a 15s deadline.
+    /// Await later background I/O too, with a 15s deadline per wait.
+    /// Scripted/finite captures always await the initial installed-app Sync.
     pub script_wait_for_background: bool,
     /// Stop after this many frames (None = run forever).
     pub max_frames: Option<u64>,
@@ -75,6 +77,18 @@ pub struct LauncherConfig {
     pub uncapped: bool,
     /// Print perf stats every 5 seconds (or before exit).
     pub print_stats: bool,
+}
+
+impl LauncherConfig {
+    fn is_deterministic(&self) -> bool {
+        self.max_frames.is_some() || !self.script.is_empty() || !self.capture_frames.is_empty()
+            || self.script_wait_for_background
+    }
+
+    pub(crate) fn waits_for_background(&self, launcher: &LauncherApp) -> bool {
+        (self.is_deterministic() && launcher.is_starting())
+            || (self.script_wait_for_background && launcher.is_loading())
+    }
 }
 
 /// Run the Cartridge launcher UI.
@@ -118,6 +132,9 @@ pub fn run_launcher_with_config(
     let mut event_inbox = cartridge_core::event_wait::EventInbox::default();
 
     let mut launcher = LauncherApp::new(assets_dir);
+    // Scripted/finite runs must not depend on the live catalog or its timing.
+    // Explicit Y refresh remains available for Store-specific scenarios.
+    launcher.set_automatic_store_refresh(!config.is_deterministic());
     if let Some(game) = config.resume_game.clone() { launcher.show_games(Some(game)); }
     // Build the theme AFTER the launcher so we honor the user's saved
     // theme_id. Atmosphere is pre-composited from theme colors, so it
@@ -158,13 +175,13 @@ pub fn run_launcher_with_config(
     // history grows, clock ticks, etc.). 1 second is fine -- still saves
     // 4 of every 5 idle frames at IDLE_FPS=5.
     let force_render_every = std::time::Duration::from_secs(1);
+    let mut background_wait_started: Option<Instant> = None;
 
     loop {
         let frame_start = Instant::now();
         let mut capture_time = std::time::Duration::ZERO;
         let dt = frame_start.duration_since(last_frame).as_secs_f32();
         last_frame = frame_start;
-        atmosphere.update(dt);
 
         // Drain new sysinfo snapshots from the background poller (cheap).
         if launcher.refresh_sysinfo() {
@@ -203,7 +220,7 @@ pub fn run_launcher_with_config(
         let mut input_events = input_manager.process_events(events);
 
         // Inject scripted input if applicable
-        if !config.script.is_empty() && script_idx < config.script.len() && !(config.script_wait_for_background && launcher.is_loading()) {
+        if !config.script.is_empty() && script_idx < config.script.len() && !config.waits_for_background(&launcher) {
             if script_wait_frames == 0 {
                 let step = &config.script[script_idx];
                 for b in &step.buttons {
@@ -283,7 +300,11 @@ pub fn run_launcher_with_config(
 
         // Force a render every N seconds even when idle (clock, sysinfo
         // history, etc). Also force when this frame is being captured.
-        let should_capture = config.capture_frames.contains(&frame_count);
+        // Warmup iterations may render the loading UI, but never consume a
+        // scripted frame or write a capture before startup Sync is applied.
+        let waiting_for_background = config.waits_for_background(&launcher);
+        if !waiting_for_background { atmosphere.update(dt); }
+        let should_capture = !waiting_for_background && config.capture_frames.contains(&frame_count);
         let force = last_render.elapsed() >= force_render_every || should_capture;
         let render_this_frame = dirty || force;
 
@@ -339,8 +360,10 @@ pub fn run_launcher_with_config(
             last_input = Instant::now();
         }
         let frame_time = frame_start.elapsed().saturating_sub(capture_time);
-        all_frame_ms.push(frame_time.as_secs_f32() * 1000.0);
-        if render_this_frame { render_frame_ms.push(frame_time.as_secs_f32() * 1000.0); }
+        if !waiting_for_background {
+            all_frame_ms.push(frame_time.as_secs_f32() * 1000.0);
+            if render_this_frame { render_frame_ms.push(frame_time.as_secs_f32() * 1000.0); }
+        }
 
         if !config.uncapped {
             let idle_secs = last_input.elapsed().as_secs_f32();
@@ -370,10 +393,15 @@ pub fn run_launcher_with_config(
             }
         }
 
-        if config.script_wait_for_background && launcher.is_loading() {
-            if bench_start.elapsed().as_secs() > 15 { return Err("Simulator background work timed out".into()); }
+        if waiting_for_background {
+            if background_wait_started.get_or_insert_with(Instant::now).elapsed().as_secs() > 15 {
+                return Err("Simulator background work timed out".into());
+            }
             std::thread::sleep(std::time::Duration::from_millis(5));
-        } else { frame_count += 1; }
+        } else {
+            background_wait_started = None;
+            frame_count += 1;
+        }
 
         // Check exit conditions for benches
         if let Some(max) = config.max_frames {
@@ -412,31 +440,8 @@ fn capture_frame_to_png(
     cartridge_core::screenshot::capture_frame_to_png(canvas, path)
 }
 
-/// Resolve the directory for an installed app given its id.
-///
-/// Checks both the full app_id and the short name (last segment of dotted ID):
-/// 1. `lua_cartridges/{name}/` relative to the binary (bundled — preferred, always up to date)
-/// 2. `~/.cartridges/apps/{name}/` (user-installed from store)
+/// Store-installed overrides take precedence over the bundled cartridge.
 fn resolve_app_dir(app_id: &str, _assets_dir: &Path) -> PathBuf {
-    let bundled_dir = cartridge_core::paths::bundled_cartridges_dir();
-    let installed_dir = cartridge_core::paths::installed_apps_dir();
-    let variants = crate::ui_constants::name_variants(app_id);
-
-    // First pass: bundled cartridges (next to binary, else cwd) for ALL variants
-    for name in &variants {
-        let bundled = bundled_dir.join(name);
-        if bundled.exists() {
-            return bundled;
-        }
-    }
-
-    // Second pass: fall back to user-installed paths
-    for name in &variants {
-        let installed_path = installed_dir.join(name);
-        if installed_path.exists() {
-            return installed_path;
-        }
-    }
-
-    installed_dir.join(app_id)
+    cartridge_core::paths::resolve_cartridge_dir(app_id)
+        .unwrap_or_else(|| cartridge_core::paths::installed_apps_dir().join(app_id))
 }
