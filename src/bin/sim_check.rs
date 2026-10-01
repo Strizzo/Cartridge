@@ -321,8 +321,54 @@ fn run() -> Result<(), String> {
             return Err("Static app is redrawing during clean idle iterations".into());
         }
     }
+    // Connected apps: exercise the actual renderer/runner with isolated data.
+    // Lifecycle/state assertions live in cartridge-lua/tests; these catches
+    // binding mismatches, layout failures and script-visible render errors.
+    for (name, app, fixture_name, buttons, configured) in [
+        ("outside-landscape", "outside", "outside.json", vec![], false),
+        ("outside-detail", "outside", "outside.json", vec![Button::R1, Button::A], false),
+        ("outside-places", "outside", "outside.json", vec![Button::Y], false),
+        ("outside-keyboard", "outside", "outside.json", vec![Button::Y, Button::Y], false),
+        ("outside-keyboard-cancel", "outside", "outside.json", vec![Button::Y, Button::Y, Button::Select], false),
+        ("outside-offline", "outside", "http.json", vec![], false),
+        ("mission-setup", "mission_control", "mission-control.json", vec![], false),
+        ("mission-board", "mission_control", "mission-control.json", vec![], true),
+        ("mission-detail", "mission_control", "mission-control.json", vec![Button::A], true),
+        ("mission-output", "mission_control", "mission-control.json", vec![Button::A, Button::Y], true),
+        ("mission-action", "mission_control", "mission-control.json", vec![Button::A, Button::A, Button::DpadRight, Button::A], true),
+        ("mission-offline", "mission_control", "http.json", vec![], true),
+        ("frequency-atlas", "frequency", "frequency.json", vec![], false),
+        ("frequency-menu", "frequency", "frequency.json", vec![Button::Start], false),
+        ("frequency-playback-offline", "frequency", "frequency.json", vec![Button::A], false),
+        ("frequency-offline", "frequency", "http.json", vec![], false),
+    ] {
+        let storage = ScenarioStorage::new()?;
+        if configured {
+            let data = storage.0.join("dev.cartridge.mission-control/data");
+            std::fs::create_dir_all(&data).map_err(|e|e.to_string())?;
+            std::fs::write(data.join("mission_control_settings.json"),
+                r#"{"version":1,"servers":[{"name":"Simulator","url":"http://127.0.0.1:8766"}],"selected":1,"interval":2}"#)
+                .map_err(|e|e.to_string())?;
+        }
+        let dir = out.join(name);
+        let stats = cartridge_lua::run_lua_app_with_config(
+            &cartridge_core::paths::bundled_cartridges_dir().join(app),
+            &cartridge_core::paths::assets_dir(),
+            cartridge_lua::LuaAppConfig {
+                hidden:true, uncapped:true, max_frames:Some(80),
+                capture_dir:Some(dir.clone()), capture_frames:vec![65],
+                http_fixture:Some(fixture.with_file_name(fixture_name)),
+                storage_root:Some(storage.0.clone()),
+                script:buttons.into_iter().enumerate().map(|(i,b)|(15+i as u64*8,b)).collect(),
+                fail_on_error:true, ..Default::default()
+            },
+        )?;
+        if stats.frames != 80 { return Err(format!("{name} exited before completing its input scenario")); }
+        check_png(&dir.join("frame_0065.png"))?;
+        println!("{name}: {} loops, {} renders, host render p95 {:.2}ms",stats.frames,stats.rendered_frames,stats.render_ms_p95);
+    }
     println!(
-        "SIMULATOR CHECK PASSED: native 720x720 rendering, navigation, games and selection restore, Lua app, readiness, ES handoff.\nScreenshots: {}",
+        "SIMULATOR CHECK PASSED: native 720x720 rendering, navigation, games and selection restore, Lua apps including Frequency/Mission Control/Outside, readiness, ES handoff.\nScreenshots: {}",
         out.display()
     );
     Ok(())

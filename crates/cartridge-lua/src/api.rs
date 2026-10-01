@@ -844,8 +844,7 @@ pub fn register_storage_api(lua: &Lua, storage: AppStorage) -> LuaResult<()> {
             "save",
             lua.create_function(move |_, (key, value): (String, LuaValue)| {
                 let json_value = lua_to_json(&value)?;
-                st.save(&key, &json_value);
-                Ok(())
+                st.try_save(&key, &json_value).map_err(LuaError::external)
             })?,
         )?;
     }
@@ -1637,7 +1636,7 @@ pub fn new_text_input() -> SharedTextInput {
 /// on-screen keyboard without building their own.
 ///
 /// Lua API:
-///   text_input.show(label, default?, masked?)  -- show the keyboard
+///   text_input.show(label, default?, masked?, max_length?)  -- show the keyboard
 ///   text_input.is_active()                     -- true while visible
 ///   text_input.poll()                          -- nil pending, false cancel,
 ///                                                 string on submit
@@ -1660,10 +1659,10 @@ pub fn register_text_input_api(lua: &Lua, ti: SharedTextInput) -> LuaResult<()> 
                 let mut t = ti.borrow_mut();
                 t.show(&label);
                 t.masked = masked;
-                if let Some(default) = default {
-                    t.text = default;
-                    t.cursor_pos = t.text.len();
+                if let Some(LuaValue::Integer(limit)) = args.get(3) {
+                    t.max_len = (*limit).clamp(1, 2048) as usize;
                 }
+                if let Some(default) = default { t.set_text(&default); }
                 Ok(())
             })?,
         )?;

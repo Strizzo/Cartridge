@@ -1,0 +1,21 @@
+{
+  "id": "dev.cartridge.frequency",
+  "name": "Frequency",
+  "version": "1.0.0",
+  "author": "Cartridge Team",
+  "description": "An atlas of live radio. Explore the world, collect stations, and listen.",
+  "category": "media",
+  "tags": [
+    "radio",
+    "music",
+    "world",
+    "audio"
+  ],
+  "permissions": [
+    "network",
+    "audio",
+    "storage"
+  ],
+  "entry": "main.lua",
+  "icon": "icon.png"
+}

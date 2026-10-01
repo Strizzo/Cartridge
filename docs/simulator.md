@@ -175,3 +175,26 @@ Each automated app scenario uses temporary storage, so changing city or saving
 app state in a check cannot overwrite interactive simulator settings. The check
 also sends SDL key events during a long idle wait and verifies immediate wake,
 ordered press/release delivery, and that an empty wait does not spin.
+
+
+## Focused app verification
+
+`app-check` runs the native renderer with throwaway app storage and scripted
+controller presses. It fails on Lua errors and writes actual 720×720 PNGs:
+
+```sh
+cargo run --bin app-check -- outside --fixture sim/fixtures/outside.json --press 10:r1 --capture 45,85 --frames 90
+```
+
+Use `--seed KEY=/path/to/data.json` to copy a saved settings document into the
+isolated app's storage; it never edits the seed. `--out DIR` chooses a screenshot
+directory, and `--visible` shows the SDL window. Button names are up/down/left/right,
+a/b/x/y, l1/r1/l2/r2 and start. Frames are absolute, starting at zero. Omit
+`--fixture` for real HTTP with normal frame pacing; fixture runs are uncapped and
+internet audio is explicitly disabled. This tool does not emulate the device's
+CPU speed, GPU, speakers or battery.
+
+HTTP fixture objects accept `method` (GET by default, or POST) and an optional
+`request_body` JSON value. A POST only matches when its exact parsed body equals
+`request_body`, if specified. This allows command acknowledgement/error scenarios
+without sending commands to a real VibeBoy session. Unmatched requests fail.

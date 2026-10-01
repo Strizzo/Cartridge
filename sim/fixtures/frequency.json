@@ -1,0 +1,2265 @@
+[
+  {
+    "url_prefix": "https://dns.google/resolve?name=_api._tcp.radio-browser.info&type=SRV",
+    "delay_polls": 2,
+    "body": {
+      "Status": 0,
+      "Answer": [
+        {
+          "type": 33,
+          "data": "1 1 443 de1.api.radio-browser.info."
+        }
+      ]
+    }
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/servers",
+    "body": [
+      {
+        "name": "de1.api.radio-browser.info"
+      },
+      {
+        "name": "nl1.api.radio-browser.info"
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/countries",
+    "body": [
+      {
+        "name": "Australia",
+        "stationcount": 1,
+        "iso_3166_1": "AU"
+      },
+      {
+        "name": "Brazil",
+        "stationcount": 1,
+        "iso_3166_1": "BR"
+      },
+      {
+        "name": "France",
+        "stationcount": 2,
+        "iso_3166_1": "FR"
+      },
+      {
+        "name": "Japan",
+        "stationcount": 2,
+        "iso_3166_1": "JP"
+      },
+      {
+        "name": "Norway",
+        "stationcount": 1,
+        "iso_3166_1": "NO"
+      },
+      {
+        "name": "South Africa",
+        "stationcount": 1,
+        "iso_3166_1": "ZA"
+      },
+      {
+        "name": "United Kingdom",
+        "stationcount": 1,
+        "iso_3166_1": "GB"
+      },
+      {
+        "name": "United States",
+        "stationcount": 2,
+        "iso_3166_1": "US"
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/url/",
+    "body": {
+      "ok": true
+    }
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=100",
+    "body": []
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true",
+    "delay_polls": 5,
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000001",
+        "name": "Meridian Jazz [fixture]",
+        "country": "United Kingdom",
+        "countrycode": "GB",
+        "state": "London",
+        "geo_lat": 51.5074,
+        "geo_long": -0.1278,
+        "tags": "jazz,soul",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/0.pls",
+        "url_resolved": "https://example.invalid/frequency/0.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000002",
+        "name": "Borough Sounds [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "New York",
+        "geo_lat": 40.7128,
+        "geo_long": -74.006,
+        "tags": "jazz,independent",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/1.pls",
+        "url_resolved": "https://example.invalid/frequency/1.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000003",
+        "name": "Kissa Listening Room [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "Tokyo",
+        "geo_lat": 35.6762,
+        "geo_long": 139.6503,
+        "tags": "jazz,ambient",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/2.pls",
+        "url_resolved": "https://example.invalid/frequency/2.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000004",
+        "name": "Rive Gauche [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "Paris",
+        "geo_lat": 48.8566,
+        "geo_long": 2.3522,
+        "tags": "jazz,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/3.pls",
+        "url_resolved": "https://example.invalid/frequency/3.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000005",
+        "name": "Southern Air [fixture]",
+        "country": "Australia",
+        "countrycode": "AU",
+        "state": "Sydney",
+        "geo_lat": -33.8688,
+        "geo_long": 151.2093,
+        "tags": "independent,rock",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/4.pls",
+        "url_resolved": "https://example.invalid/frequency/4.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000006",
+        "name": "Cidade Aberta [fixture]",
+        "country": "Brazil",
+        "countrycode": "BR",
+        "state": "Sao Paulo",
+        "geo_lat": -23.5505,
+        "geo_long": -46.6333,
+        "tags": "world,jazz",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/5.pls",
+        "url_resolved": "https://example.invalid/frequency/5.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000007",
+        "name": "Cape Frequencies [fixture]",
+        "country": "South Africa",
+        "countrycode": "ZA",
+        "state": "Cape Town",
+        "geo_lat": -33.9249,
+        "geo_long": 18.4241,
+        "tags": "soul,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/6.pls",
+        "url_resolved": "https://example.invalid/frequency/6.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000008",
+        "name": "Northern Signal [fixture]",
+        "country": "Norway",
+        "countrycode": "NO",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "ambient",
+        "codec": "FLAC",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/7.pls",
+        "url_resolved": "https://example.invalid/frequency/7.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000009",
+        "name": "Unsupported HLS [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC",
+        "bitrate": 128,
+        "hls": 1,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/8.pls",
+        "url_resolved": "https://example.invalid/frequency/8.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000010",
+        "name": "Unsupported HE-AAC [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC+",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/9.pls",
+        "url_resolved": "https://example.invalid/frequency/9.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000011",
+        "name": "Unsupported Opus [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "OPUS",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/10.pls",
+        "url_resolved": "https://example.invalid/frequency/10.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=Australia&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000005",
+        "name": "Southern Air [fixture]",
+        "country": "Australia",
+        "countrycode": "AU",
+        "state": "Sydney",
+        "geo_lat": -33.8688,
+        "geo_long": 151.2093,
+        "tags": "independent,rock",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/4.pls",
+        "url_resolved": "https://example.invalid/frequency/4.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=Brazil&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000006",
+        "name": "Cidade Aberta [fixture]",
+        "country": "Brazil",
+        "countrycode": "BR",
+        "state": "Sao Paulo",
+        "geo_lat": -23.5505,
+        "geo_long": -46.6333,
+        "tags": "world,jazz",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/5.pls",
+        "url_resolved": "https://example.invalid/frequency/5.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=France&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000004",
+        "name": "Rive Gauche [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "Paris",
+        "geo_lat": 48.8566,
+        "geo_long": 2.3522,
+        "tags": "jazz,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/3.pls",
+        "url_resolved": "https://example.invalid/frequency/3.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000009",
+        "name": "Unsupported HLS [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC",
+        "bitrate": 128,
+        "hls": 1,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/8.pls",
+        "url_resolved": "https://example.invalid/frequency/8.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=Japan&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000003",
+        "name": "Kissa Listening Room [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "Tokyo",
+        "geo_lat": 35.6762,
+        "geo_long": 139.6503,
+        "tags": "jazz,ambient",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/2.pls",
+        "url_resolved": "https://example.invalid/frequency/2.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000010",
+        "name": "Unsupported HE-AAC [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC+",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/9.pls",
+        "url_resolved": "https://example.invalid/frequency/9.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=Norway&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000008",
+        "name": "Northern Signal [fixture]",
+        "country": "Norway",
+        "countrycode": "NO",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "ambient",
+        "codec": "FLAC",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/7.pls",
+        "url_resolved": "https://example.invalid/frequency/7.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=South%20Africa&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000007",
+        "name": "Cape Frequencies [fixture]",
+        "country": "South Africa",
+        "countrycode": "ZA",
+        "state": "Cape Town",
+        "geo_lat": -33.9249,
+        "geo_long": 18.4241,
+        "tags": "soul,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/6.pls",
+        "url_resolved": "https://example.invalid/frequency/6.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=United%20Kingdom&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000001",
+        "name": "Meridian Jazz [fixture]",
+        "country": "United Kingdom",
+        "countrycode": "GB",
+        "state": "London",
+        "geo_lat": 51.5074,
+        "geo_long": -0.1278,
+        "tags": "jazz,soul",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/0.pls",
+        "url_resolved": "https://example.invalid/frequency/0.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=United%20States&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000002",
+        "name": "Borough Sounds [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "New York",
+        "geo_lat": 40.7128,
+        "geo_long": -74.006,
+        "tags": "jazz,independent",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/1.pls",
+        "url_resolved": "https://example.invalid/frequency/1.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000011",
+        "name": "Unsupported Opus [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "OPUS",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/10.pls",
+        "url_resolved": "https://example.invalid/frequency/10.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&name=no-match",
+    "body": []
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/servers",
+    "body": [
+      {
+        "name": "de1.api.radio-browser.info"
+      },
+      {
+        "name": "nl1.api.radio-browser.info"
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/countries",
+    "body": [
+      {
+        "name": "Australia",
+        "stationcount": 1,
+        "iso_3166_1": "AU"
+      },
+      {
+        "name": "Brazil",
+        "stationcount": 1,
+        "iso_3166_1": "BR"
+      },
+      {
+        "name": "France",
+        "stationcount": 2,
+        "iso_3166_1": "FR"
+      },
+      {
+        "name": "Japan",
+        "stationcount": 2,
+        "iso_3166_1": "JP"
+      },
+      {
+        "name": "Norway",
+        "stationcount": 1,
+        "iso_3166_1": "NO"
+      },
+      {
+        "name": "South Africa",
+        "stationcount": 1,
+        "iso_3166_1": "ZA"
+      },
+      {
+        "name": "United Kingdom",
+        "stationcount": 1,
+        "iso_3166_1": "GB"
+      },
+      {
+        "name": "United States",
+        "stationcount": 2,
+        "iso_3166_1": "US"
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/url/",
+    "body": {
+      "ok": true
+    }
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=100",
+    "body": []
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true",
+    "delay_polls": 5,
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000001",
+        "name": "Meridian Jazz [fixture]",
+        "country": "United Kingdom",
+        "countrycode": "GB",
+        "state": "London",
+        "geo_lat": 51.5074,
+        "geo_long": -0.1278,
+        "tags": "jazz,soul",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/0.pls",
+        "url_resolved": "https://example.invalid/frequency/0.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000002",
+        "name": "Borough Sounds [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "New York",
+        "geo_lat": 40.7128,
+        "geo_long": -74.006,
+        "tags": "jazz,independent",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/1.pls",
+        "url_resolved": "https://example.invalid/frequency/1.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000003",
+        "name": "Kissa Listening Room [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "Tokyo",
+        "geo_lat": 35.6762,
+        "geo_long": 139.6503,
+        "tags": "jazz,ambient",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/2.pls",
+        "url_resolved": "https://example.invalid/frequency/2.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000004",
+        "name": "Rive Gauche [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "Paris",
+        "geo_lat": 48.8566,
+        "geo_long": 2.3522,
+        "tags": "jazz,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/3.pls",
+        "url_resolved": "https://example.invalid/frequency/3.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000005",
+        "name": "Southern Air [fixture]",
+        "country": "Australia",
+        "countrycode": "AU",
+        "state": "Sydney",
+        "geo_lat": -33.8688,
+        "geo_long": 151.2093,
+        "tags": "independent,rock",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/4.pls",
+        "url_resolved": "https://example.invalid/frequency/4.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000006",
+        "name": "Cidade Aberta [fixture]",
+        "country": "Brazil",
+        "countrycode": "BR",
+        "state": "Sao Paulo",
+        "geo_lat": -23.5505,
+        "geo_long": -46.6333,
+        "tags": "world,jazz",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/5.pls",
+        "url_resolved": "https://example.invalid/frequency/5.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000007",
+        "name": "Cape Frequencies [fixture]",
+        "country": "South Africa",
+        "countrycode": "ZA",
+        "state": "Cape Town",
+        "geo_lat": -33.9249,
+        "geo_long": 18.4241,
+        "tags": "soul,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/6.pls",
+        "url_resolved": "https://example.invalid/frequency/6.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000008",
+        "name": "Northern Signal [fixture]",
+        "country": "Norway",
+        "countrycode": "NO",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "ambient",
+        "codec": "FLAC",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/7.pls",
+        "url_resolved": "https://example.invalid/frequency/7.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000009",
+        "name": "Unsupported HLS [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC",
+        "bitrate": 128,
+        "hls": 1,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/8.pls",
+        "url_resolved": "https://example.invalid/frequency/8.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000010",
+        "name": "Unsupported HE-AAC [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC+",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/9.pls",
+        "url_resolved": "https://example.invalid/frequency/9.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000011",
+        "name": "Unsupported Opus [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "OPUS",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/10.pls",
+        "url_resolved": "https://example.invalid/frequency/10.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=Australia&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000005",
+        "name": "Southern Air [fixture]",
+        "country": "Australia",
+        "countrycode": "AU",
+        "state": "Sydney",
+        "geo_lat": -33.8688,
+        "geo_long": 151.2093,
+        "tags": "independent,rock",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/4.pls",
+        "url_resolved": "https://example.invalid/frequency/4.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=Brazil&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000006",
+        "name": "Cidade Aberta [fixture]",
+        "country": "Brazil",
+        "countrycode": "BR",
+        "state": "Sao Paulo",
+        "geo_lat": -23.5505,
+        "geo_long": -46.6333,
+        "tags": "world,jazz",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/5.pls",
+        "url_resolved": "https://example.invalid/frequency/5.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=France&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000004",
+        "name": "Rive Gauche [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "Paris",
+        "geo_lat": 48.8566,
+        "geo_long": 2.3522,
+        "tags": "jazz,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/3.pls",
+        "url_resolved": "https://example.invalid/frequency/3.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000009",
+        "name": "Unsupported HLS [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC",
+        "bitrate": 128,
+        "hls": 1,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/8.pls",
+        "url_resolved": "https://example.invalid/frequency/8.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=Japan&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000003",
+        "name": "Kissa Listening Room [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "Tokyo",
+        "geo_lat": 35.6762,
+        "geo_long": 139.6503,
+        "tags": "jazz,ambient",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/2.pls",
+        "url_resolved": "https://example.invalid/frequency/2.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000010",
+        "name": "Unsupported HE-AAC [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC+",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/9.pls",
+        "url_resolved": "https://example.invalid/frequency/9.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=Norway&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000008",
+        "name": "Northern Signal [fixture]",
+        "country": "Norway",
+        "countrycode": "NO",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "ambient",
+        "codec": "FLAC",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/7.pls",
+        "url_resolved": "https://example.invalid/frequency/7.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=South%20Africa&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000007",
+        "name": "Cape Frequencies [fixture]",
+        "country": "South Africa",
+        "countrycode": "ZA",
+        "state": "Cape Town",
+        "geo_lat": -33.9249,
+        "geo_long": 18.4241,
+        "tags": "soul,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/6.pls",
+        "url_resolved": "https://example.invalid/frequency/6.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=United%20Kingdom&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000001",
+        "name": "Meridian Jazz [fixture]",
+        "country": "United Kingdom",
+        "countrycode": "GB",
+        "state": "London",
+        "geo_lat": 51.5074,
+        "geo_long": -0.1278,
+        "tags": "jazz,soul",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/0.pls",
+        "url_resolved": "https://example.invalid/frequency/0.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=United%20States&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000002",
+        "name": "Borough Sounds [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "New York",
+        "geo_lat": 40.7128,
+        "geo_long": -74.006,
+        "tags": "jazz,independent",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/1.pls",
+        "url_resolved": "https://example.invalid/frequency/1.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000011",
+        "name": "Unsupported Opus [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "OPUS",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/10.pls",
+        "url_resolved": "https://example.invalid/frequency/10.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&name=no-match",
+    "body": []
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/servers",
+    "body": [
+      {
+        "name": "de1.api.radio-browser.info"
+      },
+      {
+        "name": "nl1.api.radio-browser.info"
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/countries",
+    "body": [
+      {
+        "name": "Australia",
+        "stationcount": 1,
+        "iso_3166_1": "AU"
+      },
+      {
+        "name": "Brazil",
+        "stationcount": 1,
+        "iso_3166_1": "BR"
+      },
+      {
+        "name": "France",
+        "stationcount": 2,
+        "iso_3166_1": "FR"
+      },
+      {
+        "name": "Japan",
+        "stationcount": 2,
+        "iso_3166_1": "JP"
+      },
+      {
+        "name": "Norway",
+        "stationcount": 1,
+        "iso_3166_1": "NO"
+      },
+      {
+        "name": "South Africa",
+        "stationcount": 1,
+        "iso_3166_1": "ZA"
+      },
+      {
+        "name": "United Kingdom",
+        "stationcount": 1,
+        "iso_3166_1": "GB"
+      },
+      {
+        "name": "United States",
+        "stationcount": 2,
+        "iso_3166_1": "US"
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/url/",
+    "body": {
+      "ok": true
+    }
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=100",
+    "body": []
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true",
+    "delay_polls": 5,
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000001",
+        "name": "Meridian Jazz [fixture]",
+        "country": "United Kingdom",
+        "countrycode": "GB",
+        "state": "London",
+        "geo_lat": 51.5074,
+        "geo_long": -0.1278,
+        "tags": "jazz,soul",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/0.pls",
+        "url_resolved": "https://example.invalid/frequency/0.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000002",
+        "name": "Borough Sounds [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "New York",
+        "geo_lat": 40.7128,
+        "geo_long": -74.006,
+        "tags": "jazz,independent",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/1.pls",
+        "url_resolved": "https://example.invalid/frequency/1.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000003",
+        "name": "Kissa Listening Room [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "Tokyo",
+        "geo_lat": 35.6762,
+        "geo_long": 139.6503,
+        "tags": "jazz,ambient",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/2.pls",
+        "url_resolved": "https://example.invalid/frequency/2.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000004",
+        "name": "Rive Gauche [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "Paris",
+        "geo_lat": 48.8566,
+        "geo_long": 2.3522,
+        "tags": "jazz,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/3.pls",
+        "url_resolved": "https://example.invalid/frequency/3.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000005",
+        "name": "Southern Air [fixture]",
+        "country": "Australia",
+        "countrycode": "AU",
+        "state": "Sydney",
+        "geo_lat": -33.8688,
+        "geo_long": 151.2093,
+        "tags": "independent,rock",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/4.pls",
+        "url_resolved": "https://example.invalid/frequency/4.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000006",
+        "name": "Cidade Aberta [fixture]",
+        "country": "Brazil",
+        "countrycode": "BR",
+        "state": "Sao Paulo",
+        "geo_lat": -23.5505,
+        "geo_long": -46.6333,
+        "tags": "world,jazz",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/5.pls",
+        "url_resolved": "https://example.invalid/frequency/5.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000007",
+        "name": "Cape Frequencies [fixture]",
+        "country": "South Africa",
+        "countrycode": "ZA",
+        "state": "Cape Town",
+        "geo_lat": -33.9249,
+        "geo_long": 18.4241,
+        "tags": "soul,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/6.pls",
+        "url_resolved": "https://example.invalid/frequency/6.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000008",
+        "name": "Northern Signal [fixture]",
+        "country": "Norway",
+        "countrycode": "NO",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "ambient",
+        "codec": "FLAC",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/7.pls",
+        "url_resolved": "https://example.invalid/frequency/7.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000009",
+        "name": "Unsupported HLS [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC",
+        "bitrate": 128,
+        "hls": 1,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/8.pls",
+        "url_resolved": "https://example.invalid/frequency/8.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000010",
+        "name": "Unsupported HE-AAC [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC+",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/9.pls",
+        "url_resolved": "https://example.invalid/frequency/9.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000011",
+        "name": "Unsupported Opus [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "OPUS",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/10.pls",
+        "url_resolved": "https://example.invalid/frequency/10.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=Australia&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000005",
+        "name": "Southern Air [fixture]",
+        "country": "Australia",
+        "countrycode": "AU",
+        "state": "Sydney",
+        "geo_lat": -33.8688,
+        "geo_long": 151.2093,
+        "tags": "independent,rock",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/4.pls",
+        "url_resolved": "https://example.invalid/frequency/4.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=Brazil&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000006",
+        "name": "Cidade Aberta [fixture]",
+        "country": "Brazil",
+        "countrycode": "BR",
+        "state": "Sao Paulo",
+        "geo_lat": -23.5505,
+        "geo_long": -46.6333,
+        "tags": "world,jazz",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/5.pls",
+        "url_resolved": "https://example.invalid/frequency/5.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=France&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000004",
+        "name": "Rive Gauche [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "Paris",
+        "geo_lat": 48.8566,
+        "geo_long": 2.3522,
+        "tags": "jazz,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/3.pls",
+        "url_resolved": "https://example.invalid/frequency/3.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000009",
+        "name": "Unsupported HLS [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC",
+        "bitrate": 128,
+        "hls": 1,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/8.pls",
+        "url_resolved": "https://example.invalid/frequency/8.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=Japan&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000003",
+        "name": "Kissa Listening Room [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "Tokyo",
+        "geo_lat": 35.6762,
+        "geo_long": 139.6503,
+        "tags": "jazz,ambient",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/2.pls",
+        "url_resolved": "https://example.invalid/frequency/2.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000010",
+        "name": "Unsupported HE-AAC [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC+",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/9.pls",
+        "url_resolved": "https://example.invalid/frequency/9.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=Norway&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000008",
+        "name": "Northern Signal [fixture]",
+        "country": "Norway",
+        "countrycode": "NO",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "ambient",
+        "codec": "FLAC",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/7.pls",
+        "url_resolved": "https://example.invalid/frequency/7.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=South%20Africa&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000007",
+        "name": "Cape Frequencies [fixture]",
+        "country": "South Africa",
+        "countrycode": "ZA",
+        "state": "Cape Town",
+        "geo_lat": -33.9249,
+        "geo_long": 18.4241,
+        "tags": "soul,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/6.pls",
+        "url_resolved": "https://example.invalid/frequency/6.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=United%20Kingdom&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000001",
+        "name": "Meridian Jazz [fixture]",
+        "country": "United Kingdom",
+        "countrycode": "GB",
+        "state": "London",
+        "geo_lat": 51.5074,
+        "geo_long": -0.1278,
+        "tags": "jazz,soul",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/0.pls",
+        "url_resolved": "https://example.invalid/frequency/0.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&country=United%20States&countryExact=true",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000002",
+        "name": "Borough Sounds [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "New York",
+        "geo_lat": 40.7128,
+        "geo_long": -74.006,
+        "tags": "jazz,independent",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/1.pls",
+        "url_resolved": "https://example.invalid/frequency/1.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000011",
+        "name": "Unsupported Opus [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "OPUS",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/10.pls",
+        "url_resolved": "https://example.invalid/frequency/10.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&name=no-match",
+    "body": []
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=AU",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000005",
+        "name": "Southern Air [fixture]",
+        "country": "Australia",
+        "countrycode": "AU",
+        "state": "Sydney",
+        "geo_lat": -33.8688,
+        "geo_long": 151.2093,
+        "tags": "independent,rock",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/4.pls",
+        "url_resolved": "https://example.invalid/frequency/4.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=BR",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000006",
+        "name": "Cidade Aberta [fixture]",
+        "country": "Brazil",
+        "countrycode": "BR",
+        "state": "Sao Paulo",
+        "geo_lat": -23.5505,
+        "geo_long": -46.6333,
+        "tags": "world,jazz",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/5.pls",
+        "url_resolved": "https://example.invalid/frequency/5.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=FR",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000004",
+        "name": "Rive Gauche [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "Paris",
+        "geo_lat": 48.8566,
+        "geo_long": 2.3522,
+        "tags": "jazz,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/3.pls",
+        "url_resolved": "https://example.invalid/frequency/3.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000009",
+        "name": "Unsupported HLS [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC",
+        "bitrate": 128,
+        "hls": 1,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/8.pls",
+        "url_resolved": "https://example.invalid/frequency/8.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=JP",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000003",
+        "name": "Kissa Listening Room [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "Tokyo",
+        "geo_lat": 35.6762,
+        "geo_long": 139.6503,
+        "tags": "jazz,ambient",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/2.pls",
+        "url_resolved": "https://example.invalid/frequency/2.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000010",
+        "name": "Unsupported HE-AAC [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC+",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/9.pls",
+        "url_resolved": "https://example.invalid/frequency/9.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=NO",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000008",
+        "name": "Northern Signal [fixture]",
+        "country": "Norway",
+        "countrycode": "NO",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "ambient",
+        "codec": "FLAC",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/7.pls",
+        "url_resolved": "https://example.invalid/frequency/7.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=ZA",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000007",
+        "name": "Cape Frequencies [fixture]",
+        "country": "South Africa",
+        "countrycode": "ZA",
+        "state": "Cape Town",
+        "geo_lat": -33.9249,
+        "geo_long": 18.4241,
+        "tags": "soul,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/6.pls",
+        "url_resolved": "https://example.invalid/frequency/6.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=GB",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000001",
+        "name": "Meridian Jazz [fixture]",
+        "country": "United Kingdom",
+        "countrycode": "GB",
+        "state": "London",
+        "geo_lat": 51.5074,
+        "geo_long": -0.1278,
+        "tags": "jazz,soul",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/0.pls",
+        "url_resolved": "https://example.invalid/frequency/0.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=US",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000002",
+        "name": "Borough Sounds [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "New York",
+        "geo_lat": 40.7128,
+        "geo_long": -74.006,
+        "tags": "jazz,independent",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/1.pls",
+        "url_resolved": "https://example.invalid/frequency/1.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000011",
+        "name": "Unsupported Opus [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "OPUS",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/10.pls",
+        "url_resolved": "https://example.invalid/frequency/10.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=AU",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000005",
+        "name": "Southern Air [fixture]",
+        "country": "Australia",
+        "countrycode": "AU",
+        "state": "Sydney",
+        "geo_lat": -33.8688,
+        "geo_long": 151.2093,
+        "tags": "independent,rock",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/4.pls",
+        "url_resolved": "https://example.invalid/frequency/4.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=BR",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000006",
+        "name": "Cidade Aberta [fixture]",
+        "country": "Brazil",
+        "countrycode": "BR",
+        "state": "Sao Paulo",
+        "geo_lat": -23.5505,
+        "geo_long": -46.6333,
+        "tags": "world,jazz",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/5.pls",
+        "url_resolved": "https://example.invalid/frequency/5.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=FR",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000004",
+        "name": "Rive Gauche [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "Paris",
+        "geo_lat": 48.8566,
+        "geo_long": 2.3522,
+        "tags": "jazz,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/3.pls",
+        "url_resolved": "https://example.invalid/frequency/3.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000009",
+        "name": "Unsupported HLS [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC",
+        "bitrate": 128,
+        "hls": 1,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/8.pls",
+        "url_resolved": "https://example.invalid/frequency/8.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=JP",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000003",
+        "name": "Kissa Listening Room [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "Tokyo",
+        "geo_lat": 35.6762,
+        "geo_long": 139.6503,
+        "tags": "jazz,ambient",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/2.pls",
+        "url_resolved": "https://example.invalid/frequency/2.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000010",
+        "name": "Unsupported HE-AAC [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC+",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/9.pls",
+        "url_resolved": "https://example.invalid/frequency/9.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=NO",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000008",
+        "name": "Northern Signal [fixture]",
+        "country": "Norway",
+        "countrycode": "NO",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "ambient",
+        "codec": "FLAC",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/7.pls",
+        "url_resolved": "https://example.invalid/frequency/7.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=ZA",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000007",
+        "name": "Cape Frequencies [fixture]",
+        "country": "South Africa",
+        "countrycode": "ZA",
+        "state": "Cape Town",
+        "geo_lat": -33.9249,
+        "geo_long": 18.4241,
+        "tags": "soul,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/6.pls",
+        "url_resolved": "https://example.invalid/frequency/6.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=GB",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000001",
+        "name": "Meridian Jazz [fixture]",
+        "country": "United Kingdom",
+        "countrycode": "GB",
+        "state": "London",
+        "geo_lat": 51.5074,
+        "geo_long": -0.1278,
+        "tags": "jazz,soul",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/0.pls",
+        "url_resolved": "https://example.invalid/frequency/0.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://de2.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=US",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000002",
+        "name": "Borough Sounds [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "New York",
+        "geo_lat": 40.7128,
+        "geo_long": -74.006,
+        "tags": "jazz,independent",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/1.pls",
+        "url_resolved": "https://example.invalid/frequency/1.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000011",
+        "name": "Unsupported Opus [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "OPUS",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/10.pls",
+        "url_resolved": "https://example.invalid/frequency/10.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=AU",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000005",
+        "name": "Southern Air [fixture]",
+        "country": "Australia",
+        "countrycode": "AU",
+        "state": "Sydney",
+        "geo_lat": -33.8688,
+        "geo_long": 151.2093,
+        "tags": "independent,rock",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/4.pls",
+        "url_resolved": "https://example.invalid/frequency/4.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=BR",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000006",
+        "name": "Cidade Aberta [fixture]",
+        "country": "Brazil",
+        "countrycode": "BR",
+        "state": "Sao Paulo",
+        "geo_lat": -23.5505,
+        "geo_long": -46.6333,
+        "tags": "world,jazz",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/5.pls",
+        "url_resolved": "https://example.invalid/frequency/5.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=FR",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000004",
+        "name": "Rive Gauche [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "Paris",
+        "geo_lat": 48.8566,
+        "geo_long": 2.3522,
+        "tags": "jazz,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/3.pls",
+        "url_resolved": "https://example.invalid/frequency/3.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000009",
+        "name": "Unsupported HLS [fixture]",
+        "country": "France",
+        "countrycode": "FR",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC",
+        "bitrate": 128,
+        "hls": 1,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/8.pls",
+        "url_resolved": "https://example.invalid/frequency/8.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=JP",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000003",
+        "name": "Kissa Listening Room [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "Tokyo",
+        "geo_lat": 35.6762,
+        "geo_long": 139.6503,
+        "tags": "jazz,ambient",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/2.pls",
+        "url_resolved": "https://example.invalid/frequency/2.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000010",
+        "name": "Unsupported HE-AAC [fixture]",
+        "country": "Japan",
+        "countrycode": "JP",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "AAC+",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/9.pls",
+        "url_resolved": "https://example.invalid/frequency/9.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=NO",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000008",
+        "name": "Northern Signal [fixture]",
+        "country": "Norway",
+        "countrycode": "NO",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "ambient",
+        "codec": "FLAC",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/7.pls",
+        "url_resolved": "https://example.invalid/frequency/7.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=ZA",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000007",
+        "name": "Cape Frequencies [fixture]",
+        "country": "South Africa",
+        "countrycode": "ZA",
+        "state": "Cape Town",
+        "geo_lat": -33.9249,
+        "geo_long": 18.4241,
+        "tags": "soul,world",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/6.pls",
+        "url_resolved": "https://example.invalid/frequency/6.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=GB",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000001",
+        "name": "Meridian Jazz [fixture]",
+        "country": "United Kingdom",
+        "countrycode": "GB",
+        "state": "London",
+        "geo_lat": 51.5074,
+        "geo_long": -0.1278,
+        "tags": "jazz,soul",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/0.pls",
+        "url_resolved": "https://example.invalid/frequency/0.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://nl1.api.radio-browser.info/json/stations/search?limit=100&offset=0&order=clickcount&reverse=true&hidebroken=true&countrycode=US",
+    "body": [
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000002",
+        "name": "Borough Sounds [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "New York",
+        "geo_lat": 40.7128,
+        "geo_long": -74.006,
+        "tags": "jazz,independent",
+        "codec": "MP3",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/1.pls",
+        "url_resolved": "https://example.invalid/frequency/1.mp3",
+        "favicon": "",
+        "homepage": ""
+      },
+      {
+        "stationuuid": "00000000-0000-4000-8000-000000000011",
+        "name": "Unsupported Opus [fixture]",
+        "country": "United States",
+        "countrycode": "US",
+        "state": "",
+        "geo_lat": null,
+        "geo_long": null,
+        "tags": "pop",
+        "codec": "OPUS",
+        "bitrate": 128,
+        "hls": 0,
+        "lastcheckok": 1,
+        "url": "https://example.invalid/list/10.pls",
+        "url_resolved": "https://example.invalid/frequency/10.mp3",
+        "favicon": "",
+        "homepage": ""
+      }
+    ]
+  }
+]

@@ -102,6 +102,10 @@ impl LuaAppRunner {
         if has("audio") {
             register_audio_api(&lua, app_dir)
                 .map_err(|e| format!("Failed to register audio API: {e}"))?;
+            if has("network") {
+                crate::stream_audio::register_with_fixture(&lua, fixture.is_some())
+                    .map_err(|e| format!("Failed to register streaming audio: {e}"))?;
+            }
         }
 
         log::info!(

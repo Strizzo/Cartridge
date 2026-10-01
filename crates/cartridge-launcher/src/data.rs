@@ -46,6 +46,16 @@ impl Registry {
         }
     }
 
+    /// A store refresh must not hide locally installed cartridges merely
+    /// because a remote catalogue predates the installed app bundle.
+    pub fn retain_installed_from(&mut self, previous: &Registry, installed: &InstalledApps) {
+        for app in &previous.apps {
+            if installed.is_installed(&app.id) && !self.apps.iter().any(|a| a.id == app.id) {
+                self.apps.push(app.clone());
+            }
+        }
+    }
+
     /// Convert from the network registry type into the launcher's local type.
     pub fn from_net(net_reg: &cartridge_net::Registry) -> Self {
         Self {
@@ -160,5 +170,25 @@ impl Default for LauncherSettings {
             animations_enabled: default_animations_enabled(),
             sounds_enabled: default_sounds_enabled(),
         }
+    }
+}
+
+#[cfg(test)]
+mod connected_app_registry_tests {
+    use super::*;
+    #[test]
+    fn old_catalogue_keeps_new_bundled_apps_and_remote_updates() {
+        fn entry(id: &str, version: &str) -> AppEntry {
+            serde_json::from_value(serde_json::json!({"id":id,"name":id,"version":version})).unwrap()
+        }
+        let previous = Registry { version: 1, apps: vec![entry("frequency","1"),entry("weather","1"),entry("uninstalled","1")] };
+        let installed = InstalledApps { app_ids: vec!["frequency".into(),"weather".into()] };
+        let mut remote = Registry { version:1, apps:vec![entry("weather","2")] };
+        remote.retain_installed_from(&previous,&installed);
+        assert_eq!(remote.apps.len(),2);
+        assert_eq!(remote.apps[0].version,"2");
+        assert_eq!(remote.apps[1].id,"frequency");
+        remote.retain_installed_from(&previous,&installed);
+        assert_eq!(remote.apps.len(),2);
     }
 }

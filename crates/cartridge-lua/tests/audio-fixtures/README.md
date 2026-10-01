@@ -1,0 +1,1 @@
+Synthetic 440 Hz sine, 0.3 seconds, 44.1 kHz stereo. Generated with FFmpeg lavfi sine; no third-party recordings. MP3 uses libmp3lame at 96 kb/s, AAC uses AAC-LC ADTS at 96 kb/s, Ogg uses libvorbis. These small fixtures verify native non-seekable radio decoding without a network or audio device.

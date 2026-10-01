@@ -57,3 +57,7 @@ path = "src/bin/snapshot.rs"
 [[bin]]
 name = "sim-check"
 path = "src/bin/sim_check.rs"
+
+[[bin]]
+name = "app-check"
+path = "src/bin/app_check.rs"

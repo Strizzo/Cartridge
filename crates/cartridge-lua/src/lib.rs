@@ -2,13 +2,14 @@ pub mod api;
 pub mod manifest;
 pub mod runner;
 mod http_fixture;
+pub mod stream_audio;
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use cartridge_core::font::FontCache;
 use cartridge_core::image_cache::ImageCache;
-use cartridge_core::input::{Button, InputManager};
+use cartridge_core::input::{Button, InputAction, InputManager};
 use cartridge_core::perf::{self, FrameStats, FrameTimes};
 use cartridge_core::screen::Screen;
 use cartridge_core::text_cache::TextCache;
@@ -206,9 +207,8 @@ pub fn run_lua_app_with_config(
         let events = event_inbox.collect(&mut event_pump);
 
         // Check for quit via raw SDL events (bypasses input manager).
-        // This catches Select/Start regardless of GameController mapping.
+        // Select exits only when no keyboard is open; inside it Select cancels.
         let mut raw_select = false;
-        let mut raw_start = false;
         for event in events {
             match event {
                 sdl2::event::Event::Quit { .. } => break 'running,
@@ -220,9 +220,6 @@ pub fn run_lua_app_with_config(
                 sdl2::event::Event::JoyButtonDown { button_idx: 12, .. } => {
                     raw_select = true;
                 }
-                sdl2::event::Event::JoyButtonDown { button_idx: 13, .. } => {
-                    raw_start = true;
-                }
                 // GameController API: Back=Select, Start=Start
                 sdl2::event::Event::ControllerButtonDown { button, .. } => {
                     match button {
@@ -230,17 +227,13 @@ pub fn run_lua_app_with_config(
                         | sdl2::controller::Button::Guide => {
                             raw_select = true;
                         }
-                        sdl2::controller::Button::Start => {
-                            raw_start = true;
-                        }
                         _ => {}
                     }
                 }
                 _ => {}
             }
         }
-        // Exit on Select alone or Start+Select combo
-        if raw_select || (raw_start && raw_select) {
+        if raw_select && !app.text_input_active() {
             break 'running;
         }
         // Screenshot (F12 / SIGUSR1): reads back the last presented frame.
@@ -272,14 +265,15 @@ pub fn run_lua_app_with_config(
         // delivering them to the Lua app. Lua reads results via text_input.poll().
         if app.text_input_active() {
             for ev in &input_events {
-                if ev.button == Button::Select {
-                    continue;
-                }
                 app.text_input_handle(ev);
             }
-            // The overlay animates (cursor) and reflects typing; keep it live.
-            dirty = true;
+            // The keyboard is static between input events.
         } else {
+            // Keyboard Space and scripted Select have the same exit behavior
+            // as the handheld's physical Select button.
+            if input_events.iter().any(|ev| ev.button == Button::Select && ev.action == InputAction::Press) {
+                break 'running;
+            }
             // Deliver input to Lua (filter out Select so apps don't see it)
             let lua_events: Vec<_> = input_events
                 .into_iter()

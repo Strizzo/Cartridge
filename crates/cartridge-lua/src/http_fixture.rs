@@ -7,6 +7,10 @@ use std::{cell::RefCell, path::Path, rc::Rc};
 #[derive(Clone, Deserialize)]
 struct Reply {
     url_prefix: String,
+    #[serde(default = "get_method")]
+    method: String,
+    #[serde(default)]
+    request_body: Option<serde_json::Value>,
     #[serde(default = "success")]
     status: u16,
     body: serde_json::Value,
@@ -14,6 +18,9 @@ struct Reply {
     delay_polls: usize,
     #[serde(default)]
     elapsed_ms: f64,
+}
+fn get_method() -> String {
+    "GET".into()
 }
 fn success() -> u16 {
     200
@@ -33,27 +40,44 @@ pub fn register(lua: &Lua, path: &Path, control: SharedAppControl) -> LuaResult<
     let queue = Rc::new(RefCell::new(Vec::<(u64, Reply)>::new()));
     let next = Rc::new(std::cell::Cell::new(0u64));
     let http = lua.create_table()?;
-    let q = queue.clone();
-    http.set(
-        "get_async",
-        lua.create_function(move |_, (url, _etag): (String, Option<String>)| {
-            let id = next.get() + 1;
-            next.set(id);
-            let reply = replies
-                .iter()
-                .find(|r| url.starts_with(&r.url_prefix))
-                .cloned()
-                .unwrap_or(Reply {
-                    url_prefix: url,
-                    status: 0,
-                    body: "Offline fixture: request unavailable".into(),
-                    delay_polls: 2,
-                    elapsed_ms: 0.0,
-                });
-            q.borrow_mut().push((id, reply));
-            Ok(id)
-        })?,
-    )?;
+    for method in ["GET", "POST"] {
+        let q = queue.clone();
+        let next = next.clone();
+        let replies = replies.clone();
+        http.set(
+            if method == "GET" {
+                "get_async"
+            } else {
+                "post_async"
+            },
+            lua.create_function(move |_, (url, body): (String, Option<String>)| {
+                let id = next.get() + 1;
+                next.set(id);
+                let request_body = body
+                    .as_deref()
+                    .and_then(|b| serde_json::from_str::<serde_json::Value>(b).ok());
+                let reply = replies
+                    .iter()
+                    .find(|r| {
+                        r.method == method
+                            && url.starts_with(&r.url_prefix)
+                            && (r.request_body.is_none() || r.request_body == request_body)
+                    })
+                    .cloned()
+                    .unwrap_or(Reply {
+                        url_prefix: url,
+                        method: method.into(),
+                        request_body: None,
+                        status: 0,
+                        body: "Offline fixture: request unavailable".into(),
+                        delay_polls: 2,
+                        elapsed_ms: 0.0,
+                    });
+                q.borrow_mut().push((id, reply));
+                Ok(id)
+            })?,
+        )?;
+    }
     http.set(
         "poll",
         lua.create_function(move |lua, ()| {
@@ -91,7 +115,7 @@ pub fn register(lua: &Lua, path: &Path, control: SharedAppControl) -> LuaResult<
             Ok(result)
         })?,
     )?;
-    for name in ["get", "get_cached", "post", "post_async"] {
+    for name in ["get", "get_cached", "post"] {
         http.set(
             name,
             lua.create_function(|_, _: mlua::Variadic<mlua::Value>| -> LuaResult<()> {

@@ -85,6 +85,7 @@ jobs:
           # Developer checks run the exact ARM binary in an isolated Linux VM.
           mkdir -p bundle/Cartridge/dev
           cp target/aarch64-unknown-linux-gnu/release/sim-check bundle/Cartridge/dev/
+          cp target/aarch64-unknown-linux-gnu/release/app-check bundle/Cartridge/dev/
           printf '%s\n' "$GITHUB_SHA" > bundle/Cartridge/dev/build-revision
 
           # Boot scripts

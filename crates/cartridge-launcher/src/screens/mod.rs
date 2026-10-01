@@ -96,7 +96,9 @@ impl ScreenContext {
                         net_reg.version,
                         net_reg.apps.len()
                     );
-                    self.registry = crate::data::Registry::from_net(&net_reg);
+                    let mut refreshed = crate::data::Registry::from_net(&net_reg);
+                    refreshed.retain_installed_from(&self.registry, &self.installed);
+                    self.registry = refreshed;
                 }
                 Err(e) => {
                     log::warn!("Failed to fetch registry from network: {e}");

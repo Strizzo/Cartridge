@@ -501,3 +501,42 @@ A cartridge exits when:
 2. `on_init`, `on_input`, `on_update`, `on_render`, or `on_destroy` raises an unrecoverable Lua error (an error screen is shown until exit)
 
 There is no programmatic "quit" yet — apps run until the user dismisses them.
+
+
+## Internet audio (network + audio permissions)
+
+`audio.stream(url)` starts a background HTTP(S) radio stream. It replaces any
+previous stream; it does not block input or download an entire file. Supported
+formats are MP3, AAC-LC/ADTS, Ogg Vorbis, FLAC and WAV, mono/stereo up to 96 kHz.
+HLS, Opus and HE-AAC are not supported. Prefer a station directory's resolved
+stream URL and show playback errors rather than claiming unsupported stations
+are playing. The transport requires `curl` in PATH (provided by macOS; required in the
+Linux device image); decoding is native Rust.
+
+- `audio.stream_status()` returns `state`, `error`, `url`, `volume`, `seconds`.
+  State is stopped, connecting, buffering, playing, paused, ended or error.
+  Seconds counts decoded/queued audio, not an exact audible playback clock.
+- `audio.stop_stream()` immediately stops output and cancels the network process.
+- `audio.pause_stream(bool)` pauses/resumes buffered audio. A broadcaster may
+  close a long-paused connection; the app should offer reconnect.
+- `audio.set_stream_volume(0..1)` sets volume independently from local UI sounds.
+
+Audio is bounded to 12 decoded packets, each at most 65536 frames, plus network
+pipe and decoder buffers. Stop, VM destruction and hot reload kill/reap the
+transport. Network errors remain in status until a new play or stop. No automatic
+reconnect loop runs without app/user policy. Headless HTTP fixture mode disables
+real stream playback and reports an explicit offline error; it never contacts a
+broadcaster. Use the native live simulator for actual playback verification.
+
+`cargo run -p cartridge-lua --example stream_probe -- HTTP_URL 5 0` exercises
+network, decoding, audio-device output, pause/resume and stop for five seconds at
+zero volume. This is an opt-in live check, separate from deterministic tests.
+
+The keyboard accepts an optional fourth `max_length` argument (1–2048 Unicode
+characters; default 64). Long text scrolls to keep the cursor visible. X cycles
+letters, capitals and symbols; Select cancels the keyboard and leaves the app
+open. Select exits the app only when no keyboard is active.
+
+`storage.save` raises a Lua error if data cannot be written; use `pcall` to keep
+the app usable and show a storage warning. A completed replacement contains the
+whole JSON value, avoiding partial JSON if writing fails.
