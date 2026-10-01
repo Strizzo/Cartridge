@@ -131,6 +131,9 @@ end
 
 | App | Category | Description |
 |-----|----------|-------------|
+| [Frequency](docs/frequency.md) | Media | Explore live world radio, save stations and play direct streams |
+| [Mission Control](docs/mission-control.md) | Tools | Control VibeBoy sessions and read live terminal output |
+| [Outside](docs/outside.md) | Tools | Illustrated live weather, hourly forecasts and saved places |
 | Calculator | Tools | Calculator with expression history |
 | Hacker News | News | Browse top stories, comments, and articles |
 | Pomodoro | Productivity | Focus timer with work/break cycles and stats |

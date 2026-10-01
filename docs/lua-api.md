@@ -395,21 +395,19 @@ routed to the keyboard widget (your `on_input` is not called).
 function on_input(button, action)
   if button == "y" and action == "press" then
     text_input.show("Enter your name", "default value", false)
-    -- args:  label, default text (optional), masked (optional bool)
+    -- args: label, default text?, masked?, max_length? (default 64)
   end
 end
 
 function on_update(dt)
-  if text_input.is_active() then
-    -- Drain results without blocking
-    local r = text_input.poll()
-    if type(r) == "string" then
-      print("Got:", r)
-    elseif r == false then
-      print("Cancelled")
-    end
-    -- nil = still active, keep polling next frame
+  -- Submission/cancellation hides the keyboard before the result is drained.
+  local r = text_input.poll()
+  if type(r) == "string" then
+    print("Got:", r)
+  elseif r == false then
+    print("Cancelled")
   end
+  -- nil = no result; keep polling next update
 end
 ```
 

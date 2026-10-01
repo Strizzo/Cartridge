@@ -41,5 +41,47 @@ stop/drop, offline audio isolation, and non-seekable MP3/AAC-LC/Vorbis decoding
 using short generated sine-wave fixtures. These observations do not establish
 handheld audio compatibility or battery use.
 
-Implementation and integration are in progress. Do not treat this document as a
-release sign-off; final checks must be recorded against the completed code.
+## Verification record — 2026-10-01
+
+Runtime/app implementation: `5a667eb66ebf97598974ae0785e6509347326840`.
+
+- 52 Rust unit/integration tests passed on macOS, plus the opt-in test using
+  the real VibeBoy HTTP handlers. The legacy snapshot test is skipped in CI
+  mode; the separate native simulator suite below supplies render coverage.
+- All native simulator scenarios passed, including disconnected apps, posted
+  command acknowledgments and keyboard cancellation without exiting an app.
+- 86 Python installer/session regressions passed.
+- Frequency fetched a live directory and played Sports Radio Brila FM through
+  its native controller UI, including pause/resume/stop. The integrated player
+  also played SomaFM Groove Salad at zero volume for a silent output check.
+- Outside loaded a live Open-Meteo forecast and rendered the source location's
+  local night scene. Native fixture checks covered all illustrated conditions,
+  locations, unit changes, stale/offline data and search failures.
+- Mission Control sent an approved response through the real VibeBoy HTTP API,
+  ActionExecutor and libtmux to a disposable terminal in the ARM Linux VM. The
+  terminal received the exact text and the app displayed its returned output.
+  No real user session was controlled. The disposable service/pane was stopped.
+- The shared keyboard now cancels on Select, handles Unicode defaults, scrolls
+  long input, and offers a symbols page. Storage writes publish complete JSON
+  and report write failures instead of silently claiming to save.
+
+Native 720×720 captures (live data; terminal is an isolated test):
+
+| Frequency | Mission Control | Outside |
+| --- | --- | --- |
+| [Radio playback](screenshots/connected-apps/frequency.png) | [Terminal delivery](screenshots/connected-apps/mission-control.png) | [Live forecast](screenshots/connected-apps/outside.png) |
+
+Linux and ARM build evidence is available in [the implementation CI run](https://github.com/Strizzo/Cartridge/actions/runs/36916936408).
+Reproduce the ARM runtime scenarios using `./sim/vm.sh check --run 36916936408`
+after the device bundle is available. This checks Linux/ARM compatibility,
+not RK3326 timing, Wi-Fi hardware, physical audio or battery life.
+
+## Hardware acceptance
+
+Before calling these apps device-validated, test the resulting bundle on the
+handheld: launch/exit each app with the actual controller; sustain radio playback
+and station switching; open weather locations; send a disposable terminal response;
+measure input/render time, memory and idle power. No SD card was written during
+this app implementation. HLS/HE-AAC/Opus and local speech/LLM inference are outside
+these apps' supported features. Mission Control's server acknowledgment still
+requires checking terminal output to confirm the requested operation happened.

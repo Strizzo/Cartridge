@@ -140,7 +140,7 @@ Select cancels an open keyboard; otherwise it exits to the launcher.
 
 ## Reproduce native captures
 
-The parent `app-check` runner uses isolated temporary storage. No edits to
+The `app-check` runner uses isolated temporary storage. No edits to
 shared `sim_check.rs` or `app_check.rs` are necessary. Run from the repo root:
 
 ```sh
@@ -203,21 +203,17 @@ storage, or text measurements happen inside render.
 Actual 720 × 720 SDL captures were inspected for clear/night/rain/snow/fog/storm,
 detail and imperial screens, eight saved places, keyboard, search results,
 added Tokyo, reorder/remove, no data/loading, empty favorites, failed search,
-and stale cached data. The parent runner completed these controller sequences
+and stale cached data. The native runner completed these controller sequences
 without Lua errors. Live forecast and geocoding URLs were checked against the
 official documentation and returned valid data. A real asynchronous runtime
 forecast was also captured on 2026-10-01 (Luxembourg 21:15 local current data).
 
-Evidence is under `/tmp/outside-final/` on the development host; older exploratory
-captures are under `/tmp/outside-captures/`. The temporary standalone capture
-binary was removed. The scoped test suite passes. No commits or pushes were
-made.
+See [connected-app verification](connected-apps.md) for retained native screenshots and shared-runtime checks.
 
-### Limits and parent-runtime observations
+### Limits
 
 - These are desktop native renderer checks, not RK3326 frame-time measurements
   or handheld hardware validation.
-
 - The coast and crescent are illustrative. They do not claim to show local
   terrain, actual lunar phase, or solar azimuth.
 - No geolocation permission or implicit location lookup is used. The initial
