@@ -58,6 +58,8 @@ import sys,tarfile
 root,bundle,out=map(Path,sys.argv[1:])
 with tarfile.open(out,'w:gz') as t:
     t.add(bundle/'Cartridge',arcname='bundle/Cartridge')
+    # Root-level unit tests verify the actual splash shipped in this bundle.
+    t.add(bundle/'Cartridge/assets/logo.bmp',arcname='assets/logo.bmp')
     for name in ['deploy','tests','sim','installer']:
         t.add(root/name,arcname=name,filter=lambda info: None if '__pycache__' in info.name else info)
 PY

@@ -72,9 +72,14 @@ Native 720×720 captures (live data; terminal is an isolated test):
 | [Radio playback](screenshots/connected-apps/frequency.png) | [Terminal delivery](screenshots/connected-apps/mission-control.png) | [Live forecast](screenshots/connected-apps/outside.png) |
 
 Linux and ARM build evidence is available in [the implementation CI run](https://github.com/Strizzo/Cartridge/actions/runs/36916936408).
-Reproduce the ARM runtime scenarios using `./sim/vm.sh check --run 36916936408`
-after the device bundle is available. This checks Linux/ARM compatibility,
-not RK3326 timing, Wi-Fi hardware, physical audio or battery life.
+The actual ARM bundle passed the isolated Linux VM checks: native simulator
+scenarios, all 86 Python tests, library loading, offline-image preparation and
+systemd startup/handoff/failure/undo. The test package now includes its splash
+fixture, and developer binaries regain executable permissions after ZIP extraction.
+The tested artifact was built from GitHub's PR merge `2faa4b6e3b7bc5d9daa0238f68a129b19a172cd4`;
+its Cartridge executable SHA-256 is `3e8a92e12d922b35b3a5d6c329d007c55dbc1ec2e2f4017c5dfd62becf6907b5`.
+Reproduce with `./sim/vm.sh check --run 36916936408`. This establishes Linux/ARM
+compatibility, not RK3326 timing, Wi-Fi hardware, physical audio or battery life.
 
 ## Hardware acceptance
 

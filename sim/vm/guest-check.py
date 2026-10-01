@@ -24,7 +24,7 @@ def main():
     if report_dir.exists(): shutil.rmtree(report_dir)
     report_dir.mkdir()
     # GitHub artifact ZIPs do not preserve executable permissions.
-    for executable in [app/'cartridge', app/'dev/sim-check']:
+    for executable in [app/'cartridge', app/'dev/sim-check', app/'dev/app-check']:
         executable.chmod(0o755)
     run(str(app/'cartridge'), '--version')
     linked = run('ldd',str(app/'cartridge'),capture_output=True).stdout
