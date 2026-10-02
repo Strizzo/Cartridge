@@ -64,7 +64,6 @@ pub struct ScreenContext {
     pub registry_client: Option<cartridge_net::RegistryClient>,
     pub installer: Option<cartridge_net::AppInstaller>,
     pub sysinfo: AsyncSystemInfo,
-    pub wifi_manager: cartridge_net::WifiManager,
 }
 
 impl ScreenContext {
@@ -195,7 +194,7 @@ pub(crate) fn test_context() -> ScreenContext {
         store_jobs: Default::default(), registry_revision: 0, invalidated_textures: vec![], notice_pages: 0, automatic_store_refresh: true,
         settings: crate::data::LauncherSettings { auto_refresh: false, ..Default::default() }, recents: vec![],
         storage: cartridge_core::storage::AppStorage::at_root("launcher", root), registry_client: None, installer: None,
-        sysinfo: Default::default(), wifi_manager: cartridge_net::WifiManager::new(),
+        sysinfo: Default::default(),
     }
 }
 

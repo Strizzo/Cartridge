@@ -71,7 +71,6 @@ impl LauncherApp {
         // forks don't stall the render thread. AsyncSystemInfo Derefs to SystemInfo.
         let sysinfo = AsyncSystemInfo::new(std::time::Duration::from_secs(2));
 
-        let wifi_manager = cartridge_net::WifiManager::new();
 
         let mut ctx = ScreenContext {
             bundled_app_ids: registry.apps.iter().map(|app| app.id.clone()).collect(),
@@ -89,7 +88,6 @@ impl LauncherApp {
             registry_client: Some(registry_client),
             installer: None,
             sysinfo,
-            wifi_manager,
         };
 
         ctx.sync_installed_from_disk();

@@ -267,10 +267,11 @@ pub fn run_launcher_with_config(
                 return Ok((exit, build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start)));
             }
             if let Some(app_id) = launcher.pending_launch() {
-                sounds.launch();
-                // Give the audio device ~150ms to actually emit the
-                // launch chirp before we surrender SDL to the cartridge.
-                std::thread::sleep(std::time::Duration::from_millis(120));
+                // Only wait when a chirp was actually queued. Muted launches,
+                // headless checks and devices without audio start immediately.
+                if sounds.launch() {
+                    std::thread::sleep(std::time::Duration::from_millis(120));
+                }
                 let app_dir = resolve_app_dir(app_id, assets_dir);
                 result = LauncherResult::LaunchApp(app_dir);
                 return Ok((result, build_stats(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start)));

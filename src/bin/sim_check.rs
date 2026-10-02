@@ -29,21 +29,22 @@ fn scenario_resuming(
             frames_after: 3,
         });
     }
+    let capture_frame = (buttons.len() as u64 * 3 + 12).max(25);
     let (result, stats) = run_launcher_with_config(
         &cartridge_core::paths::assets_dir(),
         LauncherConfig {
             resume_game: resume,
             script_wait_for_background: true,
-            max_frames: Some(35),
+            max_frames: Some(capture_frame + 10),
             uncapped: true,
             capture_dir: Some(dir.clone()),
-            capture_frames: vec![25],
+            capture_frames: vec![capture_frame],
             script,
             ..Default::default()
         },
     )?;
     if name != "handoff" && name != "game-launch" {
-        check_png(&dir.join("frame_0025.png"))?;
+        check_png(&dir.join(format!("frame_{capture_frame:04}.png")))?;
     }
     println!(
         "{name}: {} frames, host render p95 {:.2}ms",
@@ -196,11 +197,31 @@ fn run() -> Result<(), String> {
         ("home", vec![]),
         ("settings", vec![Button::Start]),
         ("store", vec![Button::Y]),
+        ("store-installed", vec![Button::Y, Button::R1]),
+        ("store-updates", vec![Button::Y, Button::R1, Button::R1]),
+        ("store-category", vec![Button::Y, Button::X]),
+        ("settings-about", std::iter::once(Button::Start).chain(std::iter::repeat_n(Button::DpadDown, 10)).collect()),
+        ("wifi", std::iter::once(Button::Start).chain(std::iter::repeat_n(Button::DpadDown, 7)).chain([Button::A]).collect()),
         ("systems", vec![Button::L2]),
         ("games", vec![Button::L2, Button::A]),
     ] {
         if !matches!(scenario(name, &buttons, &out)?, LauncherResult::Quit) {
             return Err(format!("{name}: unexpected launcher exit"));
+        }
+    }
+    // Drive controls through Settings, then inspect the simulated hardware state.
+    // This catches UI-only sliders and lost background writes.
+    for (name, row, button, before, expected, read) in [
+        ("settings-brightness", 8, Button::DpadLeft, 43, 23,
+            cartridge_core::device::get_brightness_percent as fn() -> u8),
+        ("settings-volume", 9, Button::DpadRight, 37, 57,
+            cartridge_core::device::get_volume_percent as fn() -> u8),
+    ] {
+        let buttons: Vec<_> = std::iter::once(Button::Start)
+            .chain(std::iter::repeat_n(Button::DpadDown, row))
+            .chain([button, button]).collect();
+        if read() != before || !matches!(scenario(name, &buttons, &out)?, LauncherResult::Quit) || read() != expected {
+            return Err(format!("{name}: Settings did not apply the requested hardware change"));
         }
     }
     if !ready.is_file() {

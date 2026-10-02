@@ -12,7 +12,9 @@ original interface isolated in git.
 
 The working replacement card now boots EmulationStation and runs games (confirmed
 by its owner after all restored files, bootloader, root partition and filesystems
-passed checks). This is the recovery baseline. Do not replace its kernel/DTB or
+passed checks). This is the recovery baseline. The later spare-card trial booted directly into
+Cartridge (owner confirmed 2026-09-24), and the verified WPA package repair
+restored Wi-Fi and connected apps (owner confirmed). Do not replace its kernel/DTB or
 reformat it as part of launcher development.
 
 ## Current evidence
@@ -39,8 +41,8 @@ reformat it as part of launcher development.
 - Root-system verification uses a known-good image on the backup SSD. The exact
   VM-tested ARM app bundle was staged on the replacement card ROMS partition on
   2026-09-23, with the previous Cartridge files backed up. BOOT, Linux root,
-  games and saves were not written. Direct boot is not enabled or physically
-  validated yet.
+  games and saves were not written. The later disposable-card direct-boot trial succeeded; full
+  emulator/audio/power/recovery lifecycle validation is still open.
 
 ## Remaining acceptance gates
 

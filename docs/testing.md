@@ -9,7 +9,7 @@ diff tool — so you can iterate on the launcher without flashing a device.
 
 Runs the launcher headlessly through scripted scenarios and dumps PNG
 captures of each UI screen to `snapshots/`. By default captures: home,
-store, settings, app_detail.
+store, installed apps, updates, settings, About, Wi-Fi, app detail and power menu.
 
 ```bash
 cargo run --bin snapshot
@@ -120,3 +120,23 @@ git diff tests/baseline/   # review what changed
 - Host software/accelerated timings are not directly comparable to the device. Compare repeated release runs on the same host and renderer for regressions.
 - The launcher must run with hidden window + software renderer for tests.
   Production runs unchanged (default to visible + accelerated).
+
+## OS responsiveness pass
+
+`./sim.sh check` covers Store view/category navigation, Settings/About visibility
+and the Wi-Fi screen at 720×720 in addition to existing app/game workflows.
+Launcher unit tests use controlled workers to check slow Wi-Fi/hardware work,
+bounded/coalesced requests, error handling and stale completions. Store tests
+check installed versions, update filtering, stable selection after catalogue
+refresh and the offline Updates state. No SD card or host hardware is required.
+
+Review the new `store_installed`, `store_updates`, `settings_about` and `wifi`
+snapshots before accepting changed baselines. Host timings and generic ARM VM
+results establish software regressions, not handheld GPU or battery performance.
+
+The 2026-10-02 OS pass passed 114 Rust tests (two optional live-service tests
+ignored), 89 Python regressions and the full native simulator. Nine 720×720
+screens have reviewed visual baselines. Controlled tests cover a hanging mixer
+(kill/reap and retry), coalesced input, Wi-Fi screen close/reopen, failed
+connections and network-list reordering. Muted/no-audio app launches also skip
+the old fixed 120 ms sound delay. Physical Wi-Fi/audio timing remains to measure.

@@ -3,8 +3,8 @@
 Cartridge is intended to be the R36S Plus's primary operating environment: the
 first interactive screen after power-on, with applications, games, device settings
 and power controls. A reproducible bootable image and a desktop SD installer are the distribution
-milestone. The current branch supplies a primary session; it does not yet build
-that image or provide the installer. The intended user flow is described in
+milestone. The current branch supplies a primary session and an initial native macOS
+installer for verified local images; a reproducible public system image remains open. The intended user flow is described in
 [one-step SD installation](offline-installer.md).
 
 ## Boot and hardware architecture
@@ -41,14 +41,14 @@ baseline; preserve their verified versions while measuring improvements.
 
 | Stage | Deliverable | Current state |
 | --- | --- | --- |
-| 1. Primary session | Direct boot into Cartridge; apps and games launch from home; explicit ES recovery and undo. | Implemented and tested in the native simulator and ARM VM. Replacement-card validation pending. |
+| 1. Primary session | Direct boot into Cartridge; apps and games launch from home; explicit ES recovery and undo. | Implemented and tested in the native simulator and ARM VM. Owner confirmed direct boot on the spare card; complete device lifecycle validation remains open. |
 | 2. Device platform | Measured startup, display/input/audio lifecycle, brightness, volume, WiFi, power actions, bounded app work and wireless updates. | APIs and tooling exist; remaining blocking paths and physical validation are open. |
-| 3. Cartridge system image and installer | Versioned image recipe with pinned base, board files, packages, kernel/DTB checksums, emulator compatibility, recovery and a desktop writer that verifies the card. | Read-only card inventory and clone, Mac-to-VM root preparation, guarded s2 writeback, ROMS rollback and two-partition coordination pass disposable image checks. No physical-card validation, graphical installer or fresh image yet. |
+| 3. Cartridge system image and installer | Versioned image recipe with pinned base, board files, packages, kernel/DTB checksums, emulator compatibility, recovery and a desktop writer that verifies the card. | Read-only card inventory and clone, Mac-to-VM root preparation, guarded s2 writeback, ROMS rollback and two-partition coordination pass disposable image checks. Spare-card direct boot confirmed. Native macOS image-writer UI exists; reproducible public fresh image and full preserve-card UI remain open. |
 | 4. Hardware specialization | Measured service reduction, clock/power policy and justified driver/kernel changes for the exact board/panel. | Requires a recorded device baseline and benchmarks first. |
 
-The next physical milestone is stage 1 on the already working replacement card.
-Do this from Tools or over SSH after testing the same build manually. Enabling the session
-changes the next boot only; no partition rewrite is needed. Routine UI/app
+The owner confirmed direct boot into Cartridge on 2026-09-24, and later confirmed
+that the verified WPA package repair restored Wi-Fi and connected apps. Preserve
+that working boot and network baseline during subsequent app-bundle updates. Routine UI/app
 iterations stay in the simulator, followed by wireless deployment for device-only
 checks. Keep ROMs, saves and emulator configuration at their existing paths.
 
@@ -71,8 +71,9 @@ and workload before changing governors or disabling services.
 The runtime already skips clean frames, wakes idle waits on input, bounds timing
 history and network queues, and keeps bundled app HTTP off the UI thread. Store
 installation and catalogue refresh now run on workers with verified staged packages
-(see [App Store](app-store.md)). WiFi operations, SSH setup and repeated SDL/font startup remain
-candidates for measured work. [App development](app-development.md) covers the
+(see [App Store](app-store.md)). Wi-Fi scan/status/connect/disconnect and Settings hardware controls now run on
+workers, with cached UI values and bounded pending work. SSH setup and repeated
+SDL/font startup remain candidates for measured work. [App development](app-development.md) covers the
 API, original graphics, asynchronous workflows and provisional frame budgets.
 
 ## Reproducible image and updates
@@ -93,8 +94,8 @@ explicit erase choice, with backup and verified restoration for populated cards.
 The offline conversion, rollback and guarded Linux-partition writeback core is
 implemented and tested on disposable image files; macOS has a read-only
 whole-disk/layout inventory and a tested CLI handoff into a dedicated ARM
-preparation VM. Physical-card validation and the graphical installer remain
-open. An image builder must
+preparation VM. The native macOS writer supports verified local images on an explicitly selected
+empty spare; the full preserve-card graphical flow remains open. An image builder must
 produce an artifact file, with explicit target-media selection for any later
 flashing step. Test installation on a disposable image or spare card before
 considering the user's working card. Never distribute personal ROMs, saves, SSH

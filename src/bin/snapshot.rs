@@ -148,6 +148,21 @@ fn snap_detail(assets: &PathBuf, dir: &PathBuf) -> Result<(), String> {
     Ok(())
 }
 
+fn snap_navigation(assets: &PathBuf, dir: &PathBuf, name: &str, buttons: Vec<Button>) -> Result<(), String> {
+    println!("Capturing: {name}");
+    let capture = buttons.len() as u64 * 4 + 20;
+    let script = std::iter::once(ScriptStep { buttons: vec![], frames_after: 4 })
+        .chain(buttons.into_iter().map(|button| ScriptStep { buttons: vec![button], frames_after: 4 }))
+        .collect();
+    run_launcher_with_config(assets, LauncherConfig {
+        max_frames: Some(capture + 5), uncapped: true, script_wait_for_background: true,
+        capture_dir: Some(dir.clone()), capture_frames: vec![capture], script,
+        ..Default::default()
+    })?;
+    rename(&dir.join(format!("frame_{capture:04}.png")), &dir.join(format!("{name}.png")));
+    Ok(())
+}
+
 fn rename(from: &PathBuf, to: &PathBuf) {
     if from.exists() {
         let _ = std::fs::rename(from, to);
@@ -198,6 +213,10 @@ fn main() -> Result<(), String> {
             "settings".into(),
             "detail".into(),
             "power_menu".into(),
+            "store_installed".into(),
+            "store_updates".into(),
+            "settings_about".into(),
+            "wifi".into(),
         ]
     } else {
         args
@@ -210,6 +229,10 @@ fn main() -> Result<(), String> {
             "settings" => snap_settings(&assets, &dir)?,
             "detail" => snap_detail(&assets, &dir)?,
             "power_menu" => snap_power_menu(&assets, &dir)?,
+            "store_installed" => snap_navigation(&assets, &dir, s, vec![Button::Y, Button::R1])?,
+            "store_updates" => snap_navigation(&assets, &dir, s, vec![Button::Y, Button::R1, Button::R1])?,
+            "settings_about" => snap_navigation(&assets, &dir, s, std::iter::once(Button::Start).chain(std::iter::repeat_n(Button::DpadDown, 10)).collect())?,
+            "wifi" => snap_navigation(&assets, &dir, s, std::iter::once(Button::Start).chain(std::iter::repeat_n(Button::DpadDown, 7)).chain([Button::A]).collect())?,
             other => eprintln!("unknown scenario: {other}"),
         }
     }

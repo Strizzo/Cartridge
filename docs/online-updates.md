@@ -48,8 +48,9 @@ downloads. The ARM VM should exercise signature rejection, changed card data,
 out-of-space, power loss at every state transition, first-frame timeout and
 rollback to the previous release. Then test the complete update over the
 handheld's actual Wi-Fi connection, including a failed release that returns
-to the known-good version. Until the current Wi-Fi hardware is detected and a
-real scan succeeds, the device update UI should remain a later milestone.
+to the known-good version. Wi-Fi and connected apps now work on the handheld after the verified WPA
+package repair. The system update UI remains a later milestone until the
+transaction and recovery checks above are implemented.
 
 The initial user-facing policy is to check for updates when connected and let
 the owner choose when to download/install. This avoids a surprise restart or

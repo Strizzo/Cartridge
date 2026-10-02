@@ -16,7 +16,14 @@ No device account or API token is needed. The device fetches one catalogue and d
 
 ## Installing and updating
 
-Open Store and refresh the catalogue. App details show the available release and permissions. Install/update runs on a worker so input and rendering continue. The installed version takes precedence over the OS bundle. Removing an installed override reveals its bundled version; it does not erase app settings.
+Open Store and press Y to refresh the catalogue. L1/R1 switches between **Browse**,
+**Installed** and **Updates**; X cycles categories within a view. Switching views
+resets the category so an old filter cannot silently hide updates. Installed
+includes bundled and Store-installed apps. Updates contains only newer versions
+of installed apps, and shows the installed and available versions together.
+An offline catalogue with no verified download records asks you to check online
+rather than claiming everything is up to date. Open an app with A to review its
+available release and permissions before installing or updating. Install/update runs on a worker so input and rendering continue. The installed version takes precedence over the OS bundle. Removing an installed override reveals its bundled version; it does not erase app settings.
 
 The catalogue is an Ed25519-signed envelope. The exact UTF-8 `payload` string is signed and the official public key is compiled into `cartridge-net`. A release entry contains an explicit HTTPS URL, SHA-256, exact byte size and minimum runtime version. Installation checks these, checks manifest identity/version/permissions, rejects unsafe archive paths and links, and stages files before replacing the installed copy. A previous version is retained for rollback. App data lives separately under the cartridge's data directory.
 
