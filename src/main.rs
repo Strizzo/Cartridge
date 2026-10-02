@@ -6,6 +6,17 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     match args.get(1).map(|s| s.as_str()) {
+        Some("system-verify") => {
+            let result = if args.len() == 4 && args[2] == "--path" {
+                cartridge_net::system_update::verify_release_dir(std::path::Path::new(&args[3]))
+            } else {
+                Err("Usage: cartridge system-verify --path <release-directory>".into())
+            };
+            match result {
+                Ok(release) => println!("Verified CartridgeOS {} ({})", release.version, release.revision),
+                Err(error) => { eprintln!("System verification failed: {error}"); std::process::exit(1); }
+            }
+        }
         Some("run") => {
             let app_dir = parse_run_args(&args);
             let assets_dir = find_assets_dir();
@@ -57,6 +68,9 @@ fn main() {
                     Ok(cartridge_launcher::LauncherResult::EmulationStation) => {
                         std::process::exit(20)
                     }
+                    Ok(cartridge_launcher::LauncherResult::RestartForUpdate) => {
+                        std::process::exit(40)
+                    }
                     Ok(cartridge_launcher::LauncherResult::PowerRequested) => {
                         std::process::exit(30)
                     }
@@ -68,7 +82,8 @@ fn main() {
                             // Write crash log next to the binary for debugging
                             if let Ok(exe) = std::env::current_exe() {
                                 if let Some(dir) = exe.parent() {
-                                    let log_path = dir.join("crash.log");
+                                    let log_path = std::env::var_os("CARTRIDGE_UPDATE_STATE")
+                                        .map(PathBuf::from).unwrap_or_else(|| dir.to_path_buf()).join("crash.log");
                                     let msg = format!("App: {}\nError: {e}\n", app_dir.display());
                                     let _ = std::fs::OpenOptions::new()
                                         .create(true)

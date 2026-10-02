@@ -231,6 +231,7 @@ fn run() -> Result<(), String> {
         ("store-updates", vec![Button::Y, Button::R1, Button::R1]),
         ("store-category", vec![Button::Y, Button::X]),
         ("settings-about", std::iter::once(Button::Start).chain(std::iter::repeat_n(Button::DpadDown, 10)).collect()),
+        ("system-update", std::iter::once(Button::Start).chain(std::iter::repeat_n(Button::DpadDown, 11)).chain([Button::A]).collect()),
         ("wifi", std::iter::once(Button::Start).chain(std::iter::repeat_n(Button::DpadDown, 7)).chain([Button::A]).collect()),
         ("systems", vec![Button::L2]),
         ("games", vec![Button::L2, Button::A]),

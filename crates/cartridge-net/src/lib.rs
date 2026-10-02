@@ -10,3 +10,4 @@ pub use installer::AppInstaller;
 pub use registry::{AppPackage, Registry, RegistryApp, RegistryClient};
 pub use ssh::SshTunnel;
 pub use wifi::WifiManager;
+pub mod system_update;

@@ -188,8 +188,22 @@ fn main() -> Result<(), String> {
         std::process::id()
     )));
     std::fs::create_dir_all(&scratch.0).map_err(|e| e.to_string())?;
+    // Local-only updater bootstrap fixture. The placeholder is never executed:
+    // this scenario only reads status and never checks or stages a release.
+    let update_root = scratch.0.join("update-base");
+    let update_state = scratch.0.join("update-state");
+    std::fs::create_dir_all(&update_root).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&update_state).map_err(|e| e.to_string())?;
+    std::fs::write(update_root.join("cartridge"), "snapshot placeholder\n").map_err(|e| e.to_string())?;
     // Hidden window + software renderer (read_pixels works reliably).
     unsafe {
+        for key in ["CARTRIDGE_UPDATE_ROOT", "CARTRIDGE_UPDATE_STATE", "CARTRIDGE_UPDATE_TARGET", "CARTRIDGE_UPDATE_SUPERVISOR"] {
+            std::env::remove_var(key);
+        }
+        std::env::set_var("CARTRIDGE_UPDATE_ROOT", &update_root);
+        std::env::set_var("CARTRIDGE_UPDATE_STATE", &update_state);
+        std::env::set_var("CARTRIDGE_UPDATE_TARGET", "r36s-plus-aarch64");
+        std::env::set_var("CARTRIDGE_UPDATE_SUPERVISOR", "1");
         std::env::set_var("CARTRIDGE_SIM", "1");
         std::env::set_var("CARTRIDGE_HOME", &scratch.0);
         std::env::set_var("CARTRIDGE_SIM_PROFILE", "sim/profiles/r36s-plus.json");
@@ -217,6 +231,7 @@ fn main() -> Result<(), String> {
             "store_updates".into(),
             "settings_about".into(),
             "wifi".into(),
+            "system_update".into(),
         ]
     } else {
         args
@@ -232,6 +247,7 @@ fn main() -> Result<(), String> {
             "store_installed" => snap_navigation(&assets, &dir, s, vec![Button::Y, Button::R1])?,
             "store_updates" => snap_navigation(&assets, &dir, s, vec![Button::Y, Button::R1, Button::R1])?,
             "settings_about" => snap_navigation(&assets, &dir, s, std::iter::once(Button::Start).chain(std::iter::repeat_n(Button::DpadDown, 10)).collect())?,
+            "system_update" => snap_navigation(&assets, &dir, s, std::iter::once(Button::Start).chain(std::iter::repeat_n(Button::DpadDown, 11)).chain([Button::A]).collect())?,
             "wifi" => snap_navigation(&assets, &dir, s, std::iter::once(Button::Start).chain(std::iter::repeat_n(Button::DpadDown, 7)).chain([Button::A]).collect())?,
             other => eprintln!("unknown scenario: {other}"),
         }

@@ -5,6 +5,7 @@ pub mod detail;
 pub mod settings;
 pub mod overlay;
 pub mod wifi;
+pub mod system_update;
 
 use cartridge_core::input::InputEvent;
 use cartridge_core::screen::Screen;
@@ -26,6 +27,7 @@ pub enum ScreenAction {
     /// Launch an installed app by its id.
     LaunchApp(String),
     LaunchGame(crate::games::GameRequest),
+    RestartForUpdate,
 }
 
 /// Identifies which screen to push.
@@ -36,6 +38,7 @@ pub enum ScreenId {
     Detail(String), // stable app ID, independent of catalog ordering
     Settings,
     WiFi,
+    SystemUpdate,
 }
 
 /// Common trait for all launcher screens.
@@ -54,6 +57,7 @@ pub struct ScreenContext {
     pub installed: crate::data::InstalledApps,
     pub(crate) local_apps: LocalApps,
     pub(crate) store_jobs: StoreJobs,
+    pub(crate) system_update_jobs: crate::system_update_jobs::SystemUpdateJobs,
     pub registry_revision: u64,
     pub(crate) invalidated_textures: Vec<String>,
     pub(crate) notice_pages: usize,
@@ -120,6 +124,10 @@ impl ScreenContext {
     pub fn sync_installed_from_disk(&mut self) { self.start_store_job(StoreOperation::Sync); }
 
     pub(crate) fn start_store_job(&mut self, operation: StoreOperation) {
+        if self.system_update_jobs.is_staging() {
+            self.store_jobs.error("System update staging is in progress. Store tasks can resume when it finishes.");
+            return;
+        }
         if self.store_jobs.is_busy() { return }
         match &operation {
             StoreOperation::Install(app) | StoreOperation::Update(app) if app.package.is_none() => {
@@ -140,6 +148,30 @@ impl ScreenContext {
             app_id: self.storage.app_id.clone(), data_dir: self.storage.data_dir.clone(), cache_dir: self.storage.cache_dir.clone(),
         };
         self.store_jobs.start(operation, self.registry_client.clone(), self.installer.clone(), self.bundled_app_ids.clone(), storage);
+    }
+
+    pub(crate) fn stage_system_update(&mut self, release: std::sync::Arc<cartridge_net::system_update::Release>) -> bool {
+        if self.store_jobs.is_busy() {
+            self.store_jobs.error("Wait for the current Store task before downloading a system update.");
+            return false;
+        }
+        let battery = u8::try_from(self.sysinfo.battery_percent).ok().filter(|percent| *percent <= 100);
+        self.system_update_jobs.stage(release, battery, self.sysinfo.battery_charging)
+    }
+
+    pub(crate) fn system_update_power_ready(&self) -> bool {
+        crate::system_update_jobs::power_ready(self.sysinfo.battery_percent, self.sysinfo.battery_charging)
+    }
+
+    pub(crate) fn poll_system_update_jobs(&mut self) -> bool {
+        let (changed, notice) = self.system_update_jobs.poll();
+        if let Some(notice) = notice { self.store_jobs.notices.push_back(notice); }
+        changed
+    }
+
+    pub(crate) fn has_background_notice(&self) -> bool {
+        self.system_update_jobs.progress.is_some() || self.store_jobs.progress.is_some()
+            || !self.store_jobs.notices.is_empty()
     }
 
     pub fn poll_store_jobs(&mut self) -> bool {
@@ -196,7 +228,7 @@ pub(crate) fn test_context() -> ScreenContext {
     let root = std::env::temp_dir().join(format!("cartridge-context-{}-{}", std::process::id(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
     ScreenContext {
         registry: crate::data::Registry::empty(), bundled_app_ids: vec![], installed: Default::default(), local_apps: Default::default(),
-        store_jobs: Default::default(), registry_revision: 0, invalidated_textures: vec![], notice_pages: 0, automatic_store_refresh: true,
+        store_jobs: Default::default(), system_update_jobs: Default::default(), registry_revision: 0, invalidated_textures: vec![], notice_pages: 0, automatic_store_refresh: true,
         settings: crate::data::LauncherSettings { auto_refresh: false, ..Default::default() }, recents: vec![],
         storage: cartridge_core::storage::AppStorage::at_root("launcher", root), registry_client: None, installer: None,
         sysinfo: Default::default(),

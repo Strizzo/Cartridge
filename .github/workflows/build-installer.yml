@@ -104,6 +104,8 @@ jobs:
           cp -r assets/fonts/* bundle/Cartridge/assets/fonts/ 2>/dev/null || true
           cp -r assets/overlays/* bundle/Cartridge/assets/overlays/ 2>/dev/null || true
           cp -r assets/brand/* bundle/Cartridge/assets/brand/ 2>/dev/null || true
+          cp -r assets/icons bundle/Cartridge/assets/icons
+          cp assets/gamecontrollerdb.txt bundle/Cartridge/assets/
           cp assets/boot_logo.png bundle/Cartridge/assets/ 2>/dev/null || true
           cp assets/logo.bmp bundle/Cartridge/assets/ 2>/dev/null || true
 
@@ -116,6 +118,23 @@ jobs:
           cp "deploy/tools/Setup Cartridge Boot.sh" bundle/Cartridge/tools/
           cp "deploy/tools/Undo Cartridge Boot.sh" bundle/Cartridge/tools/
           chmod +x bundle/Cartridge/tools/*.sh
+
+      - name: Package unsigned system update (no signing or publishing)
+        run: |
+          VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          python3 scripts/package_system_update.py \
+            --bundle bundle/Cartridge --output system-update \
+            --version "$VERSION" --revision "$(git rev-parse HEAD)"
+          python3 scripts/package_system_update.py --verify system-update/system-update.unsigned.json
+
+      - name: Upload unsigned system update for local review
+        uses: actions/upload-artifact@v4
+        with:
+          name: cartridge-system-update-aarch64-unsigned
+          if-no-files-found: error
+          path: |
+            system-update/*.tar.gz
+            system-update/system-update.unsigned.json
 
       - name: Upload aarch64 device bundle
         uses: actions/upload-artifact@v4

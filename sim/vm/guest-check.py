@@ -46,6 +46,8 @@ def main():
     store_result = run(str(app/'dev/store-check'),'--live',env=env,cwd=app,capture_output=True)
     (report_dir/'store-check.log').write_text(store_result.stdout + store_result.stderr)
     run('python3',str(root/'sim/vm/offline-image-check.py'))
+    if (root/'system-update-fixture/system-update.json').is_file():
+        run('python3',str(root/'sim/vm/system-update-check.py'))
     # Install an explicitly fake stock service in this disposable VM, then run
     # the real setup/undo against Linux systemd rather than an offline fixture.
     if subprocess.run(['id','ark'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:

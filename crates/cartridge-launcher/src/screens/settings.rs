@@ -16,7 +16,7 @@ const CARD_ROW_H: i32 = 52;
 const NEO_LIST_Y: i32 = neo::CONTENT_Y + 12;
 
 const CACHE_OPTIONS: &[u32] = &[15, 30, 60, 120, 360];
-const SETTINGS_ROWS: usize = 11;
+const SETTINGS_ROWS: usize = 12;
 // Step size for brightness/volume left/right adjustments.
 const HW_STEP: u8 = 10;
 // Row indices.
@@ -31,6 +31,7 @@ const HW_STEP: u8 = 10;
 //   8: Brightness    (hardware)
 //   9: Volume        (hardware)
 //  10: About
+//  11: System Update
 const ROW_THEME: usize = 4;
 const ROW_ANIMATIONS: usize = 5;
 const ROW_SOUNDS: usize = 6;
@@ -38,6 +39,7 @@ const ROW_WIFI: usize = 7;
 const ROW_BRIGHTNESS: usize = 8;
 const ROW_VOLUME: usize = 9;
 const ROW_ABOUT: usize = 10;
+const ROW_SYSTEM_UPDATE: usize = 11;
 
 /// Move to the next/previous theme preset by id, wrapping at the ends.
 fn cycle_theme(current: &str, forward: bool) -> String {
@@ -155,6 +157,9 @@ impl LauncherScreen for SettingsScreen {
                         ROW_SOUNDS => {
                             ctx.settings.sounds_enabled = !ctx.settings.sounds_enabled;
                             ctx.save_settings();
+                        }
+                        ROW_SYSTEM_UPDATE => {
+                            return ScreenAction::Push(ScreenId::SystemUpdate);
                         }
                         ROW_WIFI => {
                             return ScreenAction::Push(ScreenId::WiFi);
@@ -540,6 +545,7 @@ impl SettingsScreen {
             SettingsRow::hardware("Brightness", &self.brightness),
             SettingsRow::hardware("Volume", &self.volume),
             SettingsRow::new("About CartridgeOS", about_status(ctx), RowValue::None),
+            SettingsRow::new("System Update", "Check for signed CartridgeOS releases", RowValue::Chevron),
         ]
     }
 
@@ -557,7 +563,7 @@ impl SettingsScreen {
             })
         } else {
             match self.selected_row {
-                ROW_WIFI => Some("Open"),
+                ROW_WIFI | ROW_SYSTEM_UPDATE => Some("Open"),
                 2 | ROW_THEME => Some("Next"),
                 0 | ROW_ABOUT => None,
                 _ => Some("Toggle"),
@@ -588,7 +594,7 @@ fn about_status(ctx: &ScreenContext) -> String {
 }
 
 fn settings_list_bottom(ctx: &ScreenContext, is_neo: bool) -> i32 {
-    let has_notice = ctx.store_jobs.progress.is_some() || !ctx.store_jobs.notices.is_empty();
+    let has_notice = ctx.has_background_notice();
     if has_notice {
         if is_neo { neo::FOOTER_Y - 112 } else { 572 }
     } else if is_neo {
@@ -677,6 +683,19 @@ mod tests {
                 assert!(selected_bottom <= bottom);
             }
         }
+    }
+
+    #[test]
+    fn system_update_is_after_about_without_changing_existing_row_indices() {
+        assert_eq!(ROW_ABOUT, 10);
+        assert_eq!(ROW_SYSTEM_UPDATE, 11);
+        let mut ctx = super::super::test_context();
+        let mut screen = SettingsScreen::new();
+        screen.selected_row = ROW_SYSTEM_UPDATE;
+        assert_eq!(screen.rows(&ctx)[ROW_SYSTEM_UPDATE].title, "System Update");
+        assert!(matches!(screen.handle_input(&[InputEvent { button: Button::A, action: InputAction::Press }], &mut ctx),
+            ScreenAction::Push(ScreenId::SystemUpdate)));
+        std::fs::remove_dir_all(ctx.storage.data_dir.parent().unwrap().parent().unwrap()).unwrap();
     }
 
     #[test]

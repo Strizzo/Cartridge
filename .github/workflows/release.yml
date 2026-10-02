@@ -17,6 +17,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Test system update packager
+        run: python3 -m unittest discover -s tests -p 'test_system_update_package.py'
+
       - name: Build the device toolchain image
         run: docker build -f docker/Dockerfile.device -t cartridge-device .
 
@@ -55,6 +58,8 @@ jobs:
           cp -r assets/fonts/* release/Cartridge/assets/fonts/
           cp -r assets/overlays/* release/Cartridge/assets/overlays/
           cp -r assets/brand/* release/Cartridge/assets/brand/
+          cp -r assets/icons release/Cartridge/assets/icons
+          cp assets/gamecontrollerdb.txt release/Cartridge/assets/
           cp assets/boot_logo.png release/Cartridge/assets/
           cp assets/logo.bmp release/Cartridge/assets/
 
@@ -73,6 +78,24 @@ jobs:
 
           # Install instructions
           cp INSTALL.md release/INSTALL.txt 2>/dev/null || true
+
+      - name: Package unsigned system update (no signing or publishing)
+        run: |
+          VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          test "$GITHUB_REF_NAME" = "v$VERSION"
+          python3 scripts/package_system_update.py \
+            --bundle release/Cartridge --output system-update \
+            --version "$VERSION" --revision "$(git rev-parse HEAD)"
+          python3 scripts/package_system_update.py --verify system-update/system-update.unsigned.json
+
+      - name: Upload unsigned system update for local review
+        uses: actions/upload-artifact@v4
+        with:
+          name: cartridge-system-update-aarch64-unsigned
+          if-no-files-found: error
+          path: |
+            system-update/*.tar.gz
+            system-update/system-update.unsigned.json
 
       - name: Create zip
         working-directory: release

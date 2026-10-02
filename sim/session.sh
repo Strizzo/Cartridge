@@ -3,6 +3,7 @@
 set -euo pipefail
 TASK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SIM_SESSION="$CARTRIDGE_HOME/session-device"
+SIM_SESSION_STATE="$CARTRIDGE_HOME/session-state"
 mkdir -p "$SIM_SESSION"
 ln -sfn "$TASK_ROOT/assets" "$SIM_SESSION/assets"
 ln -sfn "$TASK_ROOT/deploy/game-library.py" "$SIM_SESSION/game-library.py"
@@ -17,12 +18,12 @@ cargo build -q ${BUILD[@]+"${BUILD[@]}"} --bin cartridge --bin sim-check
 if [[ "${1:-}" == --check ]]; then
     # An actual rendered launcher navigates to ES automatically; the parent
     # supervisor must observe exit 20 and invoke our harmless ES stand-in.
-    printf '#!/bin/bash\nexec "%s" --handoff\n' "$SIM_TARGET/$PROFILE/sim-check" > "$SIM_SESSION/cartridge"
+    printf '#!/bin/bash\nif [[ "${1:-}" == system-verify ]]; then exec "%s" "$@"; fi\nexec "%s" --handoff\n' "$SIM_TARGET/$PROFILE/cartridge" "$SIM_TARGET/$PROFILE/sim-check" > "$SIM_SESSION/cartridge"
 else
-    printf '#!/bin/bash\nexec "%s"\n' "$SIM_TARGET/$PROFILE/cartridge" > "$SIM_SESSION/cartridge"
+    printf '#!/bin/bash\nexec "%s" "$@"\n' "$SIM_TARGET/$PROFILE/cartridge" > "$SIM_SESSION/cartridge"
 fi
 chmod +x "$SIM_SESSION/cartridge"
 printf '#!/bin/bash\necho "Simulator: EmulationStation handoff received."\n' > "$SIM_SESSION/emulationstation.sh"
 exec python3 "$TASK_ROOT/deploy/cartridge-session.py" --desktop \
-    --cartridge-dir "$SIM_SESSION" --state-dir "$SIM_SESSION/state" \
+    --cartridge-dir "$SIM_SESSION" --state-dir "$SIM_SESSION_STATE" \
     --es-script "$SIM_SESSION/emulationstation.sh"

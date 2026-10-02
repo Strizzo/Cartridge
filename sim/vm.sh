@@ -61,6 +61,9 @@ with tarfile.open(out,'w:gz') as t:
     # Root-level unit tests verify the actual splash shipped in this bundle.
     t.add(bundle/'Cartridge/assets/logo.bmp',arcname='assets/logo.bmp')
     t.add(root/'store-apps.lock.json',arcname='store-apps.lock.json')
+    fixture = root/'.sim/vm/system-update-fixture'
+    if (fixture/'system-update.json').is_file():
+        t.add(fixture,arcname='system-update-fixture')
     t.add(bundle/'Cartridge/lua_cartridges',arcname='lua_cartridges')
     for name in ['deploy','tests','sim','installer','scripts']:
         t.add(root/name,arcname=name,filter=lambda info: None if '__pycache__' in info.name else info)

@@ -2,6 +2,7 @@ pub mod app;
 pub mod games;
 pub mod data;
 mod store_jobs;
+mod system_update_jobs;
 pub mod neo;
 pub mod screens;
 pub mod ui_constants;
@@ -42,6 +43,8 @@ pub enum LauncherResult {
     EmulationStation,
     /// A shutdown/reboot was requested; never start the fallback during shutdown.
     PowerRequested,
+    /// Exit to the session supervisor so it can apply the staged system release.
+    RestartForUpdate,
 }
 
 /// Stats collected during a launcher run -- used by perf benches and tests.

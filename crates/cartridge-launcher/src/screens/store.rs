@@ -547,7 +547,7 @@ impl StoreScreen {
 }
 
 fn visible_rows(ctx: &ScreenContext) -> i32 {
-    let notice = ctx.store_jobs.progress.is_some() || !ctx.store_jobs.notices.is_empty();
+    let notice = ctx.has_background_notice();
     if style_of(&ctx.settings.theme_id) == UiStyle::Neo {
         let bottom = if notice { neo::FOOTER_Y - 112 } else { neo::FOOTER_Y };
         ((bottom - NEO_LIST_Y) / NEO_ROW_H).max(1)
@@ -669,6 +669,16 @@ mod library_view_tests {
         store.update(&mut ctx);
         assert!(store.selected_index < store.scroll_offset + visible_rows(&ctx));
         assert_eq!(store.selected_index, 5);
+        ctx.store_jobs.notices.clear();
+        ctx.system_update_jobs.progress = Some("Downloading system update".into());
+        for theme in ["neo", "midnight"] {
+            ctx.settings.theme_id = theme.into();
+            store.selected_index = 10;
+            store.update(&mut ctx);
+            assert!(store.selected_index >= store.scroll_offset);
+            assert!(store.selected_index < store.scroll_offset + visible_rows(&ctx));
+            assert_eq!(store.selected_index, 10);
+        }
         std::fs::remove_dir_all(ctx.storage.data_dir.parent().unwrap().parent().unwrap()).unwrap();
     }
 
