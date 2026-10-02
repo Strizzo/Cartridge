@@ -77,7 +77,7 @@ impl LocalApps {
 #[derive(Clone)]
 pub enum StoreOperation {
     Sync,
-    Refresh,
+    Refresh { ttl_seconds: u64 },
     Install(AppEntry),
     Update(AppEntry),
     Remove(String),
@@ -88,7 +88,7 @@ impl StoreOperation {
     fn label(&self) -> String {
         match self {
             Self::Sync => "Reading installed cartridges…".into(),
-            Self::Refresh => "Fetching and verifying the signed catalog…".into(),
+            Self::Refresh { .. } => "Fetching and verifying the signed catalog…".into(),
             Self::Install(app) => format!(
                 "Installing {} v{}: downloading and verifying…",
                 app.name, app.version
@@ -199,11 +199,11 @@ impl StoreJobs {
             let outcome = (|| -> Result<Option<String>, String> {
                 match &operation {
                     StoreOperation::Sync => Ok(None),
-                    StoreOperation::Refresh => {
+                    StoreOperation::Refresh { ttl_seconds } => {
                         let fetched = client
                             .as_ref()
                             .ok_or("Store is unavailable: no registry client")?
-                            .fetch()?;
+                            .fetch_with_cache(*ttl_seconds)?;
                         let count = fetched.apps.len();
                         registry = Some(Registry::from_net(&fetched));
                         Ok(Some(format!(
@@ -247,7 +247,7 @@ impl StoreJobs {
                     "{} {error}",
                     match &operation {
                         StoreOperation::Sync => "Installed-app scan failed:".into(),
-                        StoreOperation::Refresh => "Catalog refresh failed:".into(),
+                        StoreOperation::Refresh { .. } => "Catalog refresh failed:".into(),
                         StoreOperation::Install(app) => format!("Install {} failed:", app.name),
                         StoreOperation::Update(app) => format!("Update {} failed:", app.name),
                         StoreOperation::Remove(id) => format!("Remove {id} failed:"),

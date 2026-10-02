@@ -16,7 +16,8 @@ No device account or API token is needed. The device fetches one catalogue and d
 
 ## Installing and updating
 
-Open Store and press Y to refresh the catalogue. L1/R1 switches between **Browse**,
+Open Store and press Y to refresh the catalogue directly from the network. Automatic
+refresh on opening Store respects the cache duration in Settings. L1/R1 switches between **Browse**,
 **Installed** and **Updates**; X cycles categories within a view. Switching views
 resets the category so an old filter cannot silently hide updates. Installed
 includes bundled and Store-installed apps. Updates contains only newer versions

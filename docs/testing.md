@@ -134,9 +134,11 @@ Review the new `store_installed`, `store_updates`, `settings_about` and `wifi`
 snapshots before accepting changed baselines. Host timings and generic ARM VM
 results establish software regressions, not handheld GPU or battery performance.
 
-The 2026-10-02 OS pass passed 114 Rust tests (two optional live-service tests
+The 2026-10-02 OS pass passed 115 Rust tests (two optional live-service tests
 ignored), 89 Python regressions and the full native simulator. Nine 720×720
 screens have reviewed visual baselines. Controlled tests cover a hanging mixer
 (kill/reap and retry), coalesced input, Wi-Fi screen close/reopen, failed
 connections and network-list reordering. Muted/no-audio app launches also skip
-the old fixed 120 ms sound delay. Physical Wi-Fi/audio timing remains to measure.
+the old fixed 120 ms sound delay. Manual catalogue refresh has a loopback-server regression proving it bypasses
+the cache and still rejects unsigned responses; automatic refresh now respects
+the configured duration. Physical Wi-Fi/audio timing remains to measure.

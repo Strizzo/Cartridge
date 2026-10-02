@@ -111,7 +111,12 @@ impl ScreenContext {
     pub fn has_override(&self, id: &str) -> bool { self.local_apps.overrides.contains(id) }
     pub fn can_rollback(&self, id: &str) -> bool { self.local_apps.rollbacks.contains(id) }
 
-    pub fn refresh_registry(&mut self) { self.start_store_job(StoreOperation::Refresh); }
+    /// Explicit Refresh always checks online; opening Store can reuse its cache.
+    pub fn refresh_registry(&mut self) { self.start_store_job(StoreOperation::Refresh { ttl_seconds: 0 }); }
+    pub fn refresh_registry_cached(&mut self) {
+        let ttl_seconds = u64::from(self.settings.cache_duration_mins.min(360)) * 60;
+        self.start_store_job(StoreOperation::Refresh { ttl_seconds });
+    }
     pub fn sync_installed_from_disk(&mut self) { self.start_store_job(StoreOperation::Sync); }
 
     pub(crate) fn start_store_job(&mut self, operation: StoreOperation) {

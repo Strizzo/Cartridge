@@ -144,7 +144,7 @@ impl LauncherScreen for StoreScreen {
         let moved = first != self.scroll_offset;
         if !self.refresh_started && !ctx.store_jobs.is_busy() {
             self.refresh_started = true;
-            if ctx.settings.auto_refresh && ctx.automatic_store_refresh { ctx.refresh_registry(); return true }
+            if ctx.settings.auto_refresh && ctx.automatic_store_refresh { ctx.refresh_registry_cached(); return true }
         }
         moved
     }

@@ -75,7 +75,12 @@ impl RegistryClient {
 
     /// Fetch and parse the registry. Uses a 5-minute cache by default.
     pub fn fetch(&self) -> Result<Registry, String> {
-        let response = self.http.get_cached(&self.url, 300)?;
+        self.fetch_with_cache(300)
+    }
+
+    /// A zero TTL explicitly checks the network; callers choose the cache policy.
+    pub fn fetch_with_cache(&self, ttl_seconds: u64) -> Result<Registry, String> {
+        let response = self.http.get_cached(&self.url, ttl_seconds)?;
         if !response.ok {
             return Err(format!(
                 "Registry request failed with status {}",
@@ -248,6 +253,46 @@ mod tests {
                 .unwrap_err()
                 .contains("duplicate")
         );
+    }
+
+    #[test]
+    fn manual_refresh_bypasses_cached_catalogue_and_still_requires_signature() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::time::{Duration, Instant};
+        let root = std::env::temp_dir().join(format!("catalogue-refresh-{}", std::process::id()));
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/catalog.json", listener.local_addr().unwrap());
+        let cache = crate::cache::DiskCache::new(root.clone());
+        cache.put(&url, include_str!("../tests/fixtures/official-catalog.json"));
+        let client = RegistryClient::new(HttpClient::new(root.clone()), url);
+        assert_eq!(client.fetch_with_cache(3600).unwrap().apps.len(), 3);
+        // The server only handles the forced request. An unsigned new response
+        // must be rejected even though the old cached catalogue was valid.
+        let server = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            loop {
+                match listener.accept() {
+                    Ok((mut socket, _)) => {
+                        socket.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+                        let mut request = [0; 4096];
+                        socket.read(&mut request).unwrap();
+                        socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}").unwrap();
+                        return;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(Instant::now() < deadline, "Refresh never reached the network");
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("{error}"),
+                }
+            }
+        });
+        let result = client.fetch_with_cache(0);
+        server.join().unwrap();
+        assert!(result.unwrap_err().contains("unsigned or malformed"));
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
