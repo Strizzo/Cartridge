@@ -1,22 +1,19 @@
 //! On-screen QWERTY keyboard for text entry (WiFi passwords, search, etc.)
 //!
-//! Full-screen modal overlay with a character grid, input field with blinking cursor,
+//! Full-screen modal overlay with a character grid, input field with a visible cursor,
 //! and mode toggle between lowercase and uppercase/symbols.
 //!
 //! Controls:
 //! - D-pad: navigate keyboard grid
 //! - A: type focused character
 //! - B: delete character before cursor (backspace)
-//! - X: toggle shift mode (lowercase ↔ uppercase/symbols)
+//! - X: toggle shift mode (lowercase → uppercase → symbols)
 //! - Y: insert space
 //! - L1: move cursor left
 //! - R1: move cursor right
 //! - START: submit input
 //! - SELECT: cancel input
 
-use std::time::Instant;
-
-use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 
 use crate::input::{Button, InputAction, InputEvent};
@@ -43,6 +40,13 @@ const LAYOUT_UPPER: [[char; COLS]; ROWS] = [
     ['Z', 'X', 'C', 'V', 'B', 'N', 'M', ';', '?', '/'],
 ];
 
+const LAYOUT_SYMBOLS: [[char; COLS]; ROWS] = [
+    ['[', ']', '{', '}', '<', '>', '\'', '"', '`', '~'],
+    ['!', '@', '#', '$', '%', '^', '&', '*', '(', ')'],
+    ['-', '_', '=', '+', '/', '\\', '|', ':', ';', '?'],
+    ['.', ',', '0', '1', '2', '3', '4', '5', '6', '7'],
+];
+
 // ---------------------------------------------------------------------------
 // Layout constants (for 720x720 screen)
 // ---------------------------------------------------------------------------
@@ -63,7 +67,6 @@ const INPUT_FONT: u16 = 16;
 const INPUT_PAD: i32 = 12;
 
 const MAX_INPUT_LEN: usize = 64;
-const CURSOR_BLINK_MS: u128 = 500;
 
 // ---------------------------------------------------------------------------
 // Result type
@@ -88,13 +91,12 @@ pub struct TextInput {
     pub result: TextInputResult,
     /// If true, display characters as '*' in the input field.
     pub masked: bool,
+    /// Maximum Unicode characters accepted (64 by default).
+    pub max_len: usize,
 
     grid_row: usize,
     grid_col: usize,
-    shifted: bool,
-
-    show_time: Instant,
-    last_type_time: Option<Instant>,
+    mode: usize,
 }
 
 impl TextInput {
@@ -106,13 +108,11 @@ impl TextInput {
             visible: false,
             result: TextInputResult::Pending,
             masked: false,
+            max_len: MAX_INPUT_LEN,
 
             grid_row: 1,
             grid_col: 0,
-            shifted: false,
-
-            show_time: Instant::now(),
-            last_type_time: None,
+            mode: 0,
         }
     }
 
@@ -125,9 +125,8 @@ impl TextInput {
         self.result = TextInputResult::Pending;
         self.grid_row = 1;
         self.grid_col = 0;
-        self.shifted = false;
-        self.show_time = Instant::now();
-        self.last_type_time = None;
+        self.mode = 0;
+        self.max_len = MAX_INPUT_LEN;
     }
 
     /// Handle a single input event. Returns the current result.
@@ -139,6 +138,7 @@ impl TextInput {
             return TextInputResult::Pending;
         }
 
+        self.cursor_pos = self.cursor_boundary();
         match event.button {
             // Grid navigation
             Button::DpadUp => {
@@ -164,25 +164,19 @@ impl TextInput {
 
             // Type the focused character
             Button::A => {
-                if self.text.len() < MAX_INPUT_LEN {
-                    let layout = if self.shifted {
-                        &LAYOUT_UPPER
-                    } else {
-                        &LAYOUT_LOWER
-                    };
+                if self.text.chars().count() < self.max_len {
+                    let layout = self.layout();
                     let ch = layout[self.grid_row][self.grid_col];
                     self.text.insert(self.cursor_pos, ch);
                     self.cursor_pos += 1;
-                    self.last_type_time = Some(Instant::now());
                 }
             }
 
             // Backspace
             Button::B => {
                 if self.cursor_pos > 0 {
-                    self.cursor_pos -= 1;
+                    self.cursor_pos = self.previous_boundary();
                     self.text.remove(self.cursor_pos);
-                    self.last_type_time = Some(Instant::now());
                 } else if self.text.is_empty() {
                     // B on empty input cancels
                     self.result = TextInputResult::Cancelled;
@@ -192,29 +186,32 @@ impl TextInput {
 
             // Toggle shift
             Button::X => {
-                self.shifted = !self.shifted;
+                self.mode = (self.mode + 1) % 3;
             }
 
             // Insert space
             Button::Y => {
-                if self.text.len() < MAX_INPUT_LEN {
+                if self.text.chars().count() < self.max_len {
                     self.text.insert(self.cursor_pos, ' ');
                     self.cursor_pos += 1;
-                    self.last_type_time = Some(Instant::now());
                 }
             }
 
             // Move cursor left
             Button::L1 => {
                 if self.cursor_pos > 0 {
-                    self.cursor_pos -= 1;
+                    self.cursor_pos = self.previous_boundary();
                 }
             }
 
             // Move cursor right
             Button::R1 => {
                 if self.cursor_pos < self.text.len() {
-                    self.cursor_pos += 1;
+                    self.cursor_pos += self.text[self.cursor_pos..]
+                        .chars()
+                        .next()
+                        .unwrap()
+                        .len_utf8();
                 }
             }
 
@@ -236,280 +233,240 @@ impl TextInput {
         self.result.clone()
     }
 
-    /// Draw the text input overlay. Does nothing if not visible.
+    fn layout(&self) -> &[[char; COLS]; ROWS] {
+        match self.mode {
+            1 => &LAYOUT_UPPER,
+            2 => &LAYOUT_SYMBOLS,
+            _ => &LAYOUT_LOWER,
+        }
+    }
+
+    /// Set defaults without splitting a Unicode character or exceeding the limit.
+    pub fn set_text(&mut self, text: &str) {
+        self.text = text.chars().take(self.max_len).collect();
+        self.cursor_pos = self.text.len();
+    }
+
+    fn cursor_boundary(&self) -> usize {
+        let mut pos = self.cursor_pos.min(self.text.len());
+        while !self.text.is_char_boundary(pos) {
+            pos -= 1;
+        }
+        pos
+    }
+
+    fn previous_boundary(&self) -> usize {
+        self.text[..self.cursor_boundary()]
+            .char_indices()
+            .next_back()
+            .map_or(0, |(i, _)| i)
+    }
+
+    /// Draw an opaque, static keyboard using the selected OS palette.
     pub fn draw(&self, screen: &mut Screen) {
         if !self.visible {
             return;
         }
-
-        let theme = screen.theme;
-        let now_ms = Instant::now().duration_since(self.show_time).as_millis();
-        let cursor_visible = (now_ms / CURSOR_BLINK_MS) % 2 == 0;
-
-        // -- Full-screen dark overlay --
-        screen.draw_rect(
-            Rect::new(0, 0, WIDTH, HEIGHT),
-            Some(Color::RGBA(12, 12, 18, 240)),
+        let t = screen.theme;
+        let x = DIALOG_X;
+        let y = 108;
+        let width = DIALOG_W as u32;
+        screen.fill(Rect::new(0, 0, WIDTH, HEIGHT), t.bg);
+        screen.fill(Rect::new(x, y, width, 4), t.accent);
+        screen.draw_text(
+            &self.label,
+            x + 14,
+            y + 20,
+            Some(t.text),
+            22,
             true,
+            Some(width - 28),
+        );
+
+        let input_x = x + 14;
+        let input_y = y + 76;
+        let input_w = width - 28;
+        screen.fill(
+            Rect::new(input_x, input_y, input_w, INPUT_FIELD_H as u32),
+            t.card_bg,
+        );
+        screen.draw_rect(
+            Rect::new(input_x, input_y, input_w, INPUT_FIELD_H as u32),
+            Some(t.accent),
+            false,
             0,
             None,
         );
-
-        // -- Dialog card --
-        let dialog_h: i32 = 470;
-        let dialog_y = (HEIGHT as i32 - dialog_h) / 2;
-        let dialog_rect = Rect::new(DIALOG_X, dialog_y, DIALOG_W as u32, dialog_h as u32);
-
-        // Subtle glow behind the card
-        screen.draw_card_glow(
-            dialog_rect,
-            Color::RGBA(100, 180, 255, 25),
-            10,
-            3,
-        );
-
-        screen.draw_card(
-            dialog_rect,
-            Some(Color::RGB(22, 22, 34)),
-            Some(theme.card_border),
-            10,
-            true,
-        );
-
-        // Accent line at top of dialog
-        screen.draw_glow_line(
-            dialog_y,
-            DIALOG_X + 10,
-            DIALOG_X + DIALOG_W - 10,
-            Color::RGBA(100, 180, 255, 80),
-            3,
-            1,
-        );
-
-        // -- Label with glow --
-        let label_y = dialog_y + 20;
-        screen.draw_text_glow(
-            &self.label,
-            DIALOG_X + 24,
-            label_y,
-            theme.accent,
-            theme.glow_primary,
-            18,
-            true,
-            Some(DIALOG_W as u32 - 48),
-        );
-
-        // -- Input field --
-        let input_y = label_y + 38;
-        let input_x = DIALOG_X + 20;
-        let input_w = (DIALOG_W - 40) as u32;
-        let input_rect = Rect::new(input_x, input_y, input_w, INPUT_FIELD_H as u32);
-
-        // Input field background (recessed look)
-        screen.draw_card(
-            input_rect,
-            Some(Color::RGB(14, 14, 22)),
-            Some(theme.accent),
-            6,
-            false,
-        );
-
-        // Display text (masked or plain)
-        let display_text: String = if self.masked {
-            "*".repeat(self.text.len())
+        let cursor = self.cursor_boundary();
+        let (display, cursor) = if self.masked {
+            (
+                "*".repeat(self.text.chars().count()),
+                self.text[..cursor].chars().count(),
+            )
         } else {
-            self.text.clone()
+            (self.text.clone(), cursor)
         };
-
+        let before = &display[..cursor];
+        let max_w = input_w - (INPUT_PAD as u32 * 2) - 8;
+        // Keep the cursor visible when editing long URLs/commands. Binary search
+        // whole-character suffixes; measuring a long prefix never moves it offscreen.
+        let boundaries: Vec<_> = before
+            .char_indices()
+            .map(|(i, _)| i)
+            .chain(std::iter::once(before.len()))
+            .collect();
+        let (mut low, mut high) = (0, boundaries.len() - 1);
+        while low < high {
+            let mid = (low + high) / 2;
+            if screen.get_text_width(&before[boundaries[mid]..], INPUT_FONT, false) <= max_w {
+                high = mid;
+            } else {
+                low = mid + 1;
+            }
+        }
+        let visible = &before[boundaries[low]..];
         let text_x = input_x + INPUT_PAD;
-        let text_y = input_y + (INPUT_FIELD_H - 20) / 2;
-
-        // Calculate visible portion if text is too long
-        let max_text_w = input_w as i32 - INPUT_PAD * 2 - 12; // leave room for cursor
-
-        // Draw text before cursor
-        let before_cursor = &display_text[..self.cursor_pos.min(display_text.len())];
-        if !before_cursor.is_empty() {
-            screen.draw_text(
-                before_cursor,
-                text_x,
-                text_y,
-                Some(theme.text),
-                INPUT_FONT,
-                false,
-                Some(max_text_w as u32),
-            );
-        }
-
-        // Draw cursor
-        if cursor_visible {
-            let cursor_text_w = if before_cursor.is_empty() {
-                0
-            } else {
-                screen.get_text_width(before_cursor, INPUT_FONT, false) as i32
-            };
-            let cursor_x = text_x + cursor_text_w;
-
-            // Blinking cursor line
-            screen.draw_rect(
-                Rect::new(cursor_x, input_y + 8, 2, INPUT_FIELD_H as u32 - 16),
-                Some(theme.accent),
-                true,
-                0,
-                None,
-            );
-        }
-
-        // Draw text after cursor
-        let after_cursor = &display_text[self.cursor_pos.min(display_text.len())..];
-        if !after_cursor.is_empty() {
-            let before_w = if before_cursor.is_empty() {
-                0
-            } else {
-                screen.get_text_width(before_cursor, INPUT_FONT, false) as i32
-            };
-            let after_x = text_x + before_w + 4; // small gap after cursor
-            screen.draw_text(
-                after_cursor,
-                after_x,
-                text_y,
-                Some(theme.text),
-                INPUT_FONT,
-                false,
-                Some((max_text_w - before_w - 4).max(0) as u32),
-            );
-        }
-
-        // Character count
-        let count_text = format!("{}/{}", self.text.len(), MAX_INPUT_LEN);
-        let count_w = screen.get_text_width(&count_text, 11, false) as i32;
+        let text_y = input_y + 11;
+        let before_w = screen.get_text_width(visible, INPUT_FONT, false);
         screen.draw_text(
-            &count_text,
-            input_x + input_w as i32 - count_w - 8,
-            input_y - 16,
-            Some(theme.text_dim),
-            11,
+            visible,
+            text_x,
+            text_y,
+            Some(t.text),
+            INPUT_FONT,
+            false,
+            Some(max_w),
+        );
+        screen.fill(
+            Rect::new(text_x + before_w as i32, input_y + 9, 2, 26),
+            t.accent,
+        );
+        if max_w > before_w + 5 {
+            screen.draw_text(
+                &display[cursor..],
+                text_x + before_w as i32 + 5,
+                text_y,
+                Some(t.text),
+                INPUT_FONT,
+                false,
+                Some(max_w - before_w - 5),
+            );
+        }
+        let count = format!("{} / {}", self.text.chars().count(), self.max_len);
+        screen.draw_text(
+            &count,
+            input_x,
+            input_y + INPUT_FIELD_H + 8,
+            Some(t.text_dim),
+            12,
             false,
             None,
         );
 
-        // -- Keyboard grid --
-        let kb_y = input_y + INPUT_FIELD_H + 20;
-        let kb_x = DIALOG_X + KB_X_OFFSET;
-        let layout = if self.shifted {
-            &LAYOUT_UPPER
-        } else {
-            &LAYOUT_LOWER
-        };
-
-        for row in 0..ROWS {
-            for col in 0..COLS {
+        let kb_x = x + KB_X_OFFSET;
+        let kb_y = input_y + INPUT_FIELD_H + 38;
+        let layout = self.layout();
+        for (row, keys) in layout.iter().enumerate() {
+            for (col, ch) in keys.iter().enumerate() {
                 let kx = kb_x + col as i32 * (KEY_W + KEY_GAP);
                 let ky = kb_y + row as i32 * (KEY_H + KEY_GAP);
-                let key_rect = Rect::new(kx, ky, KEY_W as u32, KEY_H as u32);
-
-                let is_focused = row == self.grid_row && col == self.grid_col;
-
-                let (bg, border, text_color) = if is_focused {
-                    (theme.card_highlight, theme.accent, theme.text)
-                } else {
-                    (
-                        Color::RGB(32, 32, 48),
-                        Color::RGB(50, 50, 68),
-                        theme.text_dim,
-                    )
-                };
-
-                // Focused key gets a glow
-                if is_focused {
-                    screen.draw_card_glow(
-                        key_rect,
-                        Color::RGBA(100, 180, 255, 40),
-                        4,
-                        2,
-                    );
-                }
-
-                // Key background + border
-                screen.draw_card(key_rect, Some(bg), Some(border), 4, false);
-
-                // Key character, centered
-                let ch = layout[row][col];
-                let ch_str = ch.to_string();
-                let ch_w = screen.get_text_width(&ch_str, KEY_FONT, true) as i32;
-                let ch_h = screen.get_line_height(KEY_FONT, true) as i32;
-                let ch_x = kx + (KEY_W - ch_w) / 2;
-                let ch_y = ky + (KEY_H - ch_h) / 2;
-
+                let focused = row == self.grid_row && col == self.grid_col;
+                let rect = Rect::new(kx, ky, KEY_W as u32, KEY_H as u32);
+                screen.fill(rect, if focused { t.accent } else { t.card_bg });
+                screen.draw_rect(
+                    rect,
+                    Some(if focused { t.text } else { t.card_border }),
+                    false,
+                    0,
+                    None,
+                );
+                let letter = ch.to_string();
+                let w = screen.get_text_width(&letter, KEY_FONT, true) as i32;
+                let h = screen.get_line_height(KEY_FONT, true) as i32;
                 screen.draw_text(
-                    &ch_str,
-                    ch_x,
-                    ch_y,
-                    Some(text_color),
+                    &letter,
+                    kx + (KEY_W - w) / 2,
+                    ky + (KEY_H - h) / 2,
+                    Some(t.text),
                     KEY_FONT,
                     true,
                     None,
                 );
             }
         }
-
-        // -- Mode indicator --
-        let mode_y = kb_y + ROWS as i32 * (KEY_H + KEY_GAP) + 8;
-        let mode_text = if self.shifted { "ABC !@#" } else { "abc 123" };
-        let mode_pill_bg = if self.shifted {
-            Color::RGB(167, 139, 250) // purple accent for shift mode
-        } else {
-            Color::RGB(60, 60, 80)
-        };
-        screen.draw_pill(mode_text, kb_x, mode_y, mode_pill_bg, theme.text, 11);
-
-        // "Last typed" feedback -- briefly show the character that was just typed
-        if let Some(last_time) = self.last_type_time {
-            let elapsed = Instant::now().duration_since(last_time).as_millis();
-            if elapsed < 600 && !self.text.is_empty() && self.cursor_pos > 0 {
-                let last_ch = if self.masked {
-                    '*'
-                } else {
-                    self.text.chars().nth(self.cursor_pos - 1).unwrap_or(' ')
-                };
-                let feedback = last_ch.to_string();
-                let fw = screen.get_text_width(&feedback, 24, true) as i32;
-                // Fade based on elapsed time
-                let alpha = (255.0 * (1.0 - elapsed as f32 / 600.0)) as u8;
-                let feedback_color = Color::RGBA(100, 180, 255, alpha);
-                screen.draw_text(
-                    &feedback,
-                    DIALOG_X + DIALOG_W - 60 - fw / 2,
-                    mode_y - 4,
-                    Some(feedback_color),
-                    24,
-                    true,
-                    None,
-                );
-            }
-        }
-
-        // -- Button hints --
-        let hints_y = mode_y + 28;
-        let mut hx = kb_x;
-
-        let w = screen.draw_button_hint("A", "Type", hx, hints_y, Some(theme.btn_a), 11);
-        hx += w as i32 + 10;
-        let w = screen.draw_button_hint("B", "Delete", hx, hints_y, Some(theme.btn_b), 11);
-        hx += w as i32 + 10;
-        let w = screen.draw_button_hint("X", "Shift", hx, hints_y, Some(theme.btn_x), 11);
-        hx += w as i32 + 10;
-        screen.draw_button_hint("Y", "Space", hx, hints_y, Some(theme.btn_y), 11);
-
-        let hints2_y = hints_y + 22;
-        hx = kb_x;
-        let w = screen.draw_button_hint("L1", "\u{2190}", hx, hints2_y, Some(theme.btn_l), 11);
-        hx += w as i32 + 10;
-        let w = screen.draw_button_hint("R1", "\u{2192}", hx, hints2_y, Some(theme.btn_l), 11);
-        hx += w as i32 + 16;
-        let w = screen.draw_button_hint("START", "Done", hx, hints2_y, Some(theme.positive), 11);
-        hx += w as i32 + 10;
-        screen.draw_button_hint("SEL", "Cancel", hx, hints2_y, Some(theme.btn_b), 11);
+        let mode_y = kb_y + ROWS as i32 * (KEY_H + KEY_GAP) + 14;
+        screen.draw_text(
+            ["abc / NUMBERS", "ABC / PUNCTUATION", "SYMBOLS"][self.mode],
+            kb_x,
+            mode_y,
+            Some(t.accent),
+            13,
+            true,
+            None,
+        );
+        screen.draw_text(
+            "A TYPE   B DELETE   X SHIFT   Y SPACE",
+            kb_x,
+            mode_y + 32,
+            Some(t.text),
+            14,
+            false,
+            None,
+        );
+        screen.draw_text(
+            "L1/R1 CURSOR   START DONE   SELECT CANCEL",
+            kb_x,
+            mode_y + 57,
+            Some(t.text_dim),
+            13,
+            false,
+            None,
+        );
     }
+}
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn press(input: &mut TextInput, button: Button) -> TextInputResult {
+        input.handle_input(&InputEvent {
+            button,
+            action: InputAction::Press,
+        })
+    }
+    #[test]
+    fn editing_unicode_defaults_keeps_character_boundaries() {
+        let mut input = TextInput::new("Place");
+        input.show("Place");
+        input.set_text("São 東京");
+        press(&mut input, Button::L1);
+        press(&mut input, Button::B);
+        assert_eq!(input.text, "São 京");
+        press(&mut input, Button::R1);
+        press(&mut input, Button::A);
+        assert_eq!(input.text, "São 京q");
+        assert_eq!(
+            press(&mut input, Button::Start),
+            TextInputResult::Submitted("São 京q".into())
+        );
+    }
+    #[test]
+    fn long_defaults_limits_and_cancel() {
+        let mut input = TextInput::new("Stream");
+        input.show("Stream");
+        input.max_len = 1024;
+        input.set_text(&format!("https://example.test/{}", "a".repeat(200)));
+        press(&mut input, Button::A);
+        assert!(input.text.len() > 200);
+        assert_eq!(
+            press(&mut input, Button::Select),
+            TextInputResult::Cancelled
+        );
+        assert!(!input.visible);
+        input.show("Short");
+        input.max_len = 3;
+        input.set_text("東京AB");
+        press(&mut input, Button::A);
+        assert_eq!(input.text, "東京A");
+    }
 }

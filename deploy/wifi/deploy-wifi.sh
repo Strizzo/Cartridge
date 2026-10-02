@@ -60,7 +60,7 @@ push() {
     tools="${roms}/tools"
     info "Device roms dir: ${roms}"
 
-    dev_ssh "mkdir -p '${dest}/assets/fonts' '${dest}/assets/overlays' '${dest}/lua_cartridges' '${tools}'"
+    dev_ssh "mkdir -p '${dest}/assets/fonts' '${dest}/assets/overlays' '${dest}/assets/brand' '${dest}/lua_cartridges' '${tools}'"
 
     # rsync in one pass. --no-perms because exFAT can't store the exec bit;
     # we chmod +x on the device afterwards instead.
@@ -72,10 +72,12 @@ push() {
     info "Pushing scripts, registry and assets..."
     rsync "${rsync_opts[@]}" \
         deploy/cartridge-boot.sh deploy/cartridge-boot.service deploy/autosetup.sh \
+        deploy/game-library.py deploy/setup-primary.py deploy/cartridge-session.py \
         registry.json \
         "${USER_NAME}@${HOST}:${dest}/"
     rsync "${rsync_opts[@]}" --delete assets/fonts/ "${USER_NAME}@${HOST}:${dest}/assets/fonts/"
     rsync "${rsync_opts[@]}" --delete assets/overlays/ "${USER_NAME}@${HOST}:${dest}/assets/overlays/"
+    rsync "${rsync_opts[@]}" --delete assets/brand/ "${USER_NAME}@${HOST}:${dest}/assets/brand/"
     [[ -f assets/boot_logo.png ]] && rsync "${rsync_opts[@]}" assets/boot_logo.png "${USER_NAME}@${HOST}:${dest}/assets/"
     [[ -f assets/gamecontrollerdb.txt ]] && rsync "${rsync_opts[@]}" assets/gamecontrollerdb.txt "${USER_NAME}@${HOST}:${dest}/assets/"
 
@@ -98,6 +100,14 @@ push() {
 restart() {
     if [[ "$PAYLOAD_ONLY" == "1" ]]; then
         info "Not restarting (--payload-only)"
+        return
+    fi
+    local dest
+    dest="$(remote_roms_dir)/Cartridge"
+    if dev_ssh "test -f /etc/systemd/system/emulationstation.service.d/99-cartridge-primary.conf"; then
+        info "Restarting Cartridge primary session..."
+        # Refresh the installed supervisor before restarting its stock service.
+        dev_ssh "sudo python3 '${dest}/setup-primary.py' enable --cartridge-dir '${dest}' && sudo systemctl restart emulationstation.service"
         return
     fi
     # The one-shot flag makes cartridge-boot.sh skip its 5 s selector, so a

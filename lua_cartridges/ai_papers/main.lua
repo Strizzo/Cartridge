@@ -23,10 +23,7 @@ local state = {
     reader_loading = false,
     reader_raw_body = nil,
     reader_needs_layout = false,
-    reader_url_to_load = nil,
-    -- Deferred initial load
-    needs_initial_load = true,
-    ready_to_load = false,
+    reader_generation = 0,
 }
 
 local ROW_HEIGHT = 72
@@ -114,7 +111,11 @@ local function strip_html_body(body)
     body = body:gsub("&#39;", "'")
     body = body:gsub("&nbsp;", " ")
     body = body:gsub("&#x27;", "'")
-    body = body:gsub("&#(%d+);", function(n) return string.char(tonumber(n)) end)
+    body = body:gsub("&#(%d+);", function(n)
+        local code = tonumber(n)
+        if code and code <= 0x10FFFF and not (code >= 0xD800 and code <= 0xDFFF) then return utf8.char(code) end
+        return "?"
+    end)
     -- Clean up whitespace
     body = body:gsub("\r\n", "\n")
     body = body:gsub("\n%s*\n%s*\n+", "\n\n")
@@ -125,26 +126,11 @@ end
 -- ── Drawing Helpers ──────────────────────────────────────────────────────────
 
 local function draw_header(title, right_text, right_color)
-    screen.draw_gradient_rect(0, 0, 720, 40,
-        theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
-        theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
-    screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
-    if right_text then
-        local rc = right_color or theme.text_dim
-        local rw = screen.get_text_width(right_text, 12, false)
-        screen.draw_text(right_text, 704 - rw, 14, {color=rc, size=12})
-    end
+    ui.header(title, right_text, right_color)
 end
 
 local function draw_footer(hints)
-    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 684, 720, 684, {color=theme.border})
-    local x = 10
-    for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
-        x = x + w + 14
-    end
+    ui.footer(hints)
 end
 
 local function draw_loading(msg, y, h)
@@ -162,17 +148,35 @@ local function draw_scroll_indicator(y_start, height, cursor, total, visible)
     local thumb_h = math.max(8, math.floor(bar_h * visible / total))
     local progress = (cursor - 1) / math.max(1, total - 1)
     local thumb_y = bar_top + math.floor((bar_h - thumb_h) * progress)
-    screen.draw_rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
+    ui.rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
+end
+
+local pending = {}
+local function request(url, handler)
+    local ok, id = pcall(http.get_async, url)
+    if ok then pending[id] = handler
+    else handler({ok=false, status=0, body=tostring(id), elapsed_ms=0}) end
+end
+
+local function poll_requests()
+    for _, response in ipairs(http.poll()) do
+        local handler = pending[response.id]
+        if handler then
+            pending[response.id] = nil
+            handler(response)
+        end
+    end
 end
 
 -- ── API Functions ────────────────────────────────────────────────────────────
 
 local function fetch_papers()
+    if state.loading then return end
     state.loading = true
     state.error_msg = ""
 
-    local ok, resp = pcall(http.get_cached, API_URL .. "?limit=30", 300)
-    if ok and resp.ok then
+    request(API_URL .. "?limit=30", function(resp)
+    if resp.ok then
         local dok, data = pcall(json.decode, resp.body)
         if dok and data then
             state.papers = {}
@@ -212,6 +216,8 @@ local function fetch_papers()
         state.error_msg = "Failed to load papers"
     end
     state.loading = false
+    state.cursor = math.max(1, math.min(state.cursor, #state.papers))
+    end)
 end
 
 -- ── Paper List Screen ────────────────────────────────────────────────────────
@@ -222,9 +228,9 @@ local function draw_paper_card(paper, y, is_selected, index)
     local card_h = ROW_HEIGHT - 4
 
     if is_selected then
-        screen.draw_card(card_x, y, card_w, card_h, {bg=theme.card_highlight, border=theme.accent, radius=CARD_RADIUS})
+        ui.card(card_x, y, card_w, card_h, {bg=theme.card_highlight, border=theme.accent, radius=CARD_RADIUS})
     else
-        screen.draw_card(card_x, y, card_w, card_h, {bg=theme.card_bg, radius=CARD_RADIUS})
+        ui.card(card_x, y, card_w, card_h, {bg=theme.card_bg, radius=CARD_RADIUS})
     end
 
     -- Upvote count + rank
@@ -287,7 +293,7 @@ local function draw_paper_card(paper, y, is_selected, index)
     local kx = title_x + screen.get_text_width(meta, 10, false) + 8
     for ki = 1, math.min(2, #paper.keywords) do
         if kx + 60 > card_x + card_w - 8 then break end
-        local pw = screen.draw_pill(paper.keywords[ki], kx, y + 36,
+        local pw = ui.pill(paper.keywords[ki], kx, y + 36,
             40, 40, 60, {text_color=theme.text_dim, size=9})
         kx = kx + pw + 4
     end
@@ -295,7 +301,7 @@ local function draw_paper_card(paper, y, is_selected, index)
     -- Comment count
     if paper.num_comments > 0 then
         local cstr = tostring(paper.num_comments)
-        screen.draw_pill(cstr, card_x + card_w - 42, y + (card_h - 18) / 2,
+        ui.pill(cstr, card_x + card_w - 42, y + (card_h - 18) / 2,
             60, 60, 80, {text_color=theme.text_dim, size=11})
     end
 end
@@ -305,7 +311,7 @@ local function draw_paper_list()
 
     draw_header("AI Papers",
         n > 0 and ("HuggingFace Daily \194\183 " .. n) or nil,
-        n > 0 and {180, 100, 255} or nil)
+        n > 0 and theme.accent or nil)
 
     local content_y = 42
     local footer_y = 684
@@ -381,7 +387,7 @@ local function layout_detail()
         local kw_str = "Keywords: " .. table.concat(paper.keywords, ", ")
         local kw_lines = word_wrap(kw_str, max_w, 12, false)
         for _, line in ipairs(kw_lines) do
-            lines[#lines + 1] = {text=line, color={180, 100, 255}, size=12}
+            lines[#lines + 1] = {text=line, color=theme.accent, size=12}
         end
         lines[#lines + 1] = {text="", color=theme.text, size=14}
     end
@@ -421,7 +427,7 @@ local function draw_paper_detail()
         state.detail_needs_layout = false
     end
 
-    draw_header("Paper Details", "arxiv:" .. (state.detail_paper and state.detail_paper.id or ""), {180, 100, 255})
+    draw_header("Paper Details", "arxiv:" .. (state.detail_paper and state.detail_paper.id or ""), theme.accent)
 
     local content_y = 42
     local content_h = 642
@@ -453,7 +459,7 @@ local function draw_paper_detail()
         local thumb_h = math.max(8, math.floor(bar_h * visible_lines / total))
         local progress = max_scroll > 0 and (state.detail_scroll / max_scroll) or 0
         local thumb_y = bar_top + math.floor((bar_h - thumb_h) * progress)
-        screen.draw_rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
+        ui.rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
     end
 
     draw_footer({
@@ -491,18 +497,23 @@ local function layout_reader()
 end
 
 local function load_reader(url)
+    state.reader_generation = state.reader_generation + 1
+    local generation = state.reader_generation
     state.reader_lines = {}
     state.reader_scroll = 0
     state.reader_loading = true
-
-    local ok, resp = pcall(http.get, url)
-    if ok and resp.ok then
-        state.reader_raw_body = strip_html_body(resp.body or "")
-        state.reader_needs_layout = true
-    else
-        state.reader_lines = {"Failed to load paper.", "The ar5iv HTML version may not be available.", "", "Try a different paper."}
-    end
-    state.reader_loading = false
+    state.reader_needs_layout = false
+    state.reader_raw_body = nil
+    request(url, function(resp)
+        if generation ~= state.reader_generation then return end
+        if resp.ok then
+            state.reader_raw_body = strip_html_body(resp.body or "")
+            state.reader_needs_layout = true
+        else
+            state.reader_lines = {"Could not load this paper.", "The ar5iv version may be unavailable.", "", "B to return and try another paper."}
+        end
+        state.reader_loading = false
+    end)
 end
 
 local function draw_reader()
@@ -558,7 +569,7 @@ local function draw_reader()
         local thumb_h = math.max(8, math.floor(bar_h * visible_lines / total))
         local progress = max_scroll > 0 and (state.reader_scroll / max_scroll) or 0
         local thumb_y = bar_top + math.floor((bar_h - thumb_h) * progress)
-        screen.draw_rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
+        ui.rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
     end
 
     draw_footer({
@@ -571,20 +582,11 @@ end
 -- ── Lifecycle Callbacks ──────────────────────────────────────────────────────
 
 function on_init()
-    state.loading = true
+    fetch_papers()
 end
 
 function on_update(dt)
-    if state.ready_to_load then
-        state.ready_to_load = false
-        fetch_papers()
-    end
-
-    if state.reader_url_to_load then
-        local url = state.reader_url_to_load
-        state.reader_url_to_load = nil
-        load_reader(url)
-    end
+    poll_requests()
 end
 
 function on_input(button, action)
@@ -623,7 +625,7 @@ function on_input(button, action)
                 state.reader_lines = {}
                 state.reader_scroll = 0
                 state.reader_loading = true
-                state.reader_url_to_load = AR5IV_BASE .. state.detail_paper.id
+                load_reader(AR5IV_BASE .. state.detail_paper.id)
             end
         elseif button == "dpad_up" then
             state.detail_scroll = math.max(0, state.detail_scroll - 1)
@@ -637,6 +639,8 @@ function on_input(button, action)
 
     elseif current == "reader" then
         if button == "b" then
+            state.reader_generation = state.reader_generation + 1
+            state.reader_loading = false
             state.screen_stack[#state.screen_stack] = nil
         elseif button == "dpad_up" then
             state.reader_scroll = math.max(0, state.reader_scroll - 1)
@@ -653,10 +657,6 @@ end
 function on_render()
     screen.clear(theme.bg.r, theme.bg.g, theme.bg.b)
 
-    if state.needs_initial_load then
-        state.needs_initial_load = false
-        state.ready_to_load = true
-    end
 
     local current = state.screen_stack[#state.screen_stack]
     if current == "list" then

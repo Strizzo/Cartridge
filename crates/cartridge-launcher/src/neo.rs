@@ -15,6 +15,7 @@ use cartridge_core::sysinfo::SystemInfo;
 use cartridge_core::theme::{Theme, UiStyle};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
+use std::sync::OnceLock;
 
 use crate::ui_constants::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
@@ -269,9 +270,28 @@ pub fn draw_header(screen: &mut Screen, title: &str, subtitle: &str, sysinfo: Op
     screen.fill(Rect::new(0, 0, SCREEN_WIDTH, HEADER_H as u32), theme.bg);
     let baseline = HEADER_H - 10;
 
-    let tw = display_at_baseline(screen, title, MARGIN_X, baseline, theme.text, 36) as i32;
+    static BRAND_MARK: OnceLock<String> = OnceLock::new();
+    let brand_mark = BRAND_MARK.get_or_init(|| {
+        cartridge_core::paths::assets_dir()
+            .join("brand/cartridge-mark.png")
+            .to_string_lossy()
+            .into_owned()
+    });
+    // Crop the transparent border from the generated artwork at draw time.
+    let title_x = if screen.draw_image(
+        brand_mark,
+        MARGIN_X,
+        10,
+        Some((46, 44)),
+        Some(Rect::new(45, 46, 167, 159)),
+    ) {
+        MARGIN_X + 52
+    } else {
+        MARGIN_X
+    };
+    let tw = display_at_baseline(screen, title, title_x, baseline, theme.text, 36) as i32;
     if !subtitle.is_empty() {
-        text_at_baseline(screen, &subtitle.to_uppercase(), MARGIN_X + tw + 12, baseline - 2, theme.text_dim, LABEL_SIZE, false);
+        text_at_baseline(screen, &subtitle.to_uppercase(), title_x + tw + 12, baseline - 2, theme.text_dim, LABEL_SIZE, false);
     }
 
     // Clock, right-aligned.
@@ -386,6 +406,10 @@ pub fn scrim(screen: &mut Screen, alpha: u8) {
 
 /// "HH:MM" in local time.
 pub fn clock_string() -> String {
+    let configured = std::env::var("CARTRIDGE_SIM_CLOCK").ok();
+    if let Some(clock) = simulated_clock(cartridge_core::sim::is_sim(), configured.as_deref()) {
+        return clock.to_string();
+    }
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -393,6 +417,35 @@ pub fn clock_string() -> String {
     let local = now as i64 + crate::screens::home::local_tz_offset_secs();
     let secs_today = local.rem_euclid(86400);
     format!("{:02}:{:02}", secs_today / 3600, (secs_today % 3600) / 60)
+}
+
+// A strict simulator-only override keeps snapshots repeatable. Invalid values
+// fall through to the real clock, as do all non-simulator runs.
+fn simulated_clock(is_sim: bool, configured: Option<&str>) -> Option<&str> {
+    let value = configured.filter(|_| is_sim)?;
+    let bytes = value.as_bytes();
+    if bytes.len() != 5 || bytes[2] != b':' || ![bytes[0], bytes[1], bytes[3], bytes[4]].iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let hours = (bytes[0] - b'0') * 10 + bytes[1] - b'0';
+    let minutes = (bytes[3] - b'0') * 10 + bytes[4] - b'0';
+    (hours < 24 && minutes < 60).then_some(value)
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::*;
+    #[test]
+    fn clock_override_is_strict_and_simulator_only() {
+        for clock in ["00:00", "09:41", "23:59"] {
+            assert_eq!(simulated_clock(true, Some(clock)), Some(clock));
+            assert_eq!(simulated_clock(false, Some(clock)), None);
+        }
+        for clock in ["24:00", "12:60", "9:41", " 09:41", "09:41:00", "ab:cd", "１２:00", ""] {
+            assert_eq!(simulated_clock(true, Some(clock)), None);
+        }
+        assert_eq!(simulated_clock(true, None), None);
+    }
 }
 
 /// Two-character index label ("01", "12").

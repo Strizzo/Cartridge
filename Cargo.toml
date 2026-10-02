@@ -10,7 +10,7 @@ codegen-units = 1
 opt-level = 3
 
 [workspace.package]
-version = "0.5.3"
+version = "0.6.1"
 edition = "2024"
 
 [workspace.dependencies]
@@ -34,7 +34,9 @@ name = "cartridge"
 path = "src/main.rs"
 
 [dependencies]
+sdl2.workspace = true
 cartridge-core = { path = "crates/cartridge-core" }
+cartridge-net = { path = "crates/cartridge-net" }
 cartridge-runner = { path = "crates/cartridge-runner" }
 cartridge-lua = { path = "crates/cartridge-lua" }
 cartridge-launcher = { path = "crates/cartridge-launcher" }
@@ -51,3 +53,15 @@ path = "src/bin/perf_bench.rs"
 [[bin]]
 name = "snapshot"
 path = "src/bin/snapshot.rs"
+
+[[bin]]
+name = "sim-check"
+path = "src/bin/sim_check.rs"
+
+[[bin]]
+name = "app-check"
+path = "src/bin/app_check.rs"
+
+[[bin]]
+name = "store-check"
+path = "src/bin/store_check.rs"

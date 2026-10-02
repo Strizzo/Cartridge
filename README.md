@@ -17,7 +17,9 @@ No build tools needed. Works from Windows, macOS, or Linux.
 
 Launching from Tools leaves your existing boot setup unchanged. Startup errors are saved to `Cartridge/launch.log`.
 
-To make Cartridge the default at boot, first verify it works from Tools, then run **Tools > Setup Cartridge Boot** from EmulationStation. You'll get a boot selector to choose between Cartridge and EmulationStation on every startup.
+On the primary-session branch, first verify the tested build from Tools, then run **Tools > Setup Cartridge Boot** once. Cartridge starts directly on the next normal boot; EmulationStation remains available from its menu and as recovery fallback. Setup does not reboot automatically. Older release archives can still contain the legacy boot selector.
+
+The intended system is **power-on → Cartridge → apps and games**. A future [desktop SD installer](docs/offline-installer.md) will make Cartridge the default on first boot without EmulationStation setup. Compatible cards with existing games will keep them and avoid formatting by default; an empty card or an explicit erase choice can receive a complete verified system image. The [device distribution roadmap](docs/distro-roadmap.md) separates that goal from the implemented primary session. See [primary startup and recovery](docs/primary-session.md) for the tested integration and pending handheld checks.
 
 See [INSTALL.md](INSTALL.md) for troubleshooting and build-from-source instructions.
 
@@ -118,7 +120,7 @@ end
 
 | Module | Description |
 |--------|-------------|
-| `screen` | 640x480 drawing surface — text, shapes, colors |
+| `screen` | 720×720 drawing surface — text, shapes, colors |
 | `theme` | Consistent dark theme with accent colors |
 | `storage` | Scoped key-value persistence per app |
 | `http` | HTTP requests for fetching data |
@@ -129,6 +131,9 @@ end
 
 | App | Category | Description |
 |-----|----------|-------------|
+| [Frequency](docs/frequency.md) | Media | Explore live world radio, save stations and play direct streams |
+| [Mission Control](docs/mission-control.md) | Tools | Control VibeBoy sessions and read live terminal output |
+| [Outside](docs/outside.md) | Tools | Illustrated live weather, hourly forecasts and saved places |
 | Calculator | Tools | Calculator with expression history |
 | Hacker News | News | Browse top stories, comments, and articles |
 | Pomodoro | Productivity | Focus timer with work/break cycles and stats |
@@ -201,11 +206,13 @@ CARTRIDGE_FPS=1 ./dev-run.sh            # on-screen FPS overlay
 
 ### Publishing to the registry
 
-The app registry is the `registry.json` file in this repo. To list your cartridge:
+CartridgeOS 0.6.0 uses the [official signed catalogue](https://github.com/Strizzo/cartridge-apps), with independent app repositories and GitHub Release packages. `registry.json` is the bundled offline fallback.
 
-1. Host your cartridge in a public GitHub repo
-2. Add a release workflow that creates a `.zip` artifact (see any existing cartridge repo for reference)
-3. Open a PR adding your app entry to `registry.json`
+1. Develop and test in the app's repository, then publish a matching `vX.Y.Z` release with `<cartridge-id>.tar.gz`, package metadata and checksums.
+2. Submit the release version, checksum, size and permissions for review in `cartridge-apps/apps.json`.
+3. Publish the signed catalogue; devices install compatible updates from Store over Wi-Fi.
+
+See [GitHub-backed Store](docs/app-store.md) for the three official app repos, packaging rules, signing, rollback, simulator checks and bundled snapshot provenance.
 
 ## Project Structure
 

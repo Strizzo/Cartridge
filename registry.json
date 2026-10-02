@@ -8,9 +8,16 @@
       "version": "0.1.0",
       "author": "Cartridge Team",
       "category": "news",
-      "tags": ["news", "tech", "social"],
+      "tags": [
+        "news",
+        "tech",
+        "social"
+      ],
       "repo_url": "https://github.com/Strizzo/hacker-news-cartridge",
-      "permissions": ["network", "storage"]
+      "permissions": [
+        "network",
+        "storage"
+      ]
     },
     {
       "id": "dev.cartridge.stock-market",
@@ -19,9 +26,16 @@
       "version": "0.1.0",
       "author": "Cartridge Team",
       "category": "finance",
-      "tags": ["finance", "stocks", "market"],
+      "tags": [
+        "finance",
+        "stocks",
+        "market"
+      ],
       "repo_url": "https://github.com/Strizzo/stock-market-cartridge",
-      "permissions": ["network", "storage"]
+      "permissions": [
+        "network",
+        "storage"
+      ]
     },
     {
       "id": "dev.cartridge.weather",
@@ -30,9 +44,16 @@
       "version": "0.1.0",
       "author": "Cartridge Team",
       "category": "tools",
-      "tags": ["weather", "forecast", "utility"],
+      "tags": [
+        "weather",
+        "forecast",
+        "utility"
+      ],
       "repo_url": "https://github.com/Strizzo/weather-cartridge",
-      "permissions": ["network", "storage"]
+      "permissions": [
+        "network",
+        "storage"
+      ]
     },
     {
       "id": "dev.cartridge.calculator",
@@ -41,9 +62,15 @@
       "version": "0.1.0",
       "author": "Cartridge Team",
       "category": "tools",
-      "tags": ["calculator", "math", "utility"],
+      "tags": [
+        "calculator",
+        "math",
+        "utility"
+      ],
       "repo_url": "https://github.com/Strizzo/calculator-cartridge",
-      "permissions": ["storage"]
+      "permissions": [
+        "storage"
+      ]
     },
     {
       "id": "dev.cartridge.pomodoro",
@@ -52,9 +79,16 @@
       "version": "0.1.0",
       "author": "Cartridge Team",
       "category": "productivity",
-      "tags": ["timer", "pomodoro", "productivity"],
+      "tags": [
+        "timer",
+        "pomodoro",
+        "productivity"
+      ],
       "repo_url": "https://github.com/Strizzo/pomodoro-cartridge",
-      "permissions": ["storage", "audio"]
+      "permissions": [
+        "storage",
+        "audio"
+      ]
     },
     {
       "id": "dev.cartridge.system-monitor",
@@ -63,9 +97,16 @@
       "version": "0.1.0",
       "author": "CartridgeOS Team",
       "category": "tools",
-      "tags": ["system", "monitor", "cpu", "memory"],
+      "tags": [
+        "system",
+        "monitor",
+        "cpu",
+        "memory"
+      ],
       "repo_url": "https://github.com/Strizzo/system-monitor-cartridge",
-      "permissions": ["system"]
+      "permissions": [
+        "system"
+      ]
     },
     {
       "id": "dev.cartridge.network-tool",
@@ -74,9 +115,16 @@
       "version": "0.1.0",
       "author": "CartridgeOS Team",
       "category": "tools",
-      "tags": ["network", "ip", "dns", "cyberdeck"],
+      "tags": [
+        "network",
+        "ip",
+        "dns",
+        "cyberdeck"
+      ],
       "repo_url": "",
-      "permissions": ["network"]
+      "permissions": [
+        "network"
+      ]
     },
     {
       "id": "dev.cartridge.todo",
@@ -85,9 +133,15 @@
       "version": "0.1.0",
       "author": "CartridgeOS Team",
       "category": "productivity",
-      "tags": ["todo", "tasks", "productivity"],
+      "tags": [
+        "todo",
+        "tasks",
+        "productivity"
+      ],
       "repo_url": "",
-      "permissions": ["storage"]
+      "permissions": [
+        "storage"
+      ]
     },
     {
       "id": "dev.cartridge.ai-papers",
@@ -96,9 +150,16 @@
       "version": "1.0.0",
       "author": "CartridgeOS Team",
       "category": "news",
-      "tags": ["ai", "research", "papers", "arxiv"],
+      "tags": [
+        "ai",
+        "research",
+        "papers",
+        "arxiv"
+      ],
       "repo_url": "",
-      "permissions": ["network"]
+      "permissions": [
+        "network"
+      ]
     },
     {
       "id": "dev.cartridge.vibeboy",
@@ -107,9 +168,19 @@
       "version": "0.3.1",
       "author": "VibeBoy Team",
       "category": "tools",
-      "tags": ["vibeboy", "tmux", "claude", "remote", "cyberdeck"],
+      "tags": [
+        "vibeboy",
+        "tmux",
+        "claude",
+        "remote",
+        "cyberdeck"
+      ],
       "repo_url": "https://github.com/Strizzo/vibeboy-cartridge",
-      "permissions": ["network", "storage", "ssh"]
+      "permissions": [
+        "network",
+        "storage",
+        "ssh"
+      ]
     },
     {
       "id": "dev.cartridge.worldpulse",
@@ -118,9 +189,97 @@
       "version": "0.2.0",
       "author": "Cartridge",
       "category": "tools",
-      "tags": ["world", "monitor", "news", "intelligence", "dashboard", "map", "geopolitics"],
+      "tags": [
+        "world",
+        "monitor",
+        "news",
+        "intelligence",
+        "dashboard",
+        "map",
+        "geopolitics"
+      ],
       "repo_url": "https://github.com/Strizzo/worldpulse-cartridge",
-      "permissions": ["network", "storage"]
+      "permissions": [
+        "network",
+        "storage"
+      ]
+    },
+    {
+      "id": "dev.cartridge.frequency",
+      "name": "Frequency",
+      "description": "An atlas of live radio. Explore the world, collect stations, and listen.",
+      "version": "1.0.0",
+      "author": "Cartridge Team",
+      "category": "media",
+      "permissions": [
+        "network",
+        "audio",
+        "storage"
+      ],
+      "tags": [
+        "radio",
+        "music",
+        "world",
+        "audio"
+      ],
+      "repo_url": "https://github.com/Strizzo/frequency-cartridge",
+      "package": {
+        "url": "https://github.com/Strizzo/frequency-cartridge/releases/download/v1.0.0/dev.cartridge.frequency.tar.gz",
+        "sha256": "1f75712128857605a87fd37c62980005b797b1303347aee56afbd041b2818aac",
+        "size": 140208,
+        "min_runtime": "0.6.0"
+      }
+    },
+    {
+      "id": "dev.cartridge.mission-control",
+      "name": "Mission Control",
+      "description": "A controller-first operations room for real VibeBoy sessions, agents and terminal workflows.",
+      "version": "1.0.0",
+      "author": "CartridgeOS Team",
+      "category": "tools",
+      "permissions": [
+        "network",
+        "storage"
+      ],
+      "tags": [
+        "vibeboy",
+        "tmux",
+        "agents",
+        "terminal",
+        "developer"
+      ],
+      "repo_url": "https://github.com/Strizzo/mission-control-cartridge",
+      "package": {
+        "url": "https://github.com/Strizzo/mission-control-cartridge/releases/download/v1.0.0/dev.cartridge.mission-control.tar.gz",
+        "sha256": "ed6c5244c06ed5d4dfcb1b4524b3cd15a558f8bcf7b99b670b95c890f054299f",
+        "size": 23942,
+        "min_runtime": "0.6.0"
+      }
+    },
+    {
+      "id": "dev.cartridge.outside",
+      "name": "Outside",
+      "description": "An illustrated window onto live weather, hour by hour, anywhere.",
+      "version": "1.0.0",
+      "author": "Cartridge Team",
+      "category": "tools",
+      "permissions": [
+        "network",
+        "storage"
+      ],
+      "tags": [
+        "weather",
+        "forecast",
+        "landscape",
+        "travel"
+      ],
+      "repo_url": "https://github.com/Strizzo/outside-cartridge",
+      "package": {
+        "url": "https://github.com/Strizzo/outside-cartridge/releases/download/v1.0.0/dev.cartridge.outside.tar.gz",
+        "sha256": "b6b6f361c651ed1492db5fcf741b8393734d1f557c72f4cc46267aaf885208f7",
+        "size": 38066,
+        "min_runtime": "0.6.0"
+      }
     }
   ]
 }

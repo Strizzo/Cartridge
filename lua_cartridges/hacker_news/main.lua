@@ -130,40 +130,25 @@ end
 -- ── Drawing Helpers ──────────────────────────────────────────────────────────
 
 local function draw_header(title, right_text, right_color)
-    screen.draw_gradient_rect(0, 0, 720, 40,
-        theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
-        theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
-    screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
-    if right_text then
-        local rc = right_color or theme.text_dim
-        local rw = screen.get_text_width(right_text, 12, false)
-        screen.draw_text(right_text, 704 - rw, 14, {color=rc, size=12})
-    end
+    ui.header(title, right_text, right_color)
 end
 
 local function draw_footer(hints)
-    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 684, 720, 684, {color=theme.border})
-    local x = 10
-    for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
-        x = x + w + 14
-    end
+    ui.footer(hints)
 end
 
 local function draw_tab_bar(tabs, active_idx, y)
-    screen.draw_rect(0, y, 720, 30, {color=theme.bg_header, filled=true})
+    ui.rect(0, y, 720, 30, {color=theme.bg_header, filled=true})
     local tx = 10
     for i, label in ipairs(tabs) do
         local is_active = (i == active_idx)
         local tw = screen.get_text_width(label, 12, is_active)
         local tab_w = tw + 16
         if is_active then
-            screen.draw_rect(tx, y + 4, tab_w, 22, {color=theme.accent, filled=true, radius=4})
+            ui.rect(tx, y + 4, tab_w, 22, {color=theme.accent, filled=true, radius=4})
             screen.draw_text(label, tx + 8, y + 7, {color={20, 20, 30}, size=12, bold=true})
         else
-            screen.draw_rect(tx, y + 4, tab_w, 22, {color=theme.card_bg, filled=true, radius=4})
+            ui.rect(tx, y + 4, tab_w, 22, {color=theme.card_bg, filled=true, radius=4})
             screen.draw_text(label, tx + 8, y + 7, {color=theme.text_dim, size=12})
         end
         tx = tx + tab_w + 6
@@ -186,7 +171,7 @@ local function draw_scroll_indicator(y_start, height, cursor, total, visible)
     local thumb_h = math.max(8, math.floor(bar_h * visible / total))
     local progress = (cursor - 1) / math.max(1, total - 1)
     local thumb_y = bar_top + math.floor((bar_h - thumb_h) * progress)
-    screen.draw_rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
+    ui.rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
 end
 
 -- ── API Functions (async) ────────────────────────────────────────────────────
@@ -292,9 +277,9 @@ local function draw_story_card(story, y, is_selected)
 
     -- Card background
     if is_selected then
-        screen.draw_card(card_x, y, card_w, card_h, {bg=theme.card_highlight, border=theme.accent, radius=CARD_RADIUS})
+        ui.card(card_x, y, card_w, card_h, {bg=theme.card_highlight, border=theme.accent, radius=CARD_RADIUS})
     else
-        screen.draw_card(card_x, y, card_w, card_h, {bg=theme.card_bg, radius=CARD_RADIUS})
+        ui.card(card_x, y, card_w, card_h, {bg=theme.card_bg, radius=CARD_RADIUS})
     end
 
     -- Score area
@@ -333,13 +318,13 @@ local function draw_story_card(story, y, is_selected)
     local badge_x = title_x
     local badge_y = y + 22
     if story.title:sub(1, 7) == "Ask HN:" then
-        local pw = screen.draw_pill("Ask", badge_x, badge_y, 180, 100, 255, {text_color={255,255,255}, size=9})
+        local pw = ui.pill("Ask", badge_x, badge_y, 180, 100, 255, {text_color={255,255,255}, size=9})
         badge_x = badge_x + pw + 4
     elseif story.title:sub(1, 8) == "Show HN:" then
-        local pw = screen.draw_pill("Show", badge_x, badge_y, 80, 200, 120, {text_color={255,255,255}, size=9})
+        local pw = ui.pill("Show", badge_x, badge_y, 80, 200, 120, {text_color={255,255,255}, size=9})
         badge_x = badge_x + pw + 4
     elseif story.url == "" then
-        local pw = screen.draw_pill("Jobs", badge_x, badge_y, 255, 180, 60, {text_color={30,30,30}, size=9})
+        local pw = ui.pill("Jobs", badge_x, badge_y, 255, 180, 60, {text_color={30,30,30}, size=9})
         badge_x = badge_x + pw + 4
     end
 
@@ -355,7 +340,7 @@ local function draw_story_card(story, y, is_selected)
     if story.descendants > 0 then
         local comment_str = story.descendants < 1000 and tostring(story.descendants) or (math.floor(story.descendants / 1000) .. "k")
         local badge_bg = is_selected and {70, 70, 100} or {60, 60, 80}
-        screen.draw_pill(comment_str, card_x + card_w - 55, y + (card_h - 18) / 2,
+        ui.pill(comment_str, card_x + card_w - 55, y + (card_h - 18) / 2,
             badge_bg[1], badge_bg[2], badge_bg[3], {text_color=theme.text_dim, size=11})
     end
 end
@@ -590,7 +575,7 @@ local function draw_story_detail()
         local thumb_h = math.max(8, math.floor(bar_h * visible_lines / total))
         local progress = max_scroll > 0 and (state.detail_scroll / max_scroll) or 0
         local thumb_y = bar_top + math.floor((bar_h - thumb_h) * progress)
-        screen.draw_rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
+        ui.rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
     end
 
     local hints = {
@@ -707,7 +692,7 @@ local function draw_reader()
         local thumb_h = math.max(8, math.floor(bar_h * visible_lines / total))
         local progress = max_scroll > 0 and (state.reader_scroll / max_scroll) or 0
         local thumb_y = bar_top + math.floor((bar_h - thumb_h) * progress)
-        screen.draw_rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
+        ui.rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
     end
 
     draw_footer({

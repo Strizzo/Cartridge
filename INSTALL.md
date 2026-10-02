@@ -4,6 +4,11 @@
 
 No build tools required. Works from any computer.
 
+The direct-start instructions below describe this primary-session branch. A
+previously published release may still contain the legacy boot selector. Use a
+tested bundle that includes `setup-primary.py` and `cartridge-session.py` for
+primary startup; do not assume a release contains unmerged branch changes.
+
 1. Download `cartridge-r36s-plus.zip` from the
    [latest release](https://github.com/Strizzo/Cartridge/releases/latest)
 
@@ -32,22 +37,32 @@ No build tools required. Works from any computer.
 8. Go to **Tools** in EmulationStation and select **Cartridge** to launch it
 
 
-## Enabling the Boot Selector
+## Make Cartridge the primary launcher
 
-The boot selector lets you choose between Cartridge and EmulationStation
-every time your device starts up. No SSH or terminal needed.
+1. Verify the tested build launches and works from **Options → Tools → Cartridge**.
+2. Run **Options → Tools → Setup Cartridge Boot** once.
+3. Setup validates the executable and working stock service, then installs one
+   removable startup override. It leaves the current session running.
+4. Restart normally from the power menu when ready. The next boot opens Cartridge
+   directly; no selector or trip through the ES game categories is required.
 
-1. Boot the device into EmulationStation
+The primary-session branch has passed native and ARM VM checks. Its first boot,
+display/audio handoff and real game launch still need validation on the working
+replacement card. See [primary session](docs/primary-session.md).
 
-2. Go to **Tools** and select **Setup Cartridge Boot**
+Cartridge's Select menu opens EmulationStation when wanted. Startup failure or a
+crash also falls back to ES, and latches recovery until Setup is run again after
+fixing the problem. To restore stock boot, run **Tools → Undo Cartridge Boot**
+and restart normally. This removes only the managed override.
 
-3. The device will install the boot selector and reboot automatically
+If Cartridge cannot be reached, create an empty file named `boot-emulationstation`
+inside its installation directory over SSH or on the ROMS volume. The supervisor
+will use ES at the next boot. Remove the file after resolving the issue. No ext4
+editing or game deletion is required. These recovery instructions apply to the
+new primary session; inspect legacy installations before changing their services.
 
-4. On next boot, you'll see the Cartridge boot screen where you can
-   pick Cartridge or EmulationStation
-
-To undo this and go back to booting directly into EmulationStation:
-- Go to **Tools > Undo Cartridge Boot** from EmulationStation
+For further iterations use [wireless deploy, logs and screenshots](docs/wireless-deploy.md)
+instead of moving the SD card for every build.
 
 
 ## What's Included
@@ -55,14 +70,17 @@ To undo this and go back to booting directly into EmulationStation:
 | File/Folder | Purpose |
 |---|---|
 | `Cartridge/cartridge` | Main Cartridge OS binary |
-| `Cartridge/cartridge-boot` | Boot selector binary |
-| `Cartridge/cartridge-boot.sh` | Boot wrapper script |
-| `Cartridge/cartridge-boot.service` | Systemd service for boot selector |
+| `Cartridge/cartridge-session.py` | Primary session supervisor and ES recovery |
+| `Cartridge/setup-primary.py` | Reversible primary-session setup |
+| `Cartridge/game-library.py` | Read existing games and emulator launch configuration |
+| `Cartridge/cartridge-boot` | Legacy boot selector; unused by the new primary session |
+| `Cartridge/cartridge-boot.sh` | Legacy boot wrapper |
+| `Cartridge/cartridge-boot.service` | Legacy service; not enabled by primary setup |
 | `Cartridge/assets/` | Fonts, overlay textures |
 | `Cartridge/lua_cartridges/` | Bundled apps (Calculator, Hacker News, etc.) |
 | `tools/Cartridge.sh` | Launch Cartridge from ES Tools menu |
-| `tools/Setup Cartridge Boot.sh` | Enable boot selector (run once) |
-| `tools/Undo Cartridge Boot.sh` | Disable boot selector |
+| `tools/Setup Cartridge Boot.sh` | Enable direct Cartridge startup (run once) |
+| `tools/Undo Cartridge Boot.sh` | Restore stock ES startup |
 
 
 ## Building from Source
@@ -107,15 +125,19 @@ python3 scripts/generate_overlays.py
   error before enabling boot integration. "Setup Cartridge Boot" configures
   startup services; it does not install SDL2 libraries.
 
-**Boot selector doesn't appear after setup**
-- Make sure you ran "Setup Cartridge Boot" from the Tools menu
-- The device needs to reboot for the boot selector to take effect
+**Cartridge does not start directly after setup**
+- Setup takes effect at the next normal boot and never forces a reboot.
+- Read `/home/ark/.cartridges/session/session.log` and `last-session.json`.
+- A `fallback.json` latch means a prior startup failed; resolve the logged error
+  before rerunning Setup. A `Cartridge/boot-emulationstation` file requests ES.
+- An unknown stock service or enabled legacy Cartridge boot service causes Setup
+  to refuse the change. Preserve the working boot configuration and inspect the
+  reported mismatch instead of enabling a second competing startup service.
 
 **Want to go back to EmulationStation only**
-- Run "Undo Cartridge Boot" from the Tools menu
-- If you cannot reach Tools, the enabled service must be disabled on the Linux
-  root partition (after backing it up). Deleting the copy of the service file
-  from the ROMS partition does not change systemd's installed boot configuration.
+- Select EmulationStation from Cartridge, then run **Tools → Undo Cartridge Boot**.
+- If Cartridge is unavailable, use the recovery file described above.
+- Undo takes effect at the next boot; Cartridge remains available from Tools.
 
 **Apps show text instead of icons**
 - This is normal if the app icons haven't been downloaded yet

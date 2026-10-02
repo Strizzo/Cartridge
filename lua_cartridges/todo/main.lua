@@ -48,26 +48,12 @@ end
 
 -- ── Drawing Helpers ──────────────────────────────────────────────────────────
 
-local function draw_header(title, right_text)
-    screen.draw_gradient_rect(0, 0, 720, 40,
-        theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
-        theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
-    screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
-    if right_text then
-        local rw = screen.get_text_width(right_text, 12, false)
-        screen.draw_text(right_text, 704 - rw, 14, {color=theme.text_dim, size=12})
-    end
+local function draw_header(title, right_text, right_color)
+    ui.header(title, right_text, right_color)
 end
 
 local function draw_footer(hints)
-    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 684, 720, 684, {color=theme.border})
-    local x = 10
-    for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
-        x = x + w + 14
-    end
+    ui.footer(hints)
 end
 
 -- ── List Screen ──────────────────────────────────────────────────────────────
@@ -120,15 +106,15 @@ local function draw_task_list()
 
             local bg = is_sel and theme.card_highlight or theme.card_bg
             local border = is_sel and theme.accent or theme.card_border
-            screen.draw_card(12, cy, 696, row_h - 4, {bg=bg, border=border, radius=6})
+            ui.card(12, cy, 696, row_h - 4, {bg=bg, border=border, radius=6})
 
             -- Priority color strip
             local pc = PRIORITY_COLORS[task.priority] or PRIORITY_COLORS.medium
-            screen.draw_rect(12, cy + 4, 4, row_h - 12, {color=pc, filled=true, radius=2})
+            ui.rect(12, cy + 4, 4, row_h - 12, {color=pc, filled=true, radius=2})
 
             -- Priority pill
             local pl = PRIORITY_LABELS[task.priority] or "MED"
-            screen.draw_pill(pl, 24, cy + 6, pc[1], pc[2], pc[3], {text_color={20,20,30}, size=10})
+            ui.pill(pl, 24, cy + 6, pc[1], pc[2], pc[3], {text_color={20,20,30}, size=10})
 
             -- Task text
             local max_w = 580
@@ -164,7 +150,7 @@ local function draw_task_list()
             local thumb_h = math.max(8, math.floor(bar_h * visible / n))
             local progress = n > 1 and (state.cursor / (n - 1)) or 0
             local thumb_y = bar_top + math.floor((bar_h - thumb_h) * progress)
-            screen.draw_rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
+            ui.rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
         end
     end
 
@@ -184,7 +170,7 @@ local function draw_add_screen()
     local y = 52
 
     -- Text input field
-    screen.draw_card(12, y, 696, 50, {bg=theme.card_bg, border=state.add_cursor == 0 and theme.accent or theme.card_border, radius=6})
+    ui.card(12, y, 696, 50, {bg=theme.card_bg, border=state.add_cursor == 0 and theme.accent or theme.card_border, radius=6})
     screen.draw_text("TASK", 24, y + 6, {color=theme.text_dim, size=11, bold=true})
     local display_text = state.add_text ~= "" and state.add_text or "Type with keyboard below..."
     local text_color = state.add_text ~= "" and theme.text or theme.text_dim
@@ -192,21 +178,21 @@ local function draw_add_screen()
     -- Cursor blink
     if state.add_cursor == 0 then
         local cw = screen.get_text_width(state.add_text, 14, false)
-        screen.draw_rect(24 + cw, y + 24, 2, 16, {color=theme.accent, filled=true})
+        ui.rect(24 + cw, y + 24, 2, 16, {color=theme.accent, filled=true})
     end
     y = y + 58
 
     -- Priority selector
-    screen.draw_card(12, y, 696, 44, {bg=theme.card_bg, border=state.add_cursor == 1 and theme.accent or theme.card_border, radius=6})
+    ui.card(12, y, 696, 44, {bg=theme.card_bg, border=state.add_cursor == 1 and theme.accent or theme.card_border, radius=6})
     screen.draw_text("PRIORITY", 24, y + 6, {color=theme.text_dim, size=11, bold=true})
     local px = 24
     for i, p in ipairs(PRIORITIES) do
         local pc = PRIORITY_COLORS[p]
         local is_active = (i == state.add_priority)
         if is_active then
-            screen.draw_pill(PRIORITY_LABELS[p], px, y + 22, pc[1], pc[2], pc[3], {text_color={20,20,30}, size=12})
+            ui.pill(PRIORITY_LABELS[p], px, y + 22, pc[1], pc[2], pc[3], {text_color={20,20,30}, size=12})
         else
-            screen.draw_pill(PRIORITY_LABELS[p], px, y + 22, 40, 40, 60, {text_color=theme.text_dim, size=12})
+            ui.pill(PRIORITY_LABELS[p], px, y + 22, 40, 40, 60, {text_color=theme.text_dim, size=12})
         end
         px = px + screen.get_text_width(PRIORITY_LABELS[p], 12, true) + 24
     end
@@ -228,9 +214,9 @@ local function draw_add_screen()
             local bg = is_sel and theme.accent or theme.card_bg
             local tc = is_sel and {20, 20, 30} or theme.text
 
-            screen.draw_rect(kx, ky, key_w, key_h, {color=bg, filled=true, radius=4})
+            ui.rect(kx, ky, key_w, key_h, {color=bg, filled=true, radius=4})
             if not is_sel then
-                screen.draw_rect(kx, ky, key_w, key_h, {color=theme.card_border, filled=false, radius=4})
+                ui.rect(kx, ky, key_w, key_h, {color=theme.card_border, filled=false, radius=4})
             end
 
             local label = key
@@ -247,9 +233,9 @@ local function draw_add_screen()
     local confirm_sel = (state.add_cursor == 2)
     local cbg = confirm_sel and theme.accent or theme.card_bg
     local ctc = confirm_sel and {20, 20, 30} or theme.text
-    screen.draw_rect(240, y, 240, 44, {color=cbg, filled=true, radius=6})
+    ui.rect(240, y, 240, 44, {color=cbg, filled=true, radius=6})
     if not confirm_sel then
-        screen.draw_rect(240, y, 240, 44, {color=theme.card_border, filled=false, radius=6})
+        ui.rect(240, y, 240, 44, {color=theme.card_border, filled=false, radius=6})
     end
     local cl = "ADD TASK"
     local clw = screen.get_text_width(cl, 16, true)

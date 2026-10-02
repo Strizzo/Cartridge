@@ -307,44 +307,25 @@ end
 -- ── Drawing Helpers ──────────────────────────────────────────────────────────
 
 local function draw_header(title, right_text, right_color)
-    screen.draw_gradient_rect(0, 0, 720, 40,
-        theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
-        theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
-
-    -- Title with monospace feel
-    screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
-
-    -- Right side status
-    if right_text then
-        local rc = right_color or theme.text_dim
-        local rw = screen.get_text_width(right_text, 12, false)
-        screen.draw_text(right_text, 704 - rw, 14, {color=rc, size=12})
-    end
+    ui.header(title, right_text, right_color)
 end
 
 local function draw_footer(hints)
-    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 684, 720, 684, {color=theme.border})
-    local x = 10
-    for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
-        x = x + w + 14
-    end
+    ui.footer(hints)
 end
 
 local function draw_tab_bar(labels, active_idx, y)
-    screen.draw_rect(0, y, 720, 28, {color=theme.bg_header, filled=true})
+    ui.rect(0, y, 720, 28, {color=theme.bg_header, filled=true})
     local tx = 10
     for i, label in ipairs(labels) do
         local is_active = (i == active_idx)
         local tw = screen.get_text_width(label, 11, is_active)
         local tab_w = tw + 16
         if is_active then
-            screen.draw_rect(tx, y + 3, tab_w, 22, {color=theme.accent, filled=true, radius=4})
+            ui.rect(tx, y + 3, tab_w, 22, {color=theme.accent, filled=true, radius=4})
             screen.draw_text(label, tx + 8, y + 6, {color={20, 20, 30}, size=11, bold=true})
         else
-            screen.draw_rect(tx, y + 3, tab_w, 22, {color=theme.card_bg, filled=true, radius=4})
+            ui.rect(tx, y + 3, tab_w, 22, {color=theme.card_bg, filled=true, radius=4})
             screen.draw_text(label, tx + 8, y + 6, {color=theme.text_dim, size=11})
         end
         tx = tx + tab_w + 6
@@ -387,11 +368,11 @@ local function draw_metric_card(x, y, w, h, metric_id, is_selected)
     -- Card background
     local border_color = is_selected and theme.accent or theme.border
     local bg = is_selected and theme.card_highlight or theme.card_bg
-    screen.draw_card(x, y, w, h, {bg=bg, border=border_color, radius=8, shadow=true})
+    ui.card(x, y, w, h, {bg=bg, border=border_color, radius=8, shadow=true})
 
     -- Selection indicator - glowing left edge
     if is_selected then
-        screen.draw_rect(x, y + 4, 3, h - 8, {color=color, filled=true, radius=1})
+        ui.rect(x, y + 4, 3, h - 8, {color=color, filled=true, radius=1})
     end
 
     -- Label (top-left, small caps feel)
@@ -446,7 +427,7 @@ local function draw_dashboard_screen()
     local content_y = 72
 
     -- Status bar with system summary
-    screen.draw_rect(0, content_y, 720, 22, {color=theme.bg_lighter, filled=true})
+    ui.rect(0, content_y, 720, 22, {color=theme.bg_lighter, filled=true})
     screen.draw_text(status_str, 10, content_y + 4, {color={80, 220, 120}, size=11, bold=true})
 
     local time_str = os.date("%H:%M:%S")
@@ -480,7 +461,7 @@ local function draw_dashboard_screen()
     local info_y = content_y + 2 * (card_h + gap) + 8
 
     -- System info card
-    screen.draw_card(10, info_y, 700, 78, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    ui.card(10, info_y, 700, 78, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
 
     -- Column 1: Memory details
     local used_mb = math.floor(sim.mem_current / 100 * sim.mem_total_mb)
@@ -524,7 +505,7 @@ local function draw_cpu_detail_screen()
     local content_y = 72
 
     -- Overall CPU usage bar
-    screen.draw_card(10, content_y, 700, 60, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    ui.card(10, content_y, 700, 60, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
 
     local cpu_color = METRIC_COLORS[METRIC_CPU]
     local sc = status_color(sim.cpu_current)
@@ -553,7 +534,7 @@ local function draw_cpu_detail_screen()
     content_y = content_y + 68
 
     -- Overall sparkline card
-    screen.draw_card(10, content_y, 700, 80, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    ui.card(10, content_y, 700, 80, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
     screen.draw_text("CPU HISTORY", 24, content_y + 6, {color=theme.text_dim, size=10})
 
     -- Min/max labels
@@ -585,7 +566,7 @@ local function draw_cpu_detail_screen()
         local core_val = sim.core_currents[c]
         local core_sc = status_color(core_val)
 
-        screen.draw_card(cx, cy, core_card_w, core_card_h, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
+        ui.card(cx, cy, core_card_w, core_card_h, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
 
         -- Core label
         screen.draw_text("CORE " .. (c - 1), cx + 8, cy + 6, {color=cpu_color, size=10, bold=true})
@@ -629,7 +610,7 @@ local function draw_memory_detail_screen()
     local sc = status_color(sim.mem_current)
 
     -- Overall memory usage card
-    screen.draw_card(10, content_y, 700, 60, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    ui.card(10, content_y, 700, 60, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
     screen.draw_text("RAM USAGE", 24, content_y + 6, {color=mem_color, size=11, bold=true})
     screen.draw_circle(24 + screen.get_text_width("RAM USAGE", 11, true) + 8, content_y + 12, 3, sc[1], sc[2], sc[3])
 
@@ -646,7 +627,7 @@ local function draw_memory_detail_screen()
     content_y = content_y + 68
 
     -- Memory history sparkline
-    screen.draw_card(10, content_y, 700, 80, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    ui.card(10, content_y, 700, 80, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
     screen.draw_text("MEMORY HISTORY", 24, content_y + 6, {color=theme.text_dim, size=10})
 
     if #sim.mem_history > 0 then
@@ -679,7 +660,7 @@ local function draw_memory_detail_screen()
         {label="Shared", pct=shared_pct, mb=math.floor(shared_pct / 100 * sim.mem_total_mb), color={255, 200, 80}},
     }
 
-    screen.draw_card(10, content_y, 700, 130, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    ui.card(10, content_y, 700, 130, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
     screen.draw_text("BREAKDOWN", 24, content_y + 8, {color=theme.text_dim, size=10})
 
     local row_y = content_y + 26
@@ -687,7 +668,7 @@ local function draw_memory_detail_screen()
         local sy = row_y + (i - 1) * 24
 
         -- Label
-        screen.draw_rect(24, sy + 3, 8, 8, {color=seg.color, filled=true, radius=2})
+        ui.rect(24, sy + 3, 8, 8, {color=seg.color, filled=true, radius=2})
         screen.draw_text(seg.label, 38, sy, {color=theme.text, size=12})
 
         -- Value
@@ -703,12 +684,12 @@ local function draw_memory_detail_screen()
     content_y = content_y + 138
 
     -- Lua VM memory card
-    screen.draw_card(10, content_y, 344, 50, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
+    ui.card(10, content_y, 344, 50, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
     screen.draw_text("LUA VM HEAP", 24, content_y + 6, {color={180, 220, 100}, size=10, bold=true})
     screen.draw_text(string.format("%.1f KB", sim.lua_mem_kb), 24, content_y + 24, {color=theme.text, size=16, bold=true})
 
     -- Free memory card
-    screen.draw_card(366, content_y, 344, 50, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
+    ui.card(366, content_y, 344, 50, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
     screen.draw_text("FREE RAM", 380, content_y + 6, {color={80, 220, 160}, size=10, bold=true})
     screen.draw_text(string.format("%d MB", free_mb), 380, content_y + 24, {color=theme.text, size=16, bold=true})
 
@@ -733,7 +714,7 @@ local function draw_system_info_screen()
     local disk_free_gb = sim.disk_total_gb - disk_used_gb
     local disk_sc = status_color(sim.disk_current)
 
-    screen.draw_card(10, content_y, 700, 60, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    ui.card(10, content_y, 700, 60, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
     screen.draw_text("DISK USAGE", 24, content_y + 6, {color=disk_color, size=11, bold=true})
     screen.draw_circle(24 + screen.get_text_width("DISK USAGE", 11, true) + 8, content_y + 12, 3, disk_sc[1], disk_sc[2], disk_sc[3])
 
@@ -750,7 +731,7 @@ local function draw_system_info_screen()
 
     -- Network card
     local net_color = METRIC_COLORS[METRIC_NET]
-    screen.draw_card(10, content_y, 700, 80, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    ui.card(10, content_y, 700, 80, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
     screen.draw_text("NETWORK ACTIVITY", 24, content_y + 6, {color=net_color, size=11, bold=true})
 
     if #sim.net_history >= 2 then
@@ -765,7 +746,7 @@ local function draw_system_info_screen()
     content_y = content_y + 88
 
     -- System information table
-    screen.draw_card(10, content_y, 700, 170, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
+    ui.card(10, content_y, 700, 170, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
     screen.draw_text("SYSTEM", 24, content_y + 8, {color=theme.text_dim, size=10, bold=true})
 
     local info_rows = {
@@ -785,7 +766,7 @@ local function draw_system_info_screen()
 
         -- Alternating row background
         if i % 2 == 0 then
-            screen.draw_rect(16, ry - 1, 688, 18, {color=theme.bg_lighter, filled=true, radius=2})
+            ui.rect(16, ry - 1, 688, 18, {color=theme.bg_lighter, filled=true, radius=2})
         end
 
         -- Key
@@ -797,11 +778,11 @@ local function draw_system_info_screen()
     -- Network totals at bottom
     content_y = content_y + 178
 
-    screen.draw_card(10, content_y, 344, 42, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
+    ui.card(10, content_y, 344, 42, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
     screen.draw_text("TOTAL RX", 24, content_y + 4, {color={80, 200, 255}, size=10, bold=true})
     screen.draw_text(format_bytes(sim.net_rx_total_kb), 24, content_y + 20, {color=theme.text, size=14, bold=true})
 
-    screen.draw_card(366, content_y, 344, 42, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
+    ui.card(366, content_y, 344, 42, {bg=theme.card_bg, border=theme.border, radius=6, shadow=true})
     screen.draw_text("TOTAL TX", 380, content_y + 4, {color={255, 160, 80}, size=10, bold=true})
     screen.draw_text(format_bytes(sim.net_tx_total_kb), 380, content_y + 20, {color=theme.text, size=14, bold=true})
 

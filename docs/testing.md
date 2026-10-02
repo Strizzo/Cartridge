@@ -9,7 +9,7 @@ diff tool — so you can iterate on the launcher without flashing a device.
 
 Runs the launcher headlessly through scripted scenarios and dumps PNG
 captures of each UI screen to `snapshots/`. By default captures: home,
-store, settings, app_detail.
+store, installed apps, updates, settings, About, Wi-Fi, app detail and power menu.
 
 ```bash
 cargo run --bin snapshot
@@ -35,17 +35,19 @@ cargo run --bin perf-bench --release navigate # walk through dock + zones
 cargo run --bin perf-bench --release store    # open store, scroll
 ```
 
-Output:
-```
-=== Bench: home ===
-  wall time  : 4.39s (600 frames)
-  uncapped   : 137 fps
-  frame ms   : min=6.98  avg=7.31  p95=7.47  max=41.56
-  text cache : 30543 hits / 57 misses (99.8% hit, 57 entries)
-```
+Bench output separates rendered frames from clean iterations. Presentation rate
+is presents divided by elapsed wall time, not the reciprocal of CPU work time.
+The CPU-work overlay uses milliseconds. Screenshot encoding and frame pacing are
+excluded; update/input work and waits inside SDL presentation are included.
 
-Threshold: defaults to `p95 < 30ms` for release, `< 200ms` for debug.
-Override with `CARTRIDGE_BENCH_P95_MS=50`.
+Threshold: rendered-frame `p95 <= 30ms` for release, `<= 200ms` for debug.
+Override with `CARTRIDGE_BENCH_P95_MS=50` only for an explicitly different budget.
+Bench history covers the full bounded scenario; interactive p95 uses the latest
+1024 samples per stream, with lifetime count/mean/extrema. Host thresholds detect
+regressions; they do not establish actual handheld performance.
+
+See [app development](app-development.md) and [simulator](simulator.md) for
+repeatable delayed/offline app checks and idle-render assertions.
 
 ### `cargo test --test snapshot_test`
 
@@ -68,7 +70,7 @@ handler is incompatible with SDL2 on macOS).
 
 | Variable                     | What it does                                           |
 | ---------------------------- | ------------------------------------------------------ |
-| `CARTRIDGE_FPS=1`            | Show on-screen FPS / frametime / cache stats overlay   |
+| `CARTRIDGE_FPS=1`            | Show on-screen CPU-work / cache stats overlay   |
 | `CARTRIDGE_HIDDEN=1`         | Create the SDL window hidden (for headless tests)      |
 | `CARTRIDGE_SOFTWARE=1`       | Use software renderer (read_pixels works reliably)     |
 | `CARTRIDGE_BENCH_VISIBLE=1`  | Show the window during perf bench (visual debug)       |
@@ -114,10 +116,34 @@ git diff tests/baseline/   # review what changed
 
 ## Known Limitations
 
-- macOS only for now (Linux requires running tests with a display server).
-- Software rendering is slower than the device's accelerated path, so
-  perf-bench numbers aren't directly comparable to the device — but they
-  are consistent across runs, which makes them useful for spotting
-  regressions.
+- Native smoke checks work on macOS and Linux; Linux can use `SDL_VIDEODRIVER=dummy` with the software renderer. Legacy visual baselines remain host-specific.
+- Host software/accelerated timings are not directly comparable to the device. Compare repeated release runs on the same host and renderer for regressions.
 - The launcher must run with hidden window + software renderer for tests.
   Production runs unchanged (default to visible + accelerated).
+
+## OS responsiveness pass
+
+`./sim.sh check` covers Store view/category navigation, Settings/About visibility
+and the Wi-Fi screen at 720×720 in addition to existing app/game workflows.
+Launcher unit tests use controlled workers to check slow Wi-Fi/hardware work,
+bounded/coalesced requests, error handling and stale completions. Store tests
+check installed versions, update filtering, stable selection after catalogue
+refresh and the offline Updates state. No SD card or host hardware is required.
+
+Review the new `store_installed`, `store_updates`, `settings_about` and `wifi`
+snapshots before accepting changed baselines. Host timings and generic ARM VM
+results establish software regressions, not handheld GPU or battery performance.
+
+The 2026-10-02 OS pass passed 115 Rust tests (two optional live-service tests
+ignored), 89 Python regressions and the full native simulator. Nine 720×720
+screens have reviewed visual baselines. Controlled tests cover a hanging mixer
+(kill/reap and retry), coalesced input, Wi-Fi screen close/reopen, failed
+connections and network-list reordering. Muted/no-audio app launches also skip
+the old fixed 120 ms sound delay. Manual catalogue refresh has a loopback-server regression proving it bypasses
+the cache and still rejects unsigned responses; automatic refresh now respects
+the configured duration. Physical Wi-Fi/audio timing remains to measure.
+
+The expanded ARM simulator exposed a font-cache teardown leak after repeated
+launches. `FontCache` now drops font handles before the SDL_ttf context; the
+simulator checks 24 open/close cycles without descriptor growth. The old build
+also reproduced the failure natively with `ulimit -n 256` (too many open files).
