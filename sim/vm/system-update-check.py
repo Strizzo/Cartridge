@@ -123,6 +123,9 @@ def main():
                     status = (path / 'status').read_text()
                     parent = next(line.split()[1] for line in status.splitlines() if line.startswith('PPid:'))
                     executable = (path / 'exe').resolve()
+                    arguments = (path / 'cmdline').read_bytes().split(b'\0')
+                    if b'system-verify' in arguments:
+                        continue  # the trusted verifier is not a recovered launcher
                     if parent == str(proc.pid) and executable == directory / 'cartridge':
                         return int(path.name)
                 except (OSError, StopIteration):
@@ -167,6 +170,7 @@ def main():
             if result.returncode == 0:
                 raise RuntimeError('Trusted verifier accepted altered release bytes')
             proc = start()
+            wait_for(lambda: load_state().get('trial') is None and 'Rolled back' in load_state().get('last_result', ''), 'Damaged release did not record rollback')
             wait_for(lambda: child(proc, app), 'Damaged release did not recover original')
             stop(proc)
             report['checks'].append('Changed card payload is refused before execution and the original release starts')
