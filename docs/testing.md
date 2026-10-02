@@ -142,3 +142,8 @@ connections and network-list reordering. Muted/no-audio app launches also skip
 the old fixed 120 ms sound delay. Manual catalogue refresh has a loopback-server regression proving it bypasses
 the cache and still rejects unsigned responses; automatic refresh now respects
 the configured duration. Physical Wi-Fi/audio timing remains to measure.
+
+The expanded ARM simulator exposed a font-cache teardown leak after repeated
+launches. `FontCache` now drops font handles before the SDL_ttf context; the
+simulator checks 24 open/close cycles without descriptor growth. The old build
+also reproduced the failure natively with `ulimit -n 256` (too many open files).

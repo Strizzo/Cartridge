@@ -134,6 +134,35 @@ fn check_input_wake() -> Result<(), String> {
     Ok(())
 }
 
+/// Repeated launcher/app startup must release font file handles. This is a
+/// process-level check because SDL_ttf owns global state; run before UI workers.
+fn check_font_lifecycle() -> Result<(), String> {
+    use cartridge_core::font::{FontCache, FontStyle};
+    let _sdl = sdl2::init()?;
+    let descriptors = || -> Option<usize> {
+        let path = if cfg!(target_os = "linux") { "/proc/self/fd" } else { "/dev/fd" };
+        std::fs::read_dir(path).ok().map(|entries| entries.flatten().count())
+    };
+    let before = descriptors();
+    let assets = cartridge_core::paths::assets_dir();
+    for cycle in 0..24 {
+        {
+            let mut fonts = FontCache::new(&assets)?;
+            fonts.set_family("JetBrainsMono-Regular", "JetBrainsMono-Bold");
+            fonts.set_display("BebasNeue-Regular");
+            fonts.prewarm();
+            fonts.get(FontStyle::Display, 36);
+        }
+        if let (Some(before), Some(after)) = (before, descriptors()) {
+            if after > before + 4 {
+                return Err(format!("Font cache leaked handles on cycle {cycle}: {before} -> {after}"));
+            }
+        }
+    }
+    println!("Font lifecycle passed: 24 open/close cycles without accumulating file handles");
+    Ok(())
+}
+
 /// Every app scenario starts with empty storage, including after a previous
 /// city-change scenario. Never delete or overwrite the interactive sim home.
 struct ScenarioStorage(PathBuf);
@@ -161,6 +190,7 @@ fn run() -> Result<(), String> {
             "Use ./sim.sh check; this command requires the isolated simulator environment".into(),
         );
     }
+    check_font_lifecycle()?;
     // Exercise device controls through the real public APIs. On Linux too,
     // simulator mode must never touch NetworkManager/backlight/audio hardware.
     cartridge_core::device::set_brightness_percent(43);
