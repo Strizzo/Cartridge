@@ -23,7 +23,7 @@ pending release. Checking alone does not authorize staging or a surprise restart
 An unsigned CI artifact is not an installable update and must never be presented
 as one. Only a release with a reviewed archive and its locally signed
 `system-update.json` is an installable update. Creating unsigned CI artifacts
-does not enable device downloads. The 0.6.2 release adds independent stick input
+does not enable device downloads. The 0.6.3 release adds independent stick input
 and uses the existing 0.6.1 trust and staging protocol; it does not require
 replacing the working offline bootstrap or session supervisor.
 

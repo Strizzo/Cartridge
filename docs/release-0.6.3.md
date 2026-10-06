@@ -1,4 +1,4 @@
-# CartridgeOS 0.6.2
+# CartridgeOS 0.6.3
 
 Apps can now read both analog sticks independently through the optional
 `on_stick(stick, x, y)` lifecycle callback. An 18% radial dead zone prevents
@@ -23,3 +23,8 @@ a fixed update timestep, so pan speed, zoom latching and neutral idle behavior
 can be reproduced without the handheld. SDL-mapped pads use named stick axes;
 unmapped handheld pads default to raw axes 0/1 and 2/3. Hardware wiring still
 needs a physical check after updating.
+
+The release packager now accepts standard USTAR end padding at every record
+alignment. The failed 0.6.2 packaging run produced no public OS update; 0.6.3
+is the installable release. Runtime protocol and supervisor remain compatible
+with the installed 0.6.1 bootstrap.

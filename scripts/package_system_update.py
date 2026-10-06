@@ -289,8 +289,12 @@ def verify_archive(path, payload):
             require(checksum.hexdigest() == expected["sha256"], "Per-file SHA-256 mismatch")
             padding = (-entry.size) % 512
             require(stream.read(padding) == b"\0" * padding, "Invalid USTAR file padding")
-        tail = stream.read(10241)
-        require(1024 <= len(tail) <= 10240 and not tail.strip(b"\0"), "Extra entries or invalid USTAR end padding")
+        # Two end blocks can cross a 10 KiB record boundary. At the final
+        # 512-byte slot, tarfile emits 1024 + 9728 = 10752 zero bytes.
+        max_tail = 1024 + tarfile.RECORDSIZE - 512
+        tail = stream.read(max_tail + 1)
+        require(1024 <= len(tail) <= max_tail and len(tail) % 512 == 0
+                and not tail.strip(b"\0"), "Extra entries or invalid USTAR end padding")
 
 
 def strict_json(text):
