@@ -1,7 +1,7 @@
 use sdl2::controller::Button as SdlControllerButton;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 /// Abstract hardware buttons.
@@ -50,6 +50,9 @@ pub struct InputManager {
     /// When true, skip Joystick API events (because GameController API handles them).
     ignore_joystick: bool,
     stick_dpad: bool,
+    digital_held: HashSet<Button>,
+    axis_held: HashSet<Button>,
+    pending_releases: Vec<Button>,
 }
 
 /// One-line keyboard cheat sheet, printed to stderr once per process when
@@ -109,6 +112,9 @@ impl InputManager {
             last_repeat: HashMap::new(),
             ignore_joystick: false,
             stick_dpad: true,
+            digital_held: HashSet::new(),
+            axis_held: HashSet::new(),
+            pending_releases: Vec::new(),
         }
     }
 
@@ -120,15 +126,32 @@ impl InputManager {
     /// Stick-aware Lua apps get axes separately; launchers and older apps keep D-pad navigation.
     pub fn set_stick_dpad_enabled(&mut self, enabled: bool) {
         if self.stick_dpad && !enabled {
-            for button in [Button::DpadUp,Button::DpadDown,Button::DpadLeft,Button::DpadRight] {
-                self.held.remove(&button);self.last_repeat.remove(&button);
+            for button in [
+                Button::DpadUp,
+                Button::DpadDown,
+                Button::DpadLeft,
+                Button::DpadRight,
+            ] {
+                if self.axis_held.remove(&button) && !self.digital_held.contains(&button) {
+                    if self.held.remove(&button).is_some() {
+                        self.pending_releases.push(button);
+                    }
+                    self.last_repeat.remove(&button);
+                }
             }
         }
-        self.stick_dpad=enabled;
+        self.stick_dpad = enabled;
     }
 
     pub fn process_events(&mut self, events: &[Event]) -> Vec<InputEvent> {
-        let mut result = Vec::new();
+        let mut result: Vec<_> = self
+            .pending_releases
+            .drain(..)
+            .map(|button| InputEvent {
+                button,
+                action: InputAction::Release,
+            })
+            .collect();
         let now = Instant::now();
 
         for event in events {
@@ -139,12 +162,7 @@ impl InputManager {
                     ..
                 } => {
                     if let Some(&button) = self.keyboard_map.get(keycode) {
-                        result.push(InputEvent {
-                            button,
-                            action: InputAction::Press,
-                        });
-                        self.held.insert(button, now);
-                        self.last_repeat.insert(button, now);
+                        self.update_digital_button(button, true, &mut result, now);
                     }
                 }
                 Event::KeyUp {
@@ -152,65 +170,32 @@ impl InputManager {
                     ..
                 } => {
                     if let Some(&button) = self.keyboard_map.get(keycode) {
-                        result.push(InputEvent {
-                            button,
-                            action: InputAction::Release,
-                        });
-                        self.held.remove(&button);
-                        self.last_repeat.remove(&button);
+                        self.update_digital_button(button, false, &mut result, now);
                     }
                 }
                 Event::JoyButtonDown { button_idx, .. } => {
                     if let Some(&button) = self.gamepad_map.get(button_idx) {
-                        // Deduplicate: skip if already held (e.g. from GameController API)
-                        if !self.held.contains_key(&button) {
-                            result.push(InputEvent {
-                                button,
-                                action: InputAction::Press,
-                            });
-                            self.held.insert(button, now);
-                            self.last_repeat.insert(button, now);
-                        }
+                        self.update_digital_button(button, true, &mut result, now);
                     }
                 }
                 Event::JoyButtonUp { button_idx, .. } => {
                     if let Some(&button) = self.gamepad_map.get(button_idx) {
-                        if self.held.contains_key(&button) {
-                            result.push(InputEvent {
-                                button,
-                                action: InputAction::Release,
-                            });
-                            self.held.remove(&button);
-                            self.last_repeat.remove(&button);
-                        }
+                        self.update_digital_button(button, false, &mut result, now);
                     }
                 }
-                Event::JoyAxisMotion { axis_idx, value, .. } if !self.ignore_joystick && self.stick_dpad => {
+                Event::JoyAxisMotion {
+                    axis_idx, value, ..
+                } if !self.ignore_joystick && self.stick_dpad => {
                     self.process_joy_axis(*axis_idx, *value, &mut result, now);
                 }
-                // GameController API (used by ArkOS and modern SDL2 setups)
                 Event::ControllerButtonDown { button, .. } => {
                     if let Some(btn) = map_controller_button(*button) {
-                        if !self.held.contains_key(&btn) {
-                            result.push(InputEvent {
-                                button: btn,
-                                action: InputAction::Press,
-                            });
-                            self.held.insert(btn, now);
-                            self.last_repeat.insert(btn, now);
-                        }
+                        self.update_digital_button(btn, true, &mut result, now);
                     }
                 }
                 Event::ControllerButtonUp { button, .. } => {
                     if let Some(btn) = map_controller_button(*button) {
-                        if self.held.contains_key(&btn) {
-                            result.push(InputEvent {
-                                button: btn,
-                                action: InputAction::Release,
-                            });
-                            self.held.remove(&btn);
-                            self.last_repeat.remove(&btn);
-                        }
+                        self.update_digital_button(btn, false, &mut result, now);
                     }
                 }
                 Event::ControllerAxisMotion { axis, value, .. } => {
@@ -226,11 +211,7 @@ impl InputManager {
         for (button, press_time) in held_snapshot {
             let held_duration = now.duration_since(press_time).as_secs_f64();
             if held_duration >= REPEAT_DELAY {
-                let last = self
-                    .last_repeat
-                    .get(&button)
-                    .copied()
-                    .unwrap_or(press_time);
+                let last = self.last_repeat.get(&button).copied().unwrap_or(press_time);
                 if now.duration_since(last).as_secs_f64() >= REPEAT_INTERVAL {
                     result.push(InputEvent {
                         button,
@@ -306,6 +287,31 @@ impl InputManager {
         result: &mut Vec<InputEvent>,
         now: Instant,
     ) {
+        if active {
+            self.axis_held.insert(button);
+        } else {
+            self.axis_held.remove(&button);
+        }
+        self.sync_button(button, result, now);
+    }
+
+    fn update_digital_button(
+        &mut self,
+        button: Button,
+        active: bool,
+        result: &mut Vec<InputEvent>,
+        now: Instant,
+    ) {
+        if active {
+            self.digital_held.insert(button);
+        } else {
+            self.digital_held.remove(&button);
+        }
+        self.sync_button(button, result, now);
+    }
+
+    fn sync_button(&mut self, button: Button, result: &mut Vec<InputEvent>, now: Instant) {
+        let active = self.digital_held.contains(&button) || self.axis_held.contains(&button);
         if active && !self.held.contains_key(&button) {
             result.push(InputEvent {
                 button,
@@ -355,15 +361,20 @@ fn map_controller_button(button: SdlControllerButton) -> Option<Button> {
 
 /// Open all detected joysticks. The returned Vec must be kept alive
 /// for the joysticks to remain open and emit events.
-pub fn open_all_joysticks(
-    subsystem: &sdl2::JoystickSubsystem,
-) -> Vec<sdl2::joystick::Joystick> {
+pub fn open_all_joysticks(subsystem: &sdl2::JoystickSubsystem) -> Vec<sdl2::joystick::Joystick> {
     let mut joysticks = Vec::new();
     let n = subsystem.num_joysticks().unwrap_or(0);
     for i in 0..n {
         match subsystem.open(i) {
             Ok(js) => {
-                log::info!("Opened joystick {}: {} (GUID {}, {} axes, {} buttons)", i, js.name(), js.guid(), js.num_axes(), js.num_buttons());
+                log::info!(
+                    "Opened joystick {}: {} (GUID {}, {} axes, {} buttons)",
+                    i,
+                    js.name(),
+                    js.guid(),
+                    js.num_axes(),
+                    js.num_buttons()
+                );
                 joysticks.push(js);
             }
             Err(e) => {
@@ -408,26 +419,160 @@ pub fn load_controller_mappings(subsystem: &sdl2::GameControllerSubsystem) {
     }
     match subsystem.load_mappings(&path) {
         Ok(n) => log::info!("Loaded {} controller mappings from {}", n, path.display()),
-        Err(e) => log::warn!("Failed to load controller mappings {}: {}", path.display(), e),
+        Err(e) => log::warn!(
+            "Failed to load controller mappings {}: {}",
+            path.display(),
+            e
+        ),
     }
 }
-
 
 #[cfg(test)]
 mod stick_compatibility_tests {
     use super::*;
-    fn axis(axis:sdl2::controller::Axis,value:i16)->Event {Event::ControllerAxisMotion{timestamp:0,which:1,axis,value}}
+    fn axis(axis: sdl2::controller::Axis, value: i16) -> Event {
+        Event::ControllerAxisMotion {
+            timestamp: 0,
+            which: 1,
+            axis,
+            value,
+        }
+    }
+    #[test]
+    fn disabling_stick_dpad_preserves_physical_holds_and_their_releases() {
+        let pairs = [
+            (
+                Event::JoyButtonDown {
+                    timestamp: 0,
+                    which: 1,
+                    button_idx: 8,
+                },
+                Event::JoyButtonUp {
+                    timestamp: 0,
+                    which: 1,
+                    button_idx: 8,
+                },
+            ),
+            (
+                Event::ControllerButtonDown {
+                    timestamp: 0,
+                    which: 1,
+                    button: SdlControllerButton::DPadUp,
+                },
+                Event::ControllerButtonUp {
+                    timestamp: 0,
+                    which: 1,
+                    button: SdlControllerButton::DPadUp,
+                },
+            ),
+            (
+                Event::KeyDown {
+                    timestamp: 0,
+                    window_id: 1,
+                    keycode: Some(Keycode::Up),
+                    scancode: None,
+                    keymod: sdl2::keyboard::Mod::NOMOD,
+                    repeat: false,
+                },
+                Event::KeyUp {
+                    timestamp: 0,
+                    window_id: 1,
+                    keycode: Some(Keycode::Up),
+                    scancode: None,
+                    keymod: sdl2::keyboard::Mod::NOMOD,
+                    repeat: false,
+                },
+            ),
+        ];
+        for (down, up) in pairs {
+            let mut manager = InputManager::new();
+            assert_eq!(manager.process_events(&[down]).len(), 1);
+            // Same direction from a stick must not steal the physical hold.
+            assert!(
+                manager
+                    .process_events(&[axis(sdl2::controller::Axis::LeftY, -32768)])
+                    .is_empty()
+            );
+            manager.set_stick_dpad_enabled(false);
+            assert!(manager.process_events(&[]).is_empty());
+            let events = manager.process_events(&[up]);
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].button, Button::DpadUp);
+            assert_eq!(events[0].action, InputAction::Release);
+        }
+    }
+    #[test]
+    fn disabling_stick_dpad_releases_only_synthesized_directions() {
+        let mut manager = InputManager::new();
+        manager.process_events(&[axis(sdl2::controller::Axis::LeftX, 32767)]);
+        manager.set_stick_dpad_enabled(false);
+        let events = manager.process_events(&[]);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].button, Button::DpadRight);
+        assert_eq!(events[0].action, InputAction::Release);
+        assert!(manager.process_events(&[]).is_empty());
+    }
     #[test]
     fn opt_in_leaves_physical_buttons_and_triggers_independent() {
-        let mut legacy=InputManager::new();
-        assert!(legacy.process_events(&[axis(sdl2::controller::Axis::LeftX,32767)]).iter().any(|e|e.button==Button::DpadRight && e.action==InputAction::Press));
-        let mut analog=InputManager::new();analog.set_stick_dpad_enabled(false);
-        assert!(analog.process_events(&[axis(sdl2::controller::Axis::LeftX,32767),axis(sdl2::controller::Axis::RightY,-32768)]).is_empty());
-        let pressed=analog.process_events(&[Event::ControllerButtonDown{timestamp:0,which:1,button:SdlControllerButton::DPadUp},axis(sdl2::controller::Axis::TriggerLeft,32767)]);
-        assert!(pressed.iter().any(|e|e.button==Button::DpadUp && e.action==InputAction::Press));
-        assert!(pressed.iter().any(|e|e.button==Button::L2 && e.action==InputAction::Press));
-        assert!(analog.process_events(&[axis(sdl2::controller::Axis::LeftY,0)]).is_empty());
-        assert!(analog.process_events(&[Event::ControllerButtonUp{timestamp:0,which:1,button:SdlControllerButton::DPadUp}]).iter().any(|e|e.button==Button::DpadUp && e.action==InputAction::Release));
-        assert!(analog.process_events(&[Event::JoyAxisMotion{timestamp:0,which:2,axis_idx:0,value:32767}]).is_empty());
+        let mut legacy = InputManager::new();
+        assert!(
+            legacy
+                .process_events(&[axis(sdl2::controller::Axis::LeftX, 32767)])
+                .iter()
+                .any(|e| e.button == Button::DpadRight && e.action == InputAction::Press)
+        );
+        let mut analog = InputManager::new();
+        analog.set_stick_dpad_enabled(false);
+        assert!(
+            analog
+                .process_events(&[
+                    axis(sdl2::controller::Axis::LeftX, 32767),
+                    axis(sdl2::controller::Axis::RightY, -32768)
+                ])
+                .is_empty()
+        );
+        let pressed = analog.process_events(&[
+            Event::ControllerButtonDown {
+                timestamp: 0,
+                which: 1,
+                button: SdlControllerButton::DPadUp,
+            },
+            axis(sdl2::controller::Axis::TriggerLeft, 32767),
+        ]);
+        assert!(
+            pressed
+                .iter()
+                .any(|e| e.button == Button::DpadUp && e.action == InputAction::Press)
+        );
+        assert!(
+            pressed
+                .iter()
+                .any(|e| e.button == Button::L2 && e.action == InputAction::Press)
+        );
+        assert!(
+            analog
+                .process_events(&[axis(sdl2::controller::Axis::LeftY, 0)])
+                .is_empty()
+        );
+        assert!(
+            analog
+                .process_events(&[Event::ControllerButtonUp {
+                    timestamp: 0,
+                    which: 1,
+                    button: SdlControllerButton::DPadUp
+                }])
+                .iter()
+                .any(|e| e.button == Button::DpadUp && e.action == InputAction::Release)
+        );
+        assert!(
+            analog
+                .process_events(&[Event::JoyAxisMotion {
+                    timestamp: 0,
+                    which: 2,
+                    axis_idx: 0,
+                    value: 32767
+                }])
+                .is_empty()
+        );
     }
 }

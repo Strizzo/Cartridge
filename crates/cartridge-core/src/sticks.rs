@@ -138,7 +138,9 @@ impl StickManager {
     /// Suspend app motion while the system keyboard owns input. Retain raw state
     /// so a held axis (including noise after closing) requires a real recenter.
     pub fn capture(&mut self) {
-        self.captured = [true; 2];
+        for index in 0..2 {
+            self.captured[index] = self.raw_value(index) != [0.0, 0.0];
+        }
     }
     /// Focus loss and hot reload must not retain motion from a previous context.
     pub fn clear(&mut self) {
@@ -319,6 +321,13 @@ mod tests {
         m.take_changes();
         m.clear();
         assert_eq!(m.take_changes()[0].x, 0.0);
+    }
+    #[test]
+    fn fresh_tilt_after_centered_keyboard_capture_is_delivered() {
+        let mut m = StickManager::new([], false);
+        m.capture();
+        m.process_events(&[raw(1, 0, 32767)]);
+        assert_eq!(m.take_changes()[0].x, 1.0);
     }
     #[test]
     fn keyboard_capture_requires_real_recentering_before_resuming() {
