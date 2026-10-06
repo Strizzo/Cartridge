@@ -21,10 +21,11 @@ size and notes, and confirm staging. Confirmation authorizes the download and
 staging; it does not replace the running application. Restart Cartridge to try the
 pending release. Checking alone does not authorize staging or a surprise restart.
 An unsigned CI artifact is not an installable update and must never be presented
-as one. At the time of this change, GitHub's latest release is v0.5.4 and no
-signed system-update manifest has been published, so the update check returns
-404. Creating unsigned CI artifacts does not enable device downloads. Publication
-will happen only after the offline bootstrap and signed candidate validation.
+as one. Only a release with a reviewed archive and its locally signed
+`system-update.json` is an installable update. Creating unsigned CI artifacts
+does not enable device downloads. The 0.6.2 release adds independent stick input
+and uses the existing 0.6.1 trust and staging protocol; it does not require
+replacing the working offline bootstrap or session supervisor.
 
 Use reliable Wi-Fi and external power or at least 30% battery. Staging and
 restart require charging or a known battery level of at least 30%; an unknown
@@ -123,7 +124,10 @@ system-update.unsigned.json
 ```
 
 CI does not sign or publish the trusted OTA endpoint. The existing tagged-release
-workflow continues to attach its offline installation zip. No signing key or
+workflow prepares a draft with its offline installation zip and the matching
+ARM check binaries as a CI artifact. Rehearse that exact signed candidate in
+the isolated ARM VM before attaching the trusted endpoint and publishing the
+draft. No signing key or
 signing secret is configured in either workflow.
 
 To reproduce packaging from a device bundle's `Cartridge` directory:

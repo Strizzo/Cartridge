@@ -97,6 +97,16 @@ jobs:
             system-update/*.tar.gz
             system-update/system-update.unsigned.json
 
+      - name: Upload exact tagged ARM checks for isolated VM rehearsal
+        uses: actions/upload-artifact@v4
+        with:
+          name: cartridge-device-checks-aarch64
+          if-no-files-found: error
+          path: |
+            target/aarch64-unknown-linux-gnu/release/app-check
+            target/aarch64-unknown-linux-gnu/release/sim-check
+            target/aarch64-unknown-linux-gnu/release/store-check
+
       - name: Create zip
         working-directory: release
         run: zip -r ../cartridge-r36s-plus.zip .
@@ -106,6 +116,7 @@ jobs:
         with:
           files: cartridge-r36s-plus.zip
           generate_release_notes: true
+          draft: true
           body: |
             ## Installation
 

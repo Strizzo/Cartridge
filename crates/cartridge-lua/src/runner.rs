@@ -2,6 +2,7 @@ use std::path::Path;
 
 use cartridge_core::input::{Button, InputAction, InputEvent};
 use cartridge_core::screen::Screen;
+use cartridge_core::sticks::StickEvent;
 use cartridge_core::storage::AppStorage;
 use cartridge_core::theme::Theme;
 use mlua::prelude::*;
@@ -318,6 +319,26 @@ impl LuaAppRunner {
         Ok(())
     }
 
+    /// Presence opts into independent sticks instead of legacy left-stick D-pad conversion.
+    pub fn handles_sticks(&self) -> bool {
+        self.callback("on_stick").ok().flatten().is_some()
+    }
+
+    pub fn call_sticks(&mut self, events: &[StickEvent]) {
+        if events.is_empty() { return; }
+        self.control.set_phase(Phase::Input);
+        for event in events {
+            let result=(|| -> LuaResult<()> {
+                if let Some(func)=self.callback("on_stick")? {
+                    func.call::<()>((event.stick.name(),event.x,event.y))?;
+                }
+                Ok(())
+            })();
+            if let Err(error)=result { self.has_error=Some(format!("on_stick error: {error}")); }
+        }
+        self.control.set_phase(Phase::Idle);
+    }
+
     /// Call on_update(dt) with delta time in seconds. Returns true if the
     /// app asked for a redraw by returning a truthy value.
     pub fn call_update(&mut self, dt: f32) -> bool {
@@ -476,5 +497,41 @@ fn action_to_str(action: InputAction) -> &'static str {
         InputAction::Press => "press",
         InputAction::Release => "release",
         InputAction::Repeat => "repeat",
+    }
+}
+
+#[cfg(test)]
+mod stick_tests {
+    use super::*;
+    use cartridge_core::sticks::{Stick,StickEvent};
+    fn app(source:&str)->LuaAppRunner {
+        let nonce=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        static COUNTER:std::sync::atomic::AtomicU64=std::sync::atomic::AtomicU64::new(0);
+        let id=COUNTER.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+        let path=std::env::temp_dir().join(format!("cartridge-stick-test-{}-{nonce}-{id}",std::process::id()));
+        std::fs::create_dir(&path).unwrap();std::fs::write(path.join("main.lua"),source).unwrap();
+        let app=LuaAppRunner::new(&path,"main.lua","dev.test.sticks",&Theme::default(),&[]).unwrap();
+        std::fs::remove_dir_all(path).unwrap();app
+    }
+    #[test]
+    fn optional_sticks_deliver_both_axes_and_release_without_synthetic_buttons() {
+        let mut app=app("events={};buttons=0;function on_stick(s,x,y)table.insert(events,{s,x,y})end;function on_input()buttons=buttons+1 end");
+        assert!(app.handles_sticks());
+        app.call_sticks(&[StickEvent{stick:Stick::Left,x:0.5,y:-0.25},StickEvent{stick:Stick::Right,x:0.0,y:-1.0},StickEvent{stick:Stick::Left,x:0.0,y:0.0}]);
+        app.lua.load("assert(#events==3 and events[1][1]=='left' and events[2][1]=='right' and events[3][2]==0 and buttons==0)").exec().unwrap();
+        assert!(app.error().is_none());
+    }
+    #[test]
+    fn legacy_apps_do_not_require_a_stick_callback() {
+        let mut app=app("count=0;function on_input(button,action) if button=='dpad_right' and action=='press' then count=count+1 end end");
+        assert!(!app.handles_sticks());app.call_sticks(&[StickEvent{stick:Stick::Right,x:1.0,y:0.0}]);
+        app.call_input(&[InputEvent{button:Button::DpadRight,action:InputAction::Press}]);
+        app.lua.load("assert(count==1)").exec().unwrap();assert!(app.error().is_none());
+    }
+    #[test]
+    fn stick_errors_use_the_existing_app_error_path() {
+        let mut app=app("function on_stick() error('stick failure') end");
+        app.call_sticks(&[StickEvent{stick:Stick::Right,x:0.0,y:1.0}]);
+        assert!(app.error().unwrap().contains("on_stick error"));
     }
 }

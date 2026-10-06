@@ -147,3 +147,24 @@ The expanded ARM simulator exposed a font-cache teardown leak after repeated
 launches. `FontCache` now drops font handles before the SDL_ttf context; the
 simulator checks 24 open/close cycles without descriptor growth. The old build
 also reproduced the failure natively with `ulimit -n 256` (too many open files).
+
+## Dual-stick input scenarios
+
+CartridgeOS 0.6.2 adds optional `on_stick` callbacks. Native input tests cover
+raw and mapped SDL axes, duplicate suppression, radial dead zones, neutral
+release/disconnect/focus events, normalized diagonals, simulator keys and
+independence from physical buttons/triggers. Lua runner tests cover callbacks,
+error reporting and legacy apps without the callback.
+
+Run an independent Frequency checkout with deterministic stick timing:
+
+```sh
+cargo run --bin app-check -- /path/to/frequency-cartridge \
+  --fixture sim/fixtures/frequency.json --dt 0.033333 \
+  --press 15:right --stick 20:right:0:-1 --stick 22:right:0:0 \
+  --stick 30:left:1:0 --stick 50:left:0:0 --frames 80 --capture 19,25,55
+```
+
+Mac/VM tests validate input handling and rendering; they do not measure the
+handheld GPU or verify a specific physical controller's axis wiring. Install
+the OS update before Frequency 1.2.0, then check both sticks on the handheld.

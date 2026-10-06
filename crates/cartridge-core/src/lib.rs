@@ -11,6 +11,7 @@ pub mod screen;
 pub mod screenshot;
 pub mod sim;
 pub mod storage;
+pub mod sticks;
 pub mod sysinfo;
 pub mod text_cache;
 pub mod theme;

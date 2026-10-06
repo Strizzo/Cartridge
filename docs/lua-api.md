@@ -68,6 +68,45 @@ Permission-gated:
 | `system`   | `system.*`                      |
 | `ssh`      | `ssh.*`                         |
 
+## Independent analog sticks (CartridgeOS 0.6.2)
+
+Define `on_stick(stick, x, y)` to receive each stick separately. `stick` is
+`"left"` or `"right"`; coordinates are finite normalized values in [-1, 1],
+with negative Y pointing up. An 18% radial dead zone removes drift and
+rescales the remaining range. Diagonal magnitude is capped at one.
+
+Callbacks deliver changed state, including neutral (0, 0) on recenter,
+controller disconnect, focus loss and keyboard capture. The system keyboard
+retains legacy left-stick navigation while capturing input. Store the latest state
+and use `on_update(dt)` for time-based movement. The runtime keeps active update
+cadence while a stick is held, then resumes normal idle pacing after release.
+Request a redraw only when content moves; a held stick does not force animation.
+
+```lua
+local left_x, left_y = 0, 0
+function on_stick(stick, x, y)
+  if stick == "left" then left_x, left_y = x, y end
+end
+```
+
+Apps defining this callback own left-stick navigation, including menus. They
+still receive physical D-pad/buttons/triggers through `on_input`; the same
+stick is not duplicated as D-pad events. Apps without the callback and the
+launcher retain their existing left-stick-as-D-pad behavior. The right stick
+is never mapped globally to face buttons or volume.
+
+The raw handheld fallback is left axes 0/1 and right axes 2/3. SDL-mapped
+controllers use `LeftX/LeftY/RightX/RightY`; duplicate raw axis events from those
+controllers are ignored. Joystick startup logs include GUID, axis and button
+counts so a different hardware mapping can be supplied through the existing
+SDL controller database. The Mac simulator supports I/J/K/L for the left stick
+and T/F/G/H for the right stick, without changing existing keyboard controls.
+
+Deterministic scenarios use `app-check --stick FRAME:left|right:X:Y --dt SECONDS`.
+Stick script values are raw normalized deflections, passed through the same
+radial dead zone; `--dt` sets update time independently of screenshot speed.
+These overrides are simulator-only and do not enable network playback in fixtures.
+
 ## Lifecycle callbacks
 
 Define any subset. Missing callbacks are no-ops.
