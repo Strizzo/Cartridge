@@ -88,6 +88,31 @@ class SystemUpdatePackageTests(unittest.TestCase):
                 self.assertEqual(member.mode, 0o755 if member.name == "cartridge" else 0o644)
                 self.assertEqual(tar.extractfile(member).read(), self.source[member.name])
 
+    def test_every_ustar_record_alignment_including_crossed_end_blocks(self):
+        tails = []
+        for blocks in range(20):
+            self.put("assets/fonts/padding.ttf", b"x" * (blocks * 512))
+            output, payload = self.build("alignment-" + str(blocks))
+            raw = gzip.decompress((output / package.archive_name(VERSION)).read_bytes())
+            end = sum(512 + ((f["size"] + 511) // 512) * 512 for f in payload["files"])
+            tails.append(len(raw) - end)
+            package.verify_archive(output / package.archive_name(VERSION), payload)
+        self.assertEqual(max(tails), 10752)
+        self.assertEqual(len(set(tails)), 20)
+
+    def test_partial_or_excessive_zero_end_padding_is_rejected(self):
+        output, payload = self.build()
+        archive = output / package.archive_name(VERSION)
+        raw = gzip.decompress(archive.read_bytes())
+        end = sum(512 + ((f["size"] + 511) // 512) * 512 for f in payload["files"])
+        for padding in (b"\0" * 1023, b"\0" * 1025, b"\0" * 11264, b"\0" * 1024 + b"junk"):
+            archive.write_bytes(gzip.compress(raw[:end] + padding, mtime=0))
+            changed = copy.deepcopy(payload)
+            changed["archive"]["size"] = archive.stat().st_size
+            changed["archive"]["sha256"] = hashlib.sha256(archive.read_bytes()).hexdigest()
+            with self.subTest(length=len(padding)), self.assertRaisesRegex(ValueError, "end padding"):
+                package.verify_archive(archive, changed)
+
     def test_reproducible_despite_source_mtime_mode_and_creation_order(self):
         first, _ = self.build("first")
         for name in reversed(list(self.source)):
