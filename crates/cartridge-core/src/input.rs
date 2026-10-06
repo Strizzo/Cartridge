@@ -49,11 +49,12 @@ pub struct InputManager {
     last_repeat: HashMap<Button, Instant>,
     /// When true, skip Joystick API events (because GameController API handles them).
     ignore_joystick: bool,
+    stick_dpad: bool,
 }
 
 /// One-line keyboard cheat sheet, printed to stderr once per process when
 /// `CARTRIDGE_SIM=1`. Keep in sync with the keyboard map below.
-pub const KEYBOARD_CHEAT_SHEET: &str = "sim keys: arrows=D-pad  Z=A  X=B  C=X  V=Y  A=L1  S=R1  Q=L2  W=R2  Enter=Start  Space=Select  Esc=quit  F12=screenshot";
+pub const KEYBOARD_CHEAT_SHEET: &str = "sim keys: arrows=D-pad  Z=A  X=B  C=X  V=Y  A=L1  S=R1  Q=L2  W=R2  Enter=Start  Space=Select  Esc=quit  IJKL=left stick  TFGH=right stick  F12=screenshot";
 
 fn print_cheat_sheet_once() {
     static ONCE: std::sync::Once = std::sync::Once::new();
@@ -107,12 +108,23 @@ impl InputManager {
             held: HashMap::new(),
             last_repeat: HashMap::new(),
             ignore_joystick: false,
+            stick_dpad: true,
         }
     }
 
     /// Call after opening game controllers to prevent duplicate events.
     pub fn set_ignore_joystick(&mut self, ignore: bool) {
         self.ignore_joystick = ignore;
+    }
+
+    /// Stick-aware Lua apps get axes separately; launchers and older apps keep D-pad navigation.
+    pub fn set_stick_dpad_enabled(&mut self, enabled: bool) {
+        if self.stick_dpad && !enabled {
+            for button in [Button::DpadUp,Button::DpadDown,Button::DpadLeft,Button::DpadRight] {
+                self.held.remove(&button);self.last_repeat.remove(&button);
+            }
+        }
+        self.stick_dpad=enabled;
     }
 
     pub fn process_events(&mut self, events: &[Event]) -> Vec<InputEvent> {
@@ -173,7 +185,7 @@ impl InputManager {
                         }
                     }
                 }
-                Event::JoyAxisMotion { axis_idx, value, .. } if !self.ignore_joystick => {
+                Event::JoyAxisMotion { axis_idx, value, .. } if !self.ignore_joystick && self.stick_dpad => {
                     self.process_joy_axis(*axis_idx, *value, &mut result, now);
                 }
                 // GameController API (used by ArkOS and modern SDL2 setups)
@@ -269,11 +281,11 @@ impl InputManager {
         const TRIGGER_THRESHOLD: i16 = 8000;
 
         match axis {
-            sdl2::controller::Axis::LeftX => {
+            sdl2::controller::Axis::LeftX if self.stick_dpad => {
                 self.update_axis_button(Button::DpadLeft, value < -AXIS_THRESHOLD, result, now);
                 self.update_axis_button(Button::DpadRight, value > AXIS_THRESHOLD, result, now);
             }
-            sdl2::controller::Axis::LeftY => {
+            sdl2::controller::Axis::LeftY if self.stick_dpad => {
                 self.update_axis_button(Button::DpadUp, value < -AXIS_THRESHOLD, result, now);
                 self.update_axis_button(Button::DpadDown, value > AXIS_THRESHOLD, result, now);
             }
@@ -351,7 +363,7 @@ pub fn open_all_joysticks(
     for i in 0..n {
         match subsystem.open(i) {
             Ok(js) => {
-                log::info!("Opened joystick {}: {}", i, js.name());
+                log::info!("Opened joystick {}: {} (GUID {}, {} axes, {} buttons)", i, js.name(), js.guid(), js.num_axes(), js.num_buttons());
                 joysticks.push(js);
             }
             Err(e) => {
@@ -400,3 +412,22 @@ pub fn load_controller_mappings(subsystem: &sdl2::GameControllerSubsystem) {
     }
 }
 
+
+#[cfg(test)]
+mod stick_compatibility_tests {
+    use super::*;
+    fn axis(axis:sdl2::controller::Axis,value:i16)->Event {Event::ControllerAxisMotion{timestamp:0,which:1,axis,value}}
+    #[test]
+    fn opt_in_leaves_physical_buttons_and_triggers_independent() {
+        let mut legacy=InputManager::new();
+        assert!(legacy.process_events(&[axis(sdl2::controller::Axis::LeftX,32767)]).iter().any(|e|e.button==Button::DpadRight && e.action==InputAction::Press));
+        let mut analog=InputManager::new();analog.set_stick_dpad_enabled(false);
+        assert!(analog.process_events(&[axis(sdl2::controller::Axis::LeftX,32767),axis(sdl2::controller::Axis::RightY,-32768)]).is_empty());
+        let pressed=analog.process_events(&[Event::ControllerButtonDown{timestamp:0,which:1,button:SdlControllerButton::DPadUp},axis(sdl2::controller::Axis::TriggerLeft,32767)]);
+        assert!(pressed.iter().any(|e|e.button==Button::DpadUp && e.action==InputAction::Press));
+        assert!(pressed.iter().any(|e|e.button==Button::L2 && e.action==InputAction::Press));
+        assert!(analog.process_events(&[axis(sdl2::controller::Axis::LeftY,0)]).is_empty());
+        assert!(analog.process_events(&[Event::ControllerButtonUp{timestamp:0,which:1,button:SdlControllerButton::DPadUp}]).iter().any(|e|e.button==Button::DpadUp && e.action==InputAction::Release));
+        assert!(analog.process_events(&[Event::JoyAxisMotion{timestamp:0,which:2,axis_idx:0,value:32767}]).is_empty());
+    }
+}

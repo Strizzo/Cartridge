@@ -2,9 +2,9 @@ name: Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/cartridge-primary]
   pull_request:
-    branches: [main, redesign/neo-tokyo]
+    branches: [main, redesign/neo-tokyo, codex/cartridge-primary]
 
 jobs:
   build:

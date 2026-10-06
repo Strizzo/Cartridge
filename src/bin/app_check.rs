@@ -1,5 +1,6 @@
 //! Focused native app scenarios, isolated storage, real 720×720 screenshots.
 use cartridge_core::input::Button;
+use cartridge_core::sticks::{Stick,StickEvent};
 use cartridge_lua::{manifest::CartridgeManifest, run_lua_app_with_config, LuaAppConfig};
 use std::path::{Path, PathBuf};
 
@@ -30,7 +31,7 @@ fn button(value: &str) -> Result<Button, String> {
 }
 fn run() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
-    let name = args.next().ok_or("Usage: app-check APP [--fixture FILE] [--seed KEY=JSON] [--press FRAME:BUTTON] [--frames N] [--capture N,N] [--out DIR] [--visible]")?;
+    let name = args.next().ok_or("Usage: app-check APP [--fixture FILE] [--seed KEY=JSON] [--press FRAME:BUTTON] [--stick FRAME:left|right:X:Y] [--dt SECONDS] [--frames N] [--capture N,N] [--out DIR] [--visible]")?;
     let app = if Path::new(&name).is_dir() {
         PathBuf::from(&name)
     } else {
@@ -40,6 +41,8 @@ fn run() -> Result<(), String> {
     let mut fixture = None;
     let mut seeds = Vec::new();
     let mut script = Vec::new();
+    let mut stick_script=Vec::new();
+    let mut fixed_dt=None;
     let mut frames = 90u64;
     let mut capture = Vec::new();
     let mut visible = false;
@@ -74,6 +77,20 @@ fn run() -> Result<(), String> {
                     button(key)?,
                 ));
             }
+            "--stick" => {
+                let parts:Vec<_>=value.split(':').collect();
+                if parts.len()!=4 { return Err("Expected --stick FRAME:left|right:X:Y".into()); }
+                let stick=match parts[1] { "left"=>Stick::Left,"right"=>Stick::Right,_=>return Err("Stick must be left or right".into()) };
+                let x=parts[2].parse::<f32>().map_err(|_|"Invalid stick X")?;
+                let y=parts[3].parse::<f32>().map_err(|_|"Invalid stick Y")?;
+                if !x.is_finite() || !y.is_finite() || x.abs()>1.0 || y.abs()>1.0 { return Err("Stick values must be finite in [-1,1]".into()); }
+                stick_script.push((parts[0].parse::<u64>().map_err(|_|"Invalid stick frame")?,StickEvent{stick,x,y}));
+            }
+            "--dt" => {
+                let value=value.parse::<f32>().map_err(|_|"Invalid timestep")?;
+                if !value.is_finite() || value<=0.0 || value>1.0 { return Err("Timestep must be in (0,1] seconds".into()); }
+                fixed_dt=Some(value);
+            }
             "--frames" => frames = value.parse().map_err(|_| "Invalid frame count")?,
             "--capture" => {
                 for frame in value.split(',') {
@@ -90,7 +107,7 @@ fn run() -> Result<(), String> {
     if capture.is_empty() {
         capture.push(frames - 1);
     }
-    if capture.iter().any(|n| *n >= frames) || script.iter().any(|(n, _)| *n >= frames) {
+    if capture.iter().any(|n| *n >= frames) || script.iter().any(|(n, _)| *n >= frames) || stick_script.iter().any(|(n,_)|*n>=frames) {
         return Err("Capture/input frames must be smaller than --frames".into());
     }
     let nonce = std::time::SystemTime::now()
@@ -127,6 +144,8 @@ fn run() -> Result<(), String> {
             http_fixture: fixture,
             storage_root: Some(root),
             script,
+            stick_script,
+            fixed_dt,
             fail_on_error: true,
             print_stats: true,
         },

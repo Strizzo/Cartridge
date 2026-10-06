@@ -12,6 +12,7 @@ use cartridge_core::image_cache::ImageCache;
 use cartridge_core::input::{Button, InputAction, InputManager};
 use cartridge_core::perf::{self, FrameStats, FrameTimes};
 use cartridge_core::screen::Screen;
+use cartridge_core::sticks::{StickEvent, StickManager};
 use cartridge_core::text_cache::TextCache;
 use cartridge_core::theme::Theme;
 
@@ -50,6 +51,10 @@ pub struct LuaAppConfig {
     pub storage_root: Option<PathBuf>,
     /// Frame-numbered button presses for deterministic interaction checks.
     pub script: Vec<(u64, Button)>,
+    /// Simulator stick deflections (same normalization/dead zone as a controller).
+    pub stick_script: Vec<(u64, StickEvent)>,
+    /// Simulator-only deterministic update timestep.
+    pub fixed_dt: Option<f32>,
     /// Automated checks fail on Lua errors instead of capturing an error panel.
     pub fail_on_error: bool,
 }
@@ -87,8 +92,11 @@ pub fn run_lua_app_with_config(
     assets_dir: &Path,
     config: LuaAppConfig,
 ) -> Result<FrameStats, String> {
-    if config.storage_root.is_some() && !cartridge_core::sim::is_sim() {
-        return Err("Scenario storage requires simulator mode".into());
+    if (config.storage_root.is_some() || !config.stick_script.is_empty() || config.fixed_dt.is_some()) && !cartridge_core::sim::is_sim() {
+        return Err("Scenario input, timing and storage require simulator mode".into());
+    }
+    if config.fixed_dt.is_some_and(|dt| !dt.is_finite() || dt<=0.0 || dt>1.0) {
+        return Err("Fixed timestep must be finite, positive and at most one second".into());
     }
     let manifest = CartridgeManifest::load(app_dir)?;
     log::info!(
@@ -132,6 +140,7 @@ pub fn run_lua_app_with_config(
     if !_controllers.is_empty() {
         input_manager.set_ignore_joystick(true);
     }
+    let mut sticks=StickManager::new(_controllers.iter().map(|c|c.instance_id()),cartridge_core::sim::is_sim());
     let mut event_pump = sdl_context.event_pump()?;
     let mut event_inbox = cartridge_core::event_wait::EventInbox::default();
 
@@ -173,7 +182,7 @@ pub fn run_lua_app_with_config(
     'running: loop {
         let frame_start = Instant::now();
         let mut capture_time = std::time::Duration::ZERO;
-        let dt = frame_start.duration_since(last_frame).as_secs_f32();
+        let dt = config.fixed_dt.unwrap_or_else(||frame_start.duration_since(last_frame).as_secs_f32());
         last_frame = frame_start;
 
         // Hot reload: every 1s, check for .lua file changes and recreate the VM.
@@ -198,6 +207,7 @@ pub fn run_lua_app_with_config(
                         app.call_init();
                     }
                 }
+                sticks.clear();
                 dirty = true;
             }
             last_lua_mtime = cur;
@@ -246,7 +256,20 @@ pub fn run_lua_app_with_config(
             capture_time += capture_start.elapsed();
         }
 
-        // Process input
+        // Independent axes are delivered only to opt-in apps; physical buttons stay unchanged.
+        let stick_aware=app.handles_sticks();
+        input_manager.set_stick_dpad_enabled(!stick_aware || app.text_input_active());
+        sticks.process_events(events);
+        for &(frame,event) in &config.stick_script {
+            if frame==frame_count { sticks.inject(event.stick,event.x,event.y); }
+        }
+        if app.text_input_active() { sticks.clear(); }
+        let stick_events=sticks.take_changes();
+        if stick_aware {
+            app.call_sticks(&stick_events);
+            if sticks.active() { last_input=frame_start; }
+        }
+        // Process buttons
         let mut input_events = input_manager.process_events(events);
         for &(frame, button) in &config.script {
             if frame == frame_count {
@@ -255,7 +278,7 @@ pub fn run_lua_app_with_config(
                 input_events.push(InputEvent { button, action: InputAction::Release });
             }
         }
-        let had_input = !input_events.is_empty();
+        let had_input = !input_events.is_empty() || (stick_aware && !stick_events.is_empty());
         if had_input {
             dirty = true;
             last_input = frame_start;
