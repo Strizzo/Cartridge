@@ -124,7 +124,10 @@ system-update.unsigned.json
 ```
 
 CI does not sign or publish the trusted OTA endpoint. The existing tagged-release
-workflow continues to attach its offline installation zip. No signing key or
+workflow prepares a draft with its offline installation zip and the matching
+ARM check binaries as a CI artifact. Rehearse that exact signed candidate in
+the isolated ARM VM before attaching the trusted endpoint and publishing the
+draft. No signing key or
 signing secret is configured in either workflow.
 
 To reproduce packaging from a device bundle's `Cartridge` directory:

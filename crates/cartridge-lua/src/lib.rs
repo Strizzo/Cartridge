@@ -263,7 +263,7 @@ pub fn run_lua_app_with_config(
         for &(frame,event) in &config.stick_script {
             if frame==frame_count { sticks.inject(event.stick,event.x,event.y); }
         }
-        if app.text_input_active() { sticks.clear(); }
+        if app.text_input_active() { sticks.capture(); }
         let stick_events=sticks.take_changes();
         if stick_aware {
             app.call_sticks(&stick_events);

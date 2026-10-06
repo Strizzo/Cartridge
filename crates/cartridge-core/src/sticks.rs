@@ -41,6 +41,7 @@ pub struct StickManager {
     keys: [[bool; 4]; 2],
     simulated: [Option<[f32; 2]>; 2],
     sent: [[f32; 2]; 2],
+    captured: [bool; 2],
     keyboard: bool,
 }
 impl StickManager {
@@ -52,6 +53,7 @@ impl StickManager {
             keys: [[false; 4]; 2],
             simulated: [None; 2],
             sent: [[0.0; 2]; 2],
+            captured: [false; 2],
             keyboard,
         }
     }
@@ -122,18 +124,30 @@ impl StickManager {
                 _ => {}
             }
         }
+        // A keyboard-captured hold stays suppressed until the real input centers.
+        for index in 0..2 {
+            if self.raw_value(index) == [0.0, 0.0] {
+                self.captured[index] = false;
+            }
+        }
     }
     /// Raw normalized deflection, shaped by the same dead zone as physical input.
     pub fn inject(&mut self, stick: Stick, x: f32, y: f32) {
         self.simulated[stick.index()] = Some([finite_axis(x), finite_axis(y)]);
     }
-    /// Keyboard overlays and hot reload must not retain motion from a previous context.
+    /// Suspend app motion while the system keyboard owns input. Retain raw state
+    /// so a held axis (including noise after closing) requires a real recenter.
+    pub fn capture(&mut self) {
+        self.captured = [true; 2];
+    }
+    /// Focus loss and hot reload must not retain motion from a previous context.
     pub fn clear(&mut self) {
         self.physical = [[0.0; 2]; 2];
         self.keys = [[false; 4]; 2];
         self.simulated = [None; 2];
+        self.captured = [false; 2];
     }
-    fn value(&self, index: usize) -> [f32; 2] {
+    fn raw_value(&self, index: usize) -> [f32; 2] {
         let keys = self.keys[index];
         let raw = if keys.iter().any(|v| *v) {
             [
@@ -144,6 +158,13 @@ impl StickManager {
             self.simulated[index].unwrap_or(self.physical[index])
         };
         shape(raw[0], raw[1])
+    }
+    fn value(&self, index: usize) -> [f32; 2] {
+        if self.captured[index] {
+            [0.0, 0.0]
+        } else {
+            self.raw_value(index)
+        }
     }
     pub fn take_changes(&mut self) -> Vec<StickEvent> {
         let mut changes = Vec::new();
@@ -298,6 +319,31 @@ mod tests {
         m.take_changes();
         m.clear();
         assert_eq!(m.take_changes()[0].x, 0.0);
+    }
+    #[test]
+    fn keyboard_capture_requires_real_recentering_before_resuming() {
+        let mut m = StickManager::new([], false);
+        m.process_events(&[raw(1, 0, 32767), raw(1, 3, -32768)]);
+        assert_eq!(m.take_changes().len(), 2);
+        m.capture();
+        assert_eq!(m.take_changes().len(), 2);
+        assert!(!m.active());
+        // Noise on either held stick after closing the keyboard cannot resume it.
+        m.process_events(&[raw(1, 0, 32000), raw(1, 3, -32000)]);
+        assert!(!m.active());
+        assert!(m.take_changes().is_empty());
+        m.process_events(&[raw(1, 0, 0), raw(1, 3, 0)]);
+        m.process_events(&[raw(1, 3, -32768)]);
+        assert_eq!(m.take_changes()[0].stick, Stick::Right);
+        // A new hold started while editing is also captured.
+        m.process_events(&[raw(1, 0, 32767)]);
+        m.capture();
+        m.take_changes();
+        m.process_events(&[]);
+        assert!(!m.active());
+        m.process_events(&[raw(1, 0, 0), raw(1, 3, 0)]);
+        m.process_events(&[raw(1, 0, 32767)]);
+        assert_eq!(m.take_changes()[0].stick, Stick::Left);
     }
     #[test]
     fn simulator_keys_do_not_collide_with_face_shoulder_or_volume_keys() {
