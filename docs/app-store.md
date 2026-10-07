@@ -30,7 +30,9 @@ The catalogue is an Ed25519-signed envelope. The exact UTF-8 `payload` string is
 
 Unsigned remote registries are no longer install sources. Local `registry.json` remains the trusted fallback shipped with the OS bundle; legacy bundled apps continue to launch. The old official registry URL migrates to the signed catalogue. Custom URLs are retained but must serve a catalogue signed with the pinned official key; third-party signing keys are not yet supported. The UI retains its current catalogue if a refresh fails.
 
-App API compatibility is explicit: the three connected apps require **CartridgeOS 0.6.0**. This Store cannot upgrade an older OS binary or kernel; deliver the new runtime through the existing OS installer/deployment flow once. Later compatible app updates use Wi-Fi independently of OS releases.
+App API compatibility is explicit. Frequency 1.2.0 requires **CartridgeOS 0.6.2 or newer** for independent stick input; Mission Control and Outside 1.0.0 require 0.6.0. On an already bootstrapped 0.6.1-or-newer device, install the OS update from **Settings → System Update** and restart before updating Frequency. Older installations need the offline updater bootstrap once. App updates never replace the runtime or kernel.
+
+CartridgeOS 0.6.4 checks each package's required runtime before starting a Store download. An incompatible update displays the app name, required and running OS versions, and the System Update steps. Store failures stay in front of old catalogue-refresh successes until dismissed; retrying does not duplicate them. R2 reads additional pages or dismisses the current result. While a task is running, its progress is shown instead of an older notice. After successful installation, the installed version and local library are reconciled.
 
 Signatures authenticate content but this first version does not enforce signed-catalogue expiry or prevent replay of an older valid catalogue. Signing-key rotation requires a runtime update. Native executable packages, payments, accounts, reviews and telemetry are not part of this Store.
 

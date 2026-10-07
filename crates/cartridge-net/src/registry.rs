@@ -17,6 +17,26 @@ pub struct AppPackage {
     pub min_runtime: String,
 }
 
+impl AppPackage {
+    /// Shared preflight for Store feedback and the installer's enforcement.
+    pub fn check_runtime(&self) -> Result<(), String> {
+        self.check_runtime_version(env!("CARGO_PKG_VERSION"))
+    }
+
+    fn check_runtime_version(&self, current: &str) -> Result<(), String> {
+        let minimum = semver::Version::parse(&self.min_runtime)
+            .map_err(|e| format!("Invalid minimum runtime: {e}"))?;
+        let runtime = semver::Version::parse(current).map_err(|e| e.to_string())?;
+        if minimum.cmp_precedence(&runtime).is_gt() {
+            return Err(format!(
+                "Requires CartridgeOS {minimum} or newer; this device is running {runtime}. \
+                Open Settings > System Update, update CartridgeOS and restart, then retry."
+            ));
+        }
+        Ok(())
+    }
+}
+
 use crate::client::HttpClient;
 
 /// A single application entry in the Cartridge registry.
@@ -172,6 +192,23 @@ mod tests {
 
     use ed25519_dalek::{Signer, SigningKey};
 
+    #[test]
+    fn runtime_preflight_explains_frequency_upgrade_and_respects_semver() {
+        let mut package = AppPackage { url: String::new(), sha256: String::new(), size: 1,
+            min_runtime: "0.6.2".into() };
+        let error = package.check_runtime_version("0.6.1").unwrap_err();
+        assert!(error.contains("Requires CartridgeOS 0.6.2"));
+        assert!(error.contains("running 0.6.1"));
+        assert!(error.contains("Settings > System Update"));
+        assert!(error.contains("restart, then retry"));
+        for current in ["0.6.2", "0.6.3", "0.6.10", "1.0.0"] {
+            assert!(package.check_runtime_version(current).is_ok());
+        }
+        assert!(package.check_runtime_version("0.6.2-rc.1").is_err());
+        package.min_runtime = "invalid".into();
+        assert!(package.check_runtime_version("0.6.3").is_err());
+    }
+
     fn signed_fixture() -> (serde_json::Value, [u8; 32]) {
         let key = SigningKey::from_bytes(&[42; 32]);
         let payload = serde_json::json!({"version":2,"apps":[{
@@ -275,6 +312,7 @@ mod tests {
             loop {
                 match listener.accept() {
                     Ok((mut socket, _)) => {
+                        socket.set_nonblocking(false).unwrap();
                         socket.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
                         let mut request = [0; 4096];
                         socket.read(&mut request).unwrap();

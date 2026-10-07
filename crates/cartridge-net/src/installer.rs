@@ -65,14 +65,7 @@ impl AppInstaller {
             return Err("Package SHA256 must contain exactly 64 hexadecimal digits".into());
         }
         Version::parse(&app.version).map_err(|e| format!("Invalid app version: {e}"))?;
-        let minimum = Version::parse(&package.min_runtime)
-            .map_err(|e| format!("Invalid minimum runtime: {e}"))?;
-        let runtime = Version::parse(env!("CARGO_PKG_VERSION")).map_err(|e| e.to_string())?;
-        if minimum.cmp_precedence(&runtime).is_gt() {
-            return Err(format!(
-                "App requires runtime {minimum}; this runtime is {runtime}"
-            ));
-        }
+        package.check_runtime()?;
         let _lock = self.lock_app(&app.id)?;
         self.recover(&app.id)?;
         let work = self.work_path(&app.id);

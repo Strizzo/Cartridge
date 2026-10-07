@@ -375,6 +375,11 @@ fn detail_app<'a>(ctx: &'a ScreenContext, id: &str) -> Option<&'a crate::data::A
 fn availability_text(ctx: &ScreenContext, id: &str) -> String {
     let installed = ctx.installed_version(id);
     let remote = ctx.app(id);
+    if let Some(package) = remote.and_then(|app| app.package.as_ref()) {
+        if package.check_runtime().is_err() {
+            return format!("Requires CartridgeOS {} · Update OS in Settings > System Update", package.min_runtime);
+        }
+    }
     match (installed, remote) {
         (Some(current), Some(app)) if app.package.is_some() => format!("Installed v{current} · Store v{}", app.version),
         (Some(current), _) => format!("Installed v{current} · No signed download available"),

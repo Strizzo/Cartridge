@@ -142,6 +142,14 @@ impl ScreenContext {
             StoreOperation::Rollback(id) if !self.can_rollback(id) => return,
             _ => {}
         }
+        if let StoreOperation::Install(app) | StoreOperation::Update(app) = &operation {
+            if let Some(package) = &app.package {
+                if let Err(reason) = package.check_runtime() {
+                    self.store_jobs.error(format!("{} v{}: {reason}", app.name, app.version));
+                    return;
+                }
+            }
+        }
         // Move a storage handle into the worker so list persistence never fsyncs
         // on the render thread. This does not touch any app's settings/data.
         let storage = cartridge_core::storage::AppStorage {
@@ -165,7 +173,7 @@ impl ScreenContext {
 
     pub(crate) fn poll_system_update_jobs(&mut self) -> bool {
         let (changed, notice) = self.system_update_jobs.poll();
-        if let Some(notice) = notice { self.store_jobs.notices.push_back(notice); }
+        if let Some(notice) = notice { self.store_jobs.notify(notice); }
         changed
     }
 
@@ -244,6 +252,37 @@ mod completion_tests {
 
     fn entry(id: &str, version: &str) -> AppEntry {
         serde_json::from_value(serde_json::json!({"id":id,"name":id,"version":version})).unwrap()
+    }
+
+    #[test]
+    fn incompatible_update_explains_system_update_without_starting_io() {
+        let mut ctx = test_context();
+        let installed = entry("dev.cartridge.frequency", "1.0.0");
+        let mut remote = installed.clone();
+        remote.name = "Frequency".into();
+        remote.version = "1.2.0".into();
+        remote.package = Some(cartridge_net::AppPackage {
+            url: "https://example.org/must-not-download.tgz".into(),
+            sha256: "aa".repeat(32), size: 1, min_runtime: "999.0.0".into(),
+        });
+        ctx.local_apps.apps.push(installed.clone());
+        ctx.installed.install(&installed.id);
+        ctx.registry.apps.push(remote.clone());
+        ctx.store_jobs.notify(crate::store_jobs::Notice { message: "Catalog verified".into(), is_error: false });
+        for operation in [StoreOperation::Update(remote.clone()), StoreOperation::Install(remote)] {
+            ctx.start_store_job(operation);
+            assert!(!ctx.store_jobs.is_busy());
+            assert!(ctx.store_jobs.progress.is_none());
+            let notice = ctx.store_jobs.notices.front().unwrap();
+            assert!(notice.is_error);
+            assert!(notice.message.contains("Frequency v1.2.0"));
+            assert!(notice.message.contains("Settings > System Update"));
+            assert_eq!(ctx.installed_version(&installed.id), Some("1.0.0"));
+            assert!(ctx.installer.is_none());
+            assert_eq!(std::fs::read_dir(&ctx.storage.data_dir).unwrap().count(), 0);
+        }
+        assert_eq!(ctx.store_jobs.notices.len(), 2);
+        std::fs::remove_dir_all(ctx.storage.data_dir.parent().unwrap().parent().unwrap()).unwrap();
     }
 
     #[test]
