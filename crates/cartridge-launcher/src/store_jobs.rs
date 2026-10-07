@@ -126,6 +126,7 @@ pub struct StoreJobs {
     pub progress: Option<String>,
     pub notices: VecDeque<Notice>,
     pub notice_page: usize,
+    rendered_notice: Option<(String, bool)>,
 }
 
 impl StoreJobs {
@@ -136,12 +137,38 @@ impl StoreJobs {
     pub fn error(&mut self, message: impl Into<String>) {
         let message = message.into();
         log::warn!("Store: {message}");
-        if !self.notices.iter().any(|n| n.message == message) {
-            self.notices.push_back(Notice {
-                message,
-                is_error: true,
-            });
+        self.notify(Notice { message, is_error: true });
+    }
+
+    /// Show failures before old refresh successes; never erase an unread error.
+    pub fn notify(&mut self, notice: Notice) {
+        if let Some(index) = self.notices.iter().position(|n| n.message == notice.message && n.is_error == notice.is_error) {
+            self.notices.remove(index);
         }
+        let index = if notice.is_error { 0 } else {
+            self.notices.iter().position(|n| !n.is_error).unwrap_or(self.notices.len())
+        };
+        self.notices.insert(index, notice);
+        if index == 0 {
+            self.notice_page = 0;
+            self.rendered_notice = None;
+        }
+    }
+
+    pub fn mark_notice_rendered(&mut self) {
+        self.rendered_notice = self.notices.front().map(|n| (n.message.clone(), n.is_error));
+    }
+
+    pub fn can_page_notice(&self) -> bool {
+        self.rendered_notice.as_ref().is_some_and(|(message, is_error)| {
+            self.notices.front().is_some_and(|n| message == &n.message && *is_error == n.is_error)
+        })
+    }
+
+    pub fn dismiss_notice(&mut self) {
+        self.notices.pop_front();
+        self.notice_page = 0;
+        self.rendered_notice = None;
     }
 
     fn spawn(
@@ -311,7 +338,7 @@ impl StoreJobs {
                     self.receiver = None;
                     self.progress = None;
                     match &completion.outcome {
-                        Ok(Some(message)) => self.notices.push_back(Notice {
+                        Ok(Some(message)) => self.notify(Notice {
                             message: message.clone(),
                             is_error: false,
                         }),
@@ -457,6 +484,43 @@ mod tests {
         assert!(await_completion(&mut jobs).registry.is_some());
         assert_eq!(jobs.notices.len(), 2); // A later success cannot erase an error.
         assert!(jobs.notices.front().unwrap().is_error);
+    }
+
+    #[test]
+    fn fast_update_failure_replaces_old_refresh_notice_and_resets_pagination() {
+        let mut jobs = StoreJobs::default();
+        jobs.notify(Notice { message: "Catalog verified".into(), is_error: false });
+        jobs.notice_page = 3;
+        assert!(jobs.spawn("Updating Frequency".into(), |_| Completion {
+            local: LocalApps::default(), installer: None, registry: None,
+            outcome: Err("Frequency requires a newer OS".into()),
+        }));
+        assert!(await_completion(&mut jobs).outcome.is_err());
+        assert_eq!(jobs.notices.front().unwrap().message, "Frequency requires a newer OS");
+        assert!(jobs.notices.front().unwrap().is_error);
+        assert_eq!(jobs.notice_page, 0);
+        jobs.notice_page = 1;
+        jobs.error("Frequency requires a newer OS");
+        assert_eq!(jobs.notice_page, 0);
+        assert_eq!(jobs.notices.len(), 2); // Retrying cannot create duplicate notices.
+        jobs.notify(Notice { message: "Refresh completed".into(), is_error: false });
+        assert!(jobs.notices.front().unwrap().is_error); // Refresh cannot hide failure.
+        jobs.notices.pop_front();
+        assert_eq!(jobs.notices.front().unwrap().message, "Refresh completed");
+    }
+
+    #[test]
+    fn completed_install_is_visible_before_old_catalog_success() {
+        let mut jobs = StoreJobs::default();
+        jobs.notify(Notice { message: "Catalog verified".into(), is_error: false });
+        jobs.notice_page = 2;
+        jobs.spawn("Installing Frequency".into(), |_| Completion {
+            local: LocalApps::default(), installer: None, registry: None,
+            outcome: Ok(Some("Frequency v1.2.0 installed".into())),
+        });
+        assert!(await_completion(&mut jobs).outcome.is_ok());
+        assert_eq!(jobs.notices.front().unwrap().message, "Frequency v1.2.0 installed");
+        assert_eq!(jobs.notice_page, 0);
     }
 
     #[test]

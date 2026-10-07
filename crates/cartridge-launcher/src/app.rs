@@ -156,12 +156,11 @@ impl LauncherApp {
 
         // R2 pages/dismisses persistent background outcomes on every screen.
         let filtered_events: Vec<_> = events.iter().copied().filter(|event| {
-            if event.button == cartridge_core::input::Button::R2 && self.ctx.system_update_jobs.progress.is_none() && !self.ctx.store_jobs.notices.is_empty() {
-                if event.action == cartridge_core::input::InputAction::Press {
+            if event.button == cartridge_core::input::Button::R2 && self.ctx.system_update_jobs.progress.is_none() && self.ctx.store_jobs.progress.is_none() && !self.ctx.store_jobs.notices.is_empty() {
+                if event.action == cartridge_core::input::InputAction::Press && self.ctx.store_jobs.can_page_notice() {
                     self.ctx.store_jobs.notice_page += 1;
                     if self.ctx.store_jobs.notice_page >= self.ctx.notice_pages.max(1) {
-                        self.ctx.store_jobs.notices.pop_front();
-                        self.ctx.store_jobs.notice_page = 0;
+                        self.ctx.store_jobs.dismiss_notice();
                     }
                 }
                 false
@@ -306,6 +305,8 @@ impl LauncherApp {
             }
             screen.draw_text("You can browse while this finishes. Settings > System Update for details.",
                 18, y + 79, Some(theme.text_dim), 11, false, Some(680));
+        } else if jobs.progress.is_some() {
+            screen.draw_text("You can continue browsing while this finishes.", 18, y + 31, Some(theme.text_dim), 12, false, None);
         } else if let Some(notice) = jobs.notices.front() {
             let lines = crate::screens::system_update::wrap_text(&notice.message, 680, |s| screen.get_text_width(s, 12, false));
             self.ctx.notice_pages = lines.len().div_ceil(3).max(1);
@@ -315,6 +316,7 @@ impl LauncherApp {
             }
             let label = if jobs.notice_page + 1 < self.ctx.notice_pages { "R2 More" } else { "R2 Dismiss" };
             screen.draw_text(label, 18, y + 79, Some(theme.text_dim), 11, false, None);
+            self.ctx.store_jobs.mark_notice_rendered();
         } else {
             screen.draw_text("You can continue browsing while this finishes.", 18, y + 31, Some(theme.text_dim), 12, false, None);
         }
@@ -437,8 +439,29 @@ mod store_navigation_tests {
         assert!(app.ctx.has_override(&entry.id));
         assert_eq!(app.ctx.store_jobs.notices.front().unwrap().message,"Remove failed: permission denied");
         assert!(app.ctx.store_jobs.notices.front().unwrap().is_error);
+        app.ctx.store_jobs.mark_notice_rendered(); // Unit fixture models the frame before acknowledgement.
         app.handle_input(&[InputEvent {button:Button::R2,action:InputAction::Press}]);
         assert!(app.ctx.store_jobs.notices.is_empty());
+        std::fs::remove_dir_all(app.ctx.storage.data_dir.parent().unwrap().parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn r2_cannot_dismiss_a_new_error_using_an_older_notice_frame() {
+        let mut ctx = crate::screens::test_context();
+        ctx.store_jobs.notify(crate::store_jobs::Notice { message:"Catalog verified".into(), is_error:false });
+        ctx.store_jobs.mark_notice_rendered();
+        ctx.notice_pages = 1;
+        ctx.store_jobs.error("Update failed; read the new error");
+        let mut app = LauncherApp { screen_stack:vec![Box::new(HomeScreen::new())],
+            ctx, overlay:None, pending_launch:None, pending_exit:None };
+        let r2 = InputEvent {button:Button::R2,action:InputAction::Press};
+        app.handle_input(&[r2]);
+        assert_eq!(app.ctx.store_jobs.notices.len(), 2);
+        assert_eq!(app.ctx.store_jobs.notices.front().unwrap().message, "Update failed; read the new error");
+        app.ctx.store_jobs.mark_notice_rendered();
+        app.handle_input(&[r2, r2]);
+        assert_eq!(app.ctx.store_jobs.notices.len(), 1); // Second press cannot dismiss the next unseen notice.
+        assert_eq!(app.ctx.store_jobs.notices.front().unwrap().message, "Catalog verified");
         std::fs::remove_dir_all(app.ctx.storage.data_dir.parent().unwrap().parent().unwrap()).unwrap();
     }
 
@@ -515,6 +538,7 @@ mod system_update_navigation_tests {
         app.screen_stack.push(Box::new(SystemUpdateScreen::new()));
         app.refresh_sysinfo();
         assert!(!app.is_loading()); // Reopening does not rerun the check or lose the result.
+        app.ctx.store_jobs.mark_notice_rendered(); // Unit fixture models the frame before acknowledgement.
         app.handle_input(&[press(Button::R2)]);
         assert!(app.ctx.store_jobs.notices.is_empty());
         cleanup(&app);
@@ -708,5 +732,69 @@ mod system_update_visual_tests {
             }
         }
         println!("System Update fixtures: {}", output.display());
+    }
+}
+
+#[cfg(test)]
+mod store_feedback_visual_tests {
+    use super::*;
+    use cartridge_core::{font::FontCache, image_cache::ImageCache,
+        text_cache::TextCache, theme::Theme};
+
+    #[test]
+    #[ignore = "visual QA: SDL_VIDEODRIVER=dummy, --ignored --nocapture"]
+    fn store_update_feedback_visual_fixture() {
+        let sdl = sdl2::init().unwrap();
+        let video = sdl.video().unwrap();
+        let window = video.window("Store update feedback", 720, 720).hidden().build().unwrap();
+        let mut canvas = window.into_canvas().software().build().unwrap();
+        let creator = canvas.texture_creator();
+        let assets = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let output = std::env::temp_dir().join(format!("cartridge-store-feedback-visual-{}", std::process::id()));
+        std::fs::create_dir_all(&output).unwrap();
+        let mut theme = Theme::by_id("neo");
+        theme.atmosphere = false;
+        let mut fonts = FontCache::new(&assets).unwrap();
+        fonts.set_family(theme.font_regular, theme.font_bold);
+        fonts.set_display(theme.font_display);
+        let mut images = ImageCache::new(&creator).unwrap();
+        let mut text_cache = TextCache::new(&creator);
+        let atmosphere = Atmosphere::new();
+        let mut ctx = crate::screens::test_context();
+        ctx.settings.animations_enabled = false;
+        let mut remote: crate::data::AppEntry = serde_json::from_value(serde_json::json!({
+            "id":"dev.cartridge.frequency", "name":"Frequency", "version":"1.2.0",
+            "description":"An atlas of live radio. Explore the world, collect stations, and listen.",
+            "category":"media", "permissions":["network","audio","storage"],
+            "repo_url":"https://github.com/Strizzo/frequency-cartridge"
+        })).unwrap();
+        let mut installed = remote.clone();
+        installed.version = "1.0.0".into();
+        ctx.local_apps.apps.push(installed);
+        ctx.installed.install(&remote.id);
+        // Future-runtime fixture tests the actual preflight without any download.
+        remote.package = Some(cartridge_net::AppPackage {
+            url:"https://example.org/must-not-download.tgz".into(), sha256:"aa".repeat(32),
+            size:1, min_runtime:"999.0.0".into(),
+        });
+        ctx.registry.apps.push(remote.clone());
+        ctx.store_jobs.notify(crate::store_jobs::Notice { message:"Catalog verified: 3 apps".into(), is_error:false });
+        ctx.start_store_job(crate::store_jobs::StoreOperation::Update(remote.clone()));
+        assert!(!ctx.store_jobs.is_busy());
+        let scratch = ctx.storage.data_dir.parent().unwrap().parent().unwrap().to_path_buf();
+        let mut app = LauncherApp { screen_stack:vec![Box::new(DetailScreen::new(remote.id))],
+            ctx, overlay:None, pending_launch:None, pending_exit:None };
+        for capture in 0..2 {
+            let mut screen = Screen { canvas:&mut canvas, theme:&theme, fonts:&mut fonts,
+                images:&mut images, text_cache:&mut text_cache, texture_creator:&creator };
+            app.render(&mut screen, &atmosphere);
+            crate::capture_frame_to_png(&canvas, &output.join(format!("error-{capture}.png"))).unwrap();
+            canvas.present();
+            assert!(app.ctx.store_jobs.notices.front().unwrap().is_error);
+        }
+        assert_eq!(std::fs::read(output.join("error-0.png")).unwrap(),
+            std::fs::read(output.join("error-1.png")).unwrap());
+        std::fs::remove_dir_all(scratch).unwrap();
+        println!("Store feedback fixtures: {}", output.display());
     }
 }
