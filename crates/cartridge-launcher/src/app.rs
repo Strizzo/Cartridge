@@ -158,7 +158,7 @@ impl LauncherApp {
         let filtered_events: Vec<_> = events.iter().copied().filter(|event| {
             if event.button == cartridge_core::input::Button::R2 && self.ctx.system_update_jobs.progress.is_none() && self.ctx.store_jobs.progress.is_none() && !self.ctx.store_jobs.notices.is_empty() {
                 if event.action == cartridge_core::input::InputAction::Press && self.ctx.store_jobs.can_page_notice() {
-                    self.ctx.store_jobs.notice_page += 1;
+                    self.ctx.store_jobs.advance_notice_page();
                     if self.ctx.store_jobs.notice_page >= self.ctx.notice_pages.max(1) {
                         self.ctx.store_jobs.dismiss_notice();
                     }
@@ -462,6 +462,15 @@ mod store_navigation_tests {
         app.handle_input(&[r2, r2]);
         assert_eq!(app.ctx.store_jobs.notices.len(), 1); // Second press cannot dismiss the next unseen notice.
         assert_eq!(app.ctx.store_jobs.notices.front().unwrap().message, "Catalog verified");
+        app.ctx.store_jobs.error("A longer two-page update error");
+        app.ctx.store_jobs.mark_notice_rendered();
+        app.ctx.notice_pages = 2;
+        app.handle_input(&[r2, r2]);
+        assert_eq!(app.ctx.store_jobs.notice_page, 1);
+        assert_eq!(app.ctx.store_jobs.notices.len(), 2); // Page two must render before dismissal.
+        app.ctx.store_jobs.mark_notice_rendered();
+        app.handle_input(&[r2]);
+        assert_eq!(app.ctx.store_jobs.notices.len(), 1);
         std::fs::remove_dir_all(app.ctx.storage.data_dir.parent().unwrap().parent().unwrap()).unwrap();
     }
 

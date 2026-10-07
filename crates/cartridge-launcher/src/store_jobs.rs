@@ -165,6 +165,11 @@ impl StoreJobs {
         })
     }
 
+    pub fn advance_notice_page(&mut self) {
+        self.notice_page += 1;
+        self.rendered_notice = None;
+    }
+
     pub fn dismiss_notice(&mut self) {
         self.notices.pop_front();
         self.notice_page = 0;
