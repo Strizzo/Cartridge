@@ -29,34 +29,28 @@ local state = {
     probe_results = {},
     probe_loading = false,
     probe_cursor = 0,
-    -- Deferred loading
-    needs_initial_load = true,
-    ready_to_load = false,
+    headers_loading = false,
 }
 
 -- ── Drawing Helpers ──────────────────────────────────────────────────────────
 
 local function draw_header()
-    screen.draw_gradient_rect(0, 0, 720, 40,
-        theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
-        theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
-    screen.draw_text("Net Tool", 12, 10, {color=theme.text, size=20, bold=true})
+    ui.header("NET TOOL")
 end
 
 local function draw_tab_bar()
     local y = 40
-    screen.draw_rect(0, y, 720, 30, {color=theme.bg_header, filled=true})
+    ui.rect(0, y, 720, 30, {color=theme.bg_header, filled=true})
     local tx = 10
     for i, label in ipairs(state.tabs) do
         local is_active = (i == state.active_tab)
         local tw = screen.get_text_width(label, 12, is_active)
         local tab_w = tw + 16
         if is_active then
-            screen.draw_rect(tx, y + 4, tab_w, 22, {color=theme.accent, filled=true, radius=4})
+            ui.rect(tx, y + 4, tab_w, 22, {color=theme.accent, filled=true, radius=4})
             screen.draw_text(label, tx + 8, y + 7, {color={20, 20, 30}, size=12, bold=true})
         else
-            screen.draw_rect(tx, y + 4, tab_w, 22, {color=theme.card_bg, filled=true, radius=4})
+            ui.rect(tx, y + 4, tab_w, 22, {color=theme.card_bg, filled=true, radius=4})
             screen.draw_text(label, tx + 8, y + 7, {color=theme.text_dim, size=12})
         end
         tx = tx + tab_w + 6
@@ -65,17 +59,11 @@ local function draw_tab_bar()
 end
 
 local function draw_footer(hints)
-    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 684, 720, 684, {color=theme.border})
-    local x = 10
-    for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
-        x = x + w + 14
-    end
+    ui.footer(hints)
 end
 
 local function draw_card(x, y, w, h, label, value, value_color)
-    screen.draw_card(x, y, w, h, {bg=theme.card_bg, border=theme.card_border, radius=6})
+    ui.card(x, y, w, h, {bg=theme.card_bg, border=theme.card_border, radius=6})
     screen.draw_text(label, x + 12, y + 8, {color=theme.text_dim, size=12, bold=true})
     screen.draw_text(value or "—", x + 12, y + 28, {color=value_color or theme.text, size=14})
 end
@@ -86,98 +74,101 @@ local function draw_loading(msg)
     screen.draw_text(text, (720 - tw) / 2, 360, {color=theme.text_dim, size=16})
 end
 
+local pending = {}
+local function request(url, handler)
+    local ok, id = pcall(http.get_async, url)
+    if ok then pending[id] = handler
+    else handler({ok=false, status=0, body=tostring(id), elapsed_ms=0}) end
+end
+
+local function poll_requests()
+    for _, response in ipairs(http.poll()) do
+        local handler = pending[response.id]
+        if handler then
+            pending[response.id] = nil
+            handler(response)
+        end
+    end
+end
+
 -- ── Data Loading ─────────────────────────────────────────────────────────────
 
 local function load_overview()
+    if state.loading then return end
     state.loading = true
     state.error_msg = ""
-
-    -- Public IP via ipinfo.io
-    local ok, resp = pcall(http.get_cached, "https://ipinfo.io/json", 60)
-    if ok and resp.ok then
-        local dok, data = pcall(json.decode, resp.body)
-        if dok and data then
-            state.public_ip = data.ip or "Unknown"
-            state.geo = {
-                city = data.city or "",
-                region = data.region or "",
-                country = data.country or "",
-                org = data.org or "",
-                timezone = data.timezone or "",
-                loc = data.loc or "",
-            }
-        else
-            state.error_msg = "Failed to parse IP data"
-        end
-    else
-        state.error_msg = "Failed to fetch IP info"
-    end
-
-    state.loading = false
+    request("https://ipinfo.io/json", function(resp)
+        local ok, data = pcall(json.decode, resp.body)
+        if resp.ok and ok and type(data) == "table" and data.ip then
+            state.public_ip = data.ip
+            state.geo = {city=data.city or "", region=data.region or "", country=data.country or "",
+                         org=data.org or "", timezone=data.timezone or "", loc=data.loc or ""}
+        else state.error_msg = "Could not fetch IP info. X to retry." end
+        state.loading = false
+    end)
 end
 
 local function load_headers()
+    if state.headers_loading then return end
+    state.headers_loading = true
     state.headers_lines = {}
-    local ok, resp = pcall(http.get, "https://httpbin.org/headers")
-    if ok and resp.ok then
-        local dok, data = pcall(json.decode, resp.body)
-        if dok and data and data.headers then
-            for k, v in pairs(data.headers) do
-                state.headers_lines[#state.headers_lines + 1] = {key = k, value = v}
+    state.headers_scroll = 0
+    request("https://httpbin.org/headers", function(resp)
+        local ok, data = pcall(json.decode, resp.body)
+        if resp.ok and ok and type(data) == "table" and type(data.headers) == "table" then
+            for k,v in pairs(data.headers) do
+                state.headers_lines[#state.headers_lines+1] = {key=tostring(k), value=tostring(v)}
             end
-            table.sort(state.headers_lines, function(a, b) return a.key < b.key end)
+            table.sort(state.headers_lines, function(a,b) return a.key < b.key end)
         end
-    end
-    if #state.headers_lines == 0 then
-        state.headers_lines[#state.headers_lines + 1] = {key = "Error", value = "Could not fetch headers"}
-    end
+        if #state.headers_lines == 0 then
+            state.headers_lines = {{key="Unavailable", value="Could not fetch headers. X to retry."}}
+        end
+        state.headers_loading = false
+    end)
 end
 
 local function load_dns()
+    if state.dns_loading then return end
     state.dns_loading = true
     state.dns_results = {}
-    for _, target in ipairs(state.dns_targets) do
-        local ok, resp = pcall(http.get_cached, "https://dns.google/resolve?name=" .. target .. "&type=A", 120)
-        local result = {name = target, status = "error", ips = {}}
-        if ok and resp.ok then
-            local dok, data = pcall(json.decode, resp.body)
-            if dok and data then
-                result.status = (data.Status == 0) and "ok" or ("code:" .. tostring(data.Status))
-                if data.Answer then
-                    for _, ans in ipairs(data.Answer) do
-                        if ans.type == 1 then  -- A record
-                            result.ips[#result.ips + 1] = ans.data
-                        end
-                    end
+    state.dns_cursor = 0
+    local remaining = #state.dns_targets
+    for i,target in ipairs(state.dns_targets) do
+        local result = {name=target, status="waiting", ips={}}
+        state.dns_results[i] = result
+        request("https://dns.google/resolve?name="..target.."&type=A", function(resp)
+            local ok, data = pcall(json.decode, resp.body)
+            result.status = "error"
+            if resp.ok and ok and type(data) == "table" then
+                result.status = data.Status == 0 and "ok" or ("code:"..tostring(data.Status))
+                for _,answer in ipairs(type(data.Answer)=="table" and data.Answer or {}) do
+                    if answer.type == 1 then result.ips[#result.ips+1] = tostring(answer.data) end
                 end
             end
-        end
-        state.dns_results[#state.dns_results + 1] = result
+            remaining = remaining - 1
+            state.dns_loading = remaining > 0
+        end)
     end
-    state.dns_loading = false
 end
 
 local function load_probes()
+    if state.probe_loading then return end
     state.probe_loading = true
     state.probe_results = {}
-    for _, target in ipairs(state.probe_targets) do
-        local start_t = os.clock()
-        local ok, resp = pcall(http.get, target.url)
-        local elapsed = math.floor((os.clock() - start_t) * 1000)
-        local result = {
-            name = target.name,
-            url = target.url,
-            status = "error",
-            code = 0,
-            time_ms = elapsed,
-        }
-        if ok and resp then
+    state.probe_cursor = 0
+    local remaining = #state.probe_targets
+    for i,target in ipairs(state.probe_targets) do
+        local result = {name=target.name, url=target.url, status="waiting", code=0, time_ms=nil}
+        state.probe_results[i] = result
+        request(target.url, function(resp)
             result.code = resp.status or 0
             result.status = resp.ok and "up" or "down"
-        end
-        state.probe_results[#state.probe_results + 1] = result
+            result.time_ms = math.floor(resp.elapsed_ms or 0)
+            remaining = remaining - 1
+            state.probe_loading = remaining > 0
+        end)
     end
-    state.probe_loading = false
 end
 
 -- ── Screens ──────────────────────────────────────────────────────────────────
@@ -214,7 +205,7 @@ local function draw_overview()
 
     -- Visual separator
     y = y + 10
-    screen.draw_text("Network connectivity appears normal", 20, y, {color=theme.positive, size=13})
+    screen.draw_text("IP lookup complete", 20, y, {color=theme.positive, size=13})
 end
 
 local function draw_headers_tab()
@@ -244,7 +235,7 @@ end
 local function draw_dns_tab()
     local y = 82
 
-    if state.dns_loading then
+    if state.dns_loading and #state.dns_results == 0 then
         draw_loading("Resolving DNS...")
         return
     end
@@ -262,14 +253,14 @@ local function draw_dns_tab()
         local card_h = 50
         local bg = is_sel and theme.card_highlight or theme.card_bg
         local border = is_sel and theme.accent or theme.card_border
-        screen.draw_card(12, y, 696, card_h, {bg=bg, border=border, radius=6})
+        ui.card(12, y, 696, card_h, {bg=bg, border=border, radius=6})
 
         -- Domain name
         screen.draw_text(r.name, 24, y + 6, {color=theme.text, size=14, bold=true})
 
         -- Status
         local status_color = r.status == "ok" and theme.positive or theme.negative
-        screen.draw_pill(r.status:upper(), 620, y + 6, status_color.r, status_color.g, status_color.b, {text_color={20,20,30}, size=10})
+        ui.pill(r.status:upper(), 620, y + 6, status_color.r, status_color.g, status_color.b, {text_color={20,20,30}, size=10})
 
         -- IPs
         local ip_str = #r.ips > 0 and table.concat(r.ips, ", ") or "No A records"
@@ -282,7 +273,7 @@ end
 local function draw_probe_tab()
     local y = 82
 
-    if state.probe_loading then
+    if state.probe_loading and #state.probe_results == 0 then
         draw_loading("Probing endpoints...")
         return
     end
@@ -300,19 +291,19 @@ local function draw_probe_tab()
         local card_h = 50
         local bg = is_sel and theme.card_highlight or theme.card_bg
         local border = is_sel and theme.accent or theme.card_border
-        screen.draw_card(12, y, 696, card_h, {bg=bg, border=border, radius=6})
+        ui.card(12, y, 696, card_h, {bg=bg, border=border, radius=6})
 
         -- Name
         screen.draw_text(r.name, 24, y + 6, {color=theme.text, size=14, bold=true})
 
         -- Status pill
         local status_color = r.status == "up" and theme.positive or theme.negative
-        screen.draw_pill(r.status:upper(), 580, y + 6, status_color.r, status_color.g, status_color.b, {text_color={20,20,30}, size=10})
+        ui.pill(r.status:upper(), 580, y + 6, status_color.r, status_color.g, status_color.b, {text_color={20,20,30}, size=10})
 
         -- Response time
-        local time_str = r.time_ms .. "ms"
-        local time_color = r.time_ms < 500 and theme.positive or (r.time_ms < 2000 and theme.text_warning or theme.negative)
-        screen.draw_pill(time_str, 630, y + 6, time_color.r, time_color.g, time_color.b, {text_color={20,20,30}, size=10})
+        local time_str = r.time_ms and (r.time_ms .. "ms") or "--"
+        local time_color = not r.time_ms and theme.text_dim or r.time_ms < 500 and theme.positive or (r.time_ms < 2000 and theme.text_warning or theme.negative)
+        ui.pill(time_str, 630, y + 6, time_color.r, time_color.g, time_color.b, {text_color={20,20,30}, size=10})
 
         -- URL + HTTP code
         local meta = r.url .. "  [" .. r.code .. "]"
@@ -325,14 +316,11 @@ end
 -- ── Lifecycle ────────────────────────────────────────────────────────────────
 
 function on_init()
-    state.loading = true
+    load_overview()
 end
 
 function on_update(dt)
-    if state.ready_to_load then
-        state.ready_to_load = false
-        load_overview()
-    end
+    poll_requests()
 end
 
 function on_input(button, action)
@@ -359,7 +347,6 @@ function on_input(button, action)
         if button == "a" and #state.headers_lines == 0 then
             load_headers()
         elseif button == "x" then
-            state.headers_lines = {}
             load_headers()
         elseif button == "dpad_up" then
             state.headers_scroll = math.max(0, state.headers_scroll - 1)
@@ -371,24 +358,22 @@ function on_input(button, action)
         if button == "a" and #state.dns_results == 0 then
             load_dns()
         elseif button == "x" then
-            state.dns_results = {}
             load_dns()
         elseif button == "dpad_up" then
             state.dns_cursor = math.max(0, state.dns_cursor - 1)
         elseif button == "dpad_down" then
-            state.dns_cursor = math.min(#state.dns_results - 1, state.dns_cursor + 1)
+            state.dns_cursor = math.min(math.max(0, #state.dns_results - 1), state.dns_cursor + 1)
         end
     elseif tab == 4 then
         -- Probe
         if button == "a" and #state.probe_results == 0 then
             load_probes()
         elseif button == "x" then
-            state.probe_results = {}
             load_probes()
         elseif button == "dpad_up" then
             state.probe_cursor = math.max(0, state.probe_cursor - 1)
         elseif button == "dpad_down" then
-            state.probe_cursor = math.min(#state.probe_results - 1, state.probe_cursor + 1)
+            state.probe_cursor = math.min(math.max(0, #state.probe_results - 1), state.probe_cursor + 1)
         end
     end
 end
@@ -396,10 +381,6 @@ end
 function on_render()
     screen.clear(theme.bg.r, theme.bg.g, theme.bg.b)
 
-    if state.needs_initial_load then
-        state.needs_initial_load = false
-        state.ready_to_load = true
-    end
 
     draw_header()
     draw_tab_bar()

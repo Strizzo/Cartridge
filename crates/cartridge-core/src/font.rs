@@ -17,7 +17,6 @@ pub enum FontStyle {
 
 /// Manages font loading and caching.
 pub struct FontCache {
-    ttf_context: Sdl2TtfContext,
     fonts: HashMap<(FontStyle, u16), Font<'static, 'static>>,
     assets_dir: PathBuf,
     regular_path: PathBuf,
@@ -28,6 +27,10 @@ pub struct FontCache {
     same_family: bool,
     display_path: PathBuf,
     display_cache: DisplayCache,
+    // Rust drops fields in declaration order. SDL_ttf must remain initialized
+    // while Font::drop closes each font/RWops; putting this first leaks every
+    // font's file descriptor across app launches (Font::drop skips after Quit).
+    ttf_context: Sdl2TtfContext,
 }
 
 const DEFAULT_FAMILY: &str = "ShareTechMono-Regular";

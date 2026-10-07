@@ -1,0 +1,22 @@
+{
+  "map": {
+    "title": "Natural Earth 1:110m admin 0 countries",
+    "version": "5.1.2",
+    "license": "Public domain",
+    "source": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_110m_admin_0_countries.geojson",
+    "terms": "https://www.naturalearthdata.com/about/terms-of-use/",
+    "source_sha256": "6866c877d39cba9c357620878839b336d569f8c662d3cfab4cb1dbe2d39c977f",
+    "projection": "Equirectangular; x=(lon+180)/360*672; y=(90-lat)/180*252; full world; image origin (24,150).",
+    "notes": "Generalized boundaries are illustrative, not a political position. Station pins use Radio Browser coordinates only."
+  },
+  "icon": {
+    "creator": "Cartridge Team",
+    "description": "Original radio dial drawn from circles, lines and a tuning needle."
+  },
+  "directory": {
+    "source": "https://www.radio-browser.info/",
+    "api": "https://docs.radio-browser.info/",
+    "license": "Community data; Radio Browser states its database is public domain.",
+    "notes": "Stream content and station marks remain with their respective owners. No station logos are fabricated or redistributed. Coordinates and codec labels are contributor-supplied and may be inaccurate."
+  }
+}

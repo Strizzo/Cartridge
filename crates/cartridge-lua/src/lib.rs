@@ -1,15 +1,18 @@
 pub mod api;
 pub mod manifest;
 pub mod runner;
+mod http_fixture;
+pub mod stream_audio;
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use cartridge_core::font::FontCache;
 use cartridge_core::image_cache::ImageCache;
-use cartridge_core::input::{Button, InputManager};
+use cartridge_core::input::{Button, InputAction, InputManager};
 use cartridge_core::perf::{self, FrameStats, FrameTimes};
-use cartridge_core::screen::{Screen, HEIGHT, WIDTH};
+use cartridge_core::screen::Screen;
+use cartridge_core::sticks::{StickEvent, StickManager};
 use cartridge_core::text_cache::TextCache;
 use cartridge_core::theme::Theme;
 
@@ -31,7 +34,7 @@ const FORCE_RENDER_EVERY: Duration = Duration::from_secs(1);
 pub struct LuaAppConfig {
     /// Create the SDL window hidden (also honoured via CARTRIDGE_HIDDEN=1).
     pub hidden: bool,
-    /// Skip the frame-rate sleep so benches run as fast as possible.
+    /// Skip frame pacing so benches run as fast as possible.
     pub uncapped: bool,
     /// Stop after this many frames (None = run until quit).
     pub max_frames: Option<u64>,
@@ -42,6 +45,18 @@ pub struct LuaAppConfig {
     pub capture_frames: Vec<u64>,
     /// Print the perf summary when the run ends.
     pub print_stats: bool,
+    /// Simulator-only HTTP replies; unmatched requests fail offline.
+    pub http_fixture: Option<PathBuf>,
+    /// Separate data/cache root for simulator scenarios.
+    pub storage_root: Option<PathBuf>,
+    /// Frame-numbered button presses for deterministic interaction checks.
+    pub script: Vec<(u64, Button)>,
+    /// Simulator stick deflections (same normalization/dead zone as a controller).
+    pub stick_script: Vec<(u64, StickEvent)>,
+    /// Simulator-only deterministic update timestep.
+    pub fixed_dt: Option<f32>,
+    /// Automated checks fail on Lua errors instead of capturing an error panel.
+    pub fail_on_error: bool,
 }
 
 /// Run a Lua cartridge app from the given directory.
@@ -54,7 +69,12 @@ pub struct LuaAppConfig {
 /// 5. Enters the frame loop calling Lua lifecycle functions
 /// 6. Handles Escape/window close to quit
 pub fn run_lua_app(app_dir: &Path, assets_dir: &Path) -> Result<(), String> {
-    run_lua_app_with_config(app_dir, assets_dir, LuaAppConfig::default()).map(|_| ())
+    let http_fixture = if cartridge_core::sim::is_sim() {
+        std::env::var_os("CARTRIDGE_HTTP_FIXTURE").map(PathBuf::from)
+    } else { None };
+    run_lua_app_with_config(app_dir, assets_dir, LuaAppConfig {
+        http_fixture, ..Default::default()
+    }).map(|_| ())
 }
 
 /// Run a Lua cartridge with bench/test config. Returns frame stats.
@@ -72,6 +92,12 @@ pub fn run_lua_app_with_config(
     assets_dir: &Path,
     config: LuaAppConfig,
 ) -> Result<FrameStats, String> {
+    if (config.storage_root.is_some() || !config.stick_script.is_empty() || config.fixed_dt.is_some()) && !cartridge_core::sim::is_sim() {
+        return Err("Scenario input, timing and storage require simulator mode".into());
+    }
+    if config.fixed_dt.is_some_and(|dt| !dt.is_finite() || dt<=0.0 || dt>1.0) {
+        return Err("Fixed timestep must be finite, positive and at most one second".into());
+    }
     let manifest = CartridgeManifest::load(app_dir)?;
     log::info!(
         "Running cartridge: {} v{} by {}",
@@ -89,7 +115,7 @@ pub fn run_lua_app_with_config(
 
     let window_title = format!("CartridgeOS - {}", manifest.name);
     // Shared helper: honors CARTRIDGE_HIDDEN/SOFTWARE/SCALE/FULLSCREEN.
-    // No present_vsync(): unreliable on RK3326; sleep cap below provides timing.
+    // No present_vsync(): unreliable on RK3326; event-aware cap below provides timing.
     let mut canvas = cartridge_core::window::create_canvas(
         &video_subsystem,
         &window_title,
@@ -108,14 +134,17 @@ pub fn run_lua_app_with_config(
     // palette and font family for a consistent look across the OS.
     let theme = Theme::user_selected();
     fonts.set_family(theme.font_regular, theme.font_bold);
+    fonts.set_display(theme.font_display);
     fonts.prewarm();
     let mut input_manager = InputManager::new();
     if !_controllers.is_empty() {
         input_manager.set_ignore_joystick(true);
     }
+    let mut sticks=StickManager::new(_controllers.iter().map(|c|c.instance_id()),cartridge_core::sim::is_sim());
     let mut event_pump = sdl_context.event_pump()?;
+    let mut event_inbox = cartridge_core::event_wait::EventInbox::default();
 
-    let mut app = LuaAppRunner::new(app_dir, &manifest.entry, &manifest.id, &theme, &manifest.permissions)?;
+    let mut app = LuaAppRunner::new_with_options(app_dir, &manifest.entry, &manifest.id, &theme, &manifest.permissions, config.http_fixture.as_deref(), config.storage_root.as_deref())?;
 
     // Call on_init
     app.call_init();
@@ -135,7 +164,8 @@ pub fn run_lua_app_with_config(
 
     // Bench/test infrastructure
     let mut frame_count: u64 = 0;
-    let mut all_frame_ms: Vec<f32> = Vec::with_capacity(1024);
+    let mut all_frame_ms = cartridge_core::perf::FrameSamples::new(config.max_frames.is_some());
+    let mut render_frame_ms = cartridge_core::perf::FrameSamples::new(config.max_frames.is_some());
     let bench_start = Instant::now();
 
     // Hot-reload support: when CARTRIDGE_HOT_RELOAD=1, watch the cartridge
@@ -151,7 +181,8 @@ pub fn run_lua_app_with_config(
 
     'running: loop {
         let frame_start = Instant::now();
-        let dt = frame_start.duration_since(last_frame).as_secs_f32();
+        let mut capture_time = std::time::Duration::ZERO;
+        let dt = config.fixed_dt.unwrap_or_else(||frame_start.duration_since(last_frame).as_secs_f32());
         last_frame = frame_start;
 
         // Hot reload: every 1s, check for .lua file changes and recreate the VM.
@@ -162,7 +193,7 @@ pub fn run_lua_app_with_config(
                 log::info!("Hot reload: detected change, restarting cartridge VM");
                 app.call_destroy();
                 drop(app);
-                match LuaAppRunner::new(app_dir, &manifest.entry, &manifest.id, &theme, &manifest.permissions) {
+                match LuaAppRunner::new_with_options(app_dir, &manifest.entry, &manifest.id, &theme, &manifest.permissions, config.http_fixture.as_deref(), config.storage_root.as_deref()) {
                     Ok(mut new_app) => {
                         new_app.call_init();
                         app = new_app;
@@ -172,23 +203,23 @@ pub fn run_lua_app_with_config(
                         // Caller will see a Lua error screen on next render via
                         // the runner's error path -- but we couldn't reach a
                         // runner. Re-create with the old code if possible.
-                        app = LuaAppRunner::new(app_dir, &manifest.entry, &manifest.id, &theme, &manifest.permissions)?;
+                        app = LuaAppRunner::new_with_options(app_dir, &manifest.entry, &manifest.id, &theme, &manifest.permissions, config.http_fixture.as_deref(), config.storage_root.as_deref())?;
                         app.call_init();
                     }
                 }
+                sticks.clear();
                 dirty = true;
             }
             last_lua_mtime = cur;
         }
 
         // Collect events
-        let events: Vec<sdl2::event::Event> = event_pump.poll_iter().collect();
+        let events = event_inbox.collect(&mut event_pump);
 
         // Check for quit via raw SDL events (bypasses input manager).
-        // This catches Select/Start regardless of GameController mapping.
+        // Select exits only when no keyboard is open; inside it Select cancels.
         let mut raw_select = false;
-        let mut raw_start = false;
-        for event in &events {
+        for event in events {
             match event {
                 sdl2::event::Event::Quit { .. } => break 'running,
                 sdl2::event::Event::KeyDown {
@@ -199,9 +230,6 @@ pub fn run_lua_app_with_config(
                 sdl2::event::Event::JoyButtonDown { button_idx: 12, .. } => {
                     raw_select = true;
                 }
-                sdl2::event::Event::JoyButtonDown { button_idx: 13, .. } => {
-                    raw_start = true;
-                }
                 // GameController API: Back=Select, Start=Start
                 sdl2::event::Event::ControllerButtonDown { button, .. } => {
                     match button {
@@ -209,30 +237,48 @@ pub fn run_lua_app_with_config(
                         | sdl2::controller::Button::Guide => {
                             raw_select = true;
                         }
-                        sdl2::controller::Button::Start => {
-                            raw_start = true;
-                        }
                         _ => {}
                     }
                 }
                 _ => {}
             }
         }
-        // Exit on Select alone or Start+Select combo
-        if raw_select || (raw_start && raw_select) {
+        if raw_select && !app.text_input_active() {
             break 'running;
         }
         // Screenshot (F12 / SIGUSR1): reads back the last presented frame.
         // Best-effort on accelerated renderers; exact with CARTRIDGE_SOFTWARE=1.
-        if cartridge_core::screenshot::requested(&events) {
+        if cartridge_core::screenshot::requested(events) {
+            let capture_start = Instant::now();
             if let Err(e) = cartridge_core::screenshot::save_now(&canvas) {
                 log::warn!("Screenshot failed: {e}");
             }
+            capture_time += capture_start.elapsed();
         }
 
-        // Process input
-        let input_events = input_manager.process_events(&events);
-        let had_input = !input_events.is_empty();
+        // Independent axes are delivered only to opt-in apps; physical buttons stay unchanged.
+        let stick_aware=app.handles_sticks();
+        input_manager.set_stick_dpad_enabled(!stick_aware || app.text_input_active());
+        sticks.process_events(events);
+        for &(frame,event) in &config.stick_script {
+            if frame==frame_count { sticks.inject(event.stick,event.x,event.y); }
+        }
+        if app.text_input_active() { sticks.capture(); }
+        let stick_events=sticks.take_changes();
+        if stick_aware {
+            app.call_sticks(&stick_events);
+            if sticks.active() { last_input=frame_start; }
+        }
+        // Process buttons
+        let mut input_events = input_manager.process_events(events);
+        for &(frame, button) in &config.script {
+            if frame == frame_count {
+                use cartridge_core::input::{InputEvent, InputAction};
+                input_events.push(InputEvent { button, action: InputAction::Press });
+                input_events.push(InputEvent { button, action: InputAction::Release });
+            }
+        }
+        let had_input = !input_events.is_empty() || (stick_aware && !stick_events.is_empty());
         if had_input {
             dirty = true;
             last_input = frame_start;
@@ -242,14 +288,15 @@ pub fn run_lua_app_with_config(
         // delivering them to the Lua app. Lua reads results via text_input.poll().
         if app.text_input_active() {
             for ev in &input_events {
-                if ev.button == Button::Select {
-                    continue;
-                }
                 app.text_input_handle(ev);
             }
-            // The overlay animates (cursor) and reflects typing; keep it live.
-            dirty = true;
+            // The keyboard is static between input events.
         } else {
+            // Keyboard Space and scripted Select have the same exit behavior
+            // as the handheld's physical Select button.
+            if input_events.iter().any(|ev| ev.button == Button::Select && ev.action == InputAction::Press) {
+                break 'running;
+            }
             // Deliver input to Lua (filter out Select so apps don't see it)
             let lua_events: Vec<_> = input_events
                 .into_iter()
@@ -277,7 +324,8 @@ pub fn run_lua_app_with_config(
         let should_capture = config.capture_frames.contains(&frame_count);
         let force = last_render.elapsed() >= FORCE_RENDER_EVERY || should_capture;
 
-        if dirty || force {
+        let render_this_frame = dirty || force;
+        if render_this_frame {
             {
                 let mut screen = Screen {
                     canvas: &mut canvas,
@@ -310,6 +358,7 @@ pub fn run_lua_app_with_config(
             }
 
             // Capture BEFORE present so we get exactly what was drawn.
+            let capture_start = Instant::now();
             if should_capture {
                 if let Some(ref dir) = config.capture_dir {
                     let path = dir.join(format!("frame_{frame_count:04}.png"));
@@ -321,15 +370,20 @@ pub fn run_lua_app_with_config(
                 }
             }
 
+            capture_time += capture_start.elapsed();
             canvas.present();
             dirty = false;
             last_render = Instant::now();
         }
 
-        let frame_time = Instant::now().duration_since(frame_start);
+        if config.fail_on_error {
+            if let Some(error) = app.error() { return Err(format!("{}: {error}", manifest.name)); }
+        }
+        let frame_time = frame_start.elapsed().saturating_sub(capture_time);
         all_frame_ms.push(frame_time.as_secs_f32() * 1000.0);
+        if render_this_frame { render_frame_ms.push(frame_time.as_secs_f32() * 1000.0); }
 
-        // Adaptive frame rate cap. Never sleep past a frame that saw input.
+        // Adaptive update rate; incoming SDL input interrupts the idle wait.
         if !config.uncapped {
             let idle_secs = last_input.elapsed().as_secs_f32();
             let target_fps = if idle_secs > IDLE_AFTER_SECS {
@@ -338,8 +392,8 @@ pub fn run_lua_app_with_config(
                 ACTIVE_FPS
             };
             let target_time = Duration::from_secs_f64(1.0 / target_fps as f64);
-            if !had_input && frame_time < target_time {
-                std::thread::sleep(target_time - frame_time);
+            if !had_input {
+                event_inbox.wait(&mut event_pump, target_time.saturating_sub(frame_start.elapsed()));
             }
         }
 
@@ -347,7 +401,7 @@ pub fn run_lua_app_with_config(
         if show_fps {
             frame_times.push(frame_time.as_secs_f32());
             if last_stats_log.elapsed().as_secs() >= 5 {
-                let stats = FrameStats::build(frame_count, &all_frame_ms, &text_cache, bench_start);
+                let stats = FrameStats::build(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start);
                 log::info!("{}", stats.log_line());
                 last_stats_log = Instant::now();
             }
@@ -365,7 +419,7 @@ pub fn run_lua_app_with_config(
     // Call on_destroy
     app.call_destroy();
 
-    let stats = FrameStats::build(frame_count, &all_frame_ms, &text_cache, bench_start);
+    let stats = FrameStats::build(frame_count, &all_frame_ms, &render_frame_ms, &text_cache, bench_start);
     if config.print_stats {
         stats.print_summary("Lua App Perf Stats");
     }

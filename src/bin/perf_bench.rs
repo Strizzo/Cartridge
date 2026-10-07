@@ -14,8 +14,8 @@
 //!     app [path]   - Run a Lua cartridge hidden + uncapped for 600 frames
 //!                    (default path: lua_cartridges/bench)
 //!
-//! Outputs frame timing percentiles, FPS, and text cache hit rate.
-//! Exits with non-zero status if frame_ms_p95 exceeds the threshold.
+//! Outputs rendered-frame work percentiles, presentation rate and text cache hit rate.
+//! Exits with non-zero status if render_ms_p95 exceeds the threshold.
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -65,10 +65,10 @@ fn main() -> Result<(), String> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(if cfg!(debug_assertions) { 200.0 } else { 30.0 });
 
-    if stats.frame_ms_p95 > threshold_ms {
+    if stats.render_ms_p95 > threshold_ms {
         eprintln!(
-            "FAIL: p95 frame time {:.2}ms exceeds threshold {threshold_ms:.0}ms",
-            stats.frame_ms_p95
+            "FAIL: p95 rendered-frame work {:.2}ms exceeds threshold {threshold_ms:.0}ms",
+            stats.render_ms_p95
         );
         std::process::exit(1);
     }
@@ -154,6 +154,8 @@ fn run_app(assets: &PathBuf, path: Option<String>) -> Result<LauncherStats, Stri
         print_stats: true,
         capture_frames: if capture_dir.is_some() { vec![30] } else { vec![] },
         capture_dir,
+        fail_on_error: true,
+        ..Default::default()
     };
     run_lua_app_with_config(&app_dir, assets, config)
 }
@@ -161,7 +163,8 @@ fn run_app(assets: &PathBuf, path: Option<String>) -> Result<LauncherStats, Stri
 fn print_summary(scenario: &str, stats: &LauncherStats, wall_secs: f32) {
     println!("\n=== Bench: {scenario} ===");
     println!("  wall time  : {wall_secs:.2}s ({} frames)", stats.frames);
-    println!("  uncapped   : {} fps", stats.fps_avg().round());
+    println!("  presents   : {} per second", stats.fps_avg().round());
+    println!("  rendered   : {} frames, avg={:.2} p95={:.2} max={:.2}ms", stats.rendered_frames, stats.render_ms_avg, stats.render_ms_p95, stats.render_ms_max);
     println!("  frame ms   : min={:.2}  avg={:.2}  p95={:.2}  max={:.2}",
         stats.frame_ms_min, stats.frame_ms_avg, stats.frame_ms_p95, stats.frame_ms_max);
     let total = (stats.cache_hits + stats.cache_misses).max(1);

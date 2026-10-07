@@ -1,5 +1,6 @@
 pub mod atmosphere;
 pub mod device;
+pub mod event_wait;
 pub mod font;
 pub mod gradient_cache;
 pub mod image_cache;
@@ -10,6 +11,7 @@ pub mod screen;
 pub mod screenshot;
 pub mod sim;
 pub mod storage;
+pub mod sticks;
 pub mod sysinfo;
 pub mod text_cache;
 pub mod theme;

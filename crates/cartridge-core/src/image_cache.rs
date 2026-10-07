@@ -28,6 +28,9 @@ impl ImageCache {
         })
     }
 
+    /// Release a large preview once selection changes.
+    pub fn remove(&mut self, path: &str) { self.textures.remove(path); }
+
     /// Get a cached texture by file path. Lazy-loads from disk on first access.
     /// Returns None if the file cannot be loaded.
     pub fn get(&mut self, path: &str) -> Option<&Texture<'static>> {

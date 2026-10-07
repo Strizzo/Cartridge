@@ -1,0 +1,24 @@
+# Isolated image-preparation VM. The command supplies one writable staging mount;
+# it never passes a raw device or the working card into the guest.
+minimumLimaVersion: 2.0.0
+vmType: vz
+arch: aarch64
+cpus: 2
+memory: 1GiB
+disk: 4GiB
+images:
+- location: https://cloud-images.ubuntu.com/minimal/releases/noble/release-20260716/ubuntu-24.04-minimal-cloudimg-arm64.img
+  arch: aarch64
+  digest: sha256:7e938df669e3b1923595eeda97aa28569350c5283e05a835cc912a2486a54934
+mounts: []
+networks:
+- vzNAT: true
+containerd:
+  system: false
+  user: false
+provision:
+- mode: system
+  script: |
+    #!/bin/sh
+    set -eu
+    touch /etc/cartridge-prep-vm

@@ -1,20 +1,22 @@
-use cartridge_core::device::{
-    get_brightness_percent, get_volume_percent, set_brightness_percent, set_volume_percent,
-};
+#[path = "settings_hardware.rs"]
+mod hardware;
+
 use cartridge_core::input::{Button, InputAction, InputEvent};
 use cartridge_core::screen::Screen;
 use cartridge_core::theme::THEME_PRESETS;
+use hardware::HardwareControl;
 use sdl2::rect::Rect;
 
+use super::{LauncherScreen, ScreenAction, ScreenContext, ScreenId};
 use crate::neo::{self, Chip, Hint};
 use crate::ui_constants::*;
-use super::{LauncherScreen, ScreenAction, ScreenContext, ScreenId};
 
-const NEO_ROW_H: i32 = 50;
+const NEO_ROW_H: i32 = 56;
+const CARD_ROW_H: i32 = 52;
 const NEO_LIST_Y: i32 = neo::CONTENT_Y + 12;
 
 const CACHE_OPTIONS: &[u32] = &[15, 30, 60, 120, 360];
-const SETTINGS_ROWS: usize = 11;
+const SETTINGS_ROWS: usize = 12;
 // Step size for brightness/volume left/right adjustments.
 const HW_STEP: u8 = 10;
 // Row indices.
@@ -29,6 +31,7 @@ const HW_STEP: u8 = 10;
 //   8: Brightness    (hardware)
 //   9: Volume        (hardware)
 //  10: About
+//  11: System Update
 const ROW_THEME: usize = 4;
 const ROW_ANIMATIONS: usize = 5;
 const ROW_SOUNDS: usize = 6;
@@ -36,6 +39,7 @@ const ROW_WIFI: usize = 7;
 const ROW_BRIGHTNESS: usize = 8;
 const ROW_VOLUME: usize = 9;
 const ROW_ABOUT: usize = 10;
+const ROW_SYSTEM_UPDATE: usize = 11;
 
 /// Move to the next/previous theme preset by id, wrapping at the ends.
 fn cycle_theme(current: &str, forward: bool) -> String {
@@ -65,6 +69,9 @@ fn theme_display_name(id: &str) -> &'static str {
 
 pub struct SettingsScreen {
     selected_row: usize,
+    first_row: usize,
+    brightness: HardwareControl,
+    volume: HardwareControl,
 }
 
 impl Default for SettingsScreen {
@@ -75,11 +82,27 @@ impl Default for SettingsScreen {
 
 impl SettingsScreen {
     pub fn new() -> Self {
-        Self { selected_row: 0 }
+        Self {
+            selected_row: 0,
+            first_row: 0,
+            brightness: HardwareControl::brightness(),
+            volume: HardwareControl::volume(),
+        }
     }
 }
 
 impl LauncherScreen for SettingsScreen {
+    fn update(&mut self, _ctx: &mut ScreenContext) -> bool {
+        // Poll both controls even when the first one changes.
+        let brightness = self.brightness.poll();
+        let volume = self.volume.poll();
+        brightness || volume
+    }
+
+    fn is_loading(&self) -> bool {
+        self.brightness.is_pending() || self.volume.is_pending()
+    }
+
     fn handle_input(&mut self, events: &[InputEvent], ctx: &mut ScreenContext) -> ScreenAction {
         for ie in events {
             if ie.action != InputAction::Press && ie.action != InputAction::Repeat {
@@ -135,71 +158,72 @@ impl LauncherScreen for SettingsScreen {
                             ctx.settings.sounds_enabled = !ctx.settings.sounds_enabled;
                             ctx.save_settings();
                         }
+                        ROW_SYSTEM_UPDATE => {
+                            return ScreenAction::Push(ScreenId::SystemUpdate);
+                        }
                         ROW_WIFI => {
                             return ScreenAction::Push(ScreenId::WiFi);
                         }
                         ROW_BRIGHTNESS => {
-                            let cur = get_brightness_percent();
-                            let next = cur.saturating_add(HW_STEP).min(100);
-                            set_brightness_percent(next);
-                        }
-                        ROW_VOLUME => {
-                            let cur = get_volume_percent();
-                            let next = cur.saturating_add(HW_STEP).min(100);
-                            set_volume_percent(next);
-                        }
-                        _ => {}
-                    }
-                }
-                Button::DpadLeft => {
-                    match self.selected_row {
-                        1 => {
-                            ctx.settings.auto_refresh = !ctx.settings.auto_refresh;
-                            ctx.save_settings();
-                        }
-                        2 => {
-                            let current = ctx.settings.cache_duration_mins;
-                            let idx = CACHE_OPTIONS
-                                .iter()
-                                .position(|&v| v == current)
-                                .unwrap_or(0);
-                            let next = if idx == 0 {
-                                CACHE_OPTIONS.len() - 1
+                            if ie.button == Button::A && self.brightness.has_error() {
+                                self.brightness.retry();
                             } else {
-                                idx - 1
-                            };
-                            ctx.settings.cache_duration_mins = CACHE_OPTIONS[next];
-                            ctx.save_settings();
-                        }
-                        3 => {
-                            ctx.settings.show_processes = !ctx.settings.show_processes;
-                            ctx.save_settings();
-                        }
-                        ROW_THEME => {
-                            ctx.settings.theme_id = cycle_theme(&ctx.settings.theme_id, false);
-                            ctx.save_settings();
-                        }
-                        ROW_ANIMATIONS => {
-                            ctx.settings.animations_enabled = !ctx.settings.animations_enabled;
-                            ctx.save_settings();
-                        }
-                        ROW_SOUNDS => {
-                            ctx.settings.sounds_enabled = !ctx.settings.sounds_enabled;
-                            ctx.save_settings();
-                        }
-                        ROW_BRIGHTNESS => {
-                            let cur = get_brightness_percent();
-                            let next = cur.saturating_sub(HW_STEP);
-                            set_brightness_percent(next);
+                                self.brightness.adjust(i16::from(HW_STEP));
+                            }
                         }
                         ROW_VOLUME => {
-                            let cur = get_volume_percent();
-                            let next = cur.saturating_sub(HW_STEP);
-                            set_volume_percent(next);
+                            if ie.button == Button::A && self.volume.has_error() {
+                                self.volume.retry();
+                            } else {
+                                self.volume.adjust(i16::from(HW_STEP));
+                            }
                         }
                         _ => {}
                     }
                 }
+                Button::DpadLeft => match self.selected_row {
+                    1 => {
+                        ctx.settings.auto_refresh = !ctx.settings.auto_refresh;
+                        ctx.save_settings();
+                    }
+                    2 => {
+                        let current = ctx.settings.cache_duration_mins;
+                        let idx = CACHE_OPTIONS
+                            .iter()
+                            .position(|&v| v == current)
+                            .unwrap_or(0);
+                        let next = if idx == 0 {
+                            CACHE_OPTIONS.len() - 1
+                        } else {
+                            idx - 1
+                        };
+                        ctx.settings.cache_duration_mins = CACHE_OPTIONS[next];
+                        ctx.save_settings();
+                    }
+                    3 => {
+                        ctx.settings.show_processes = !ctx.settings.show_processes;
+                        ctx.save_settings();
+                    }
+                    ROW_THEME => {
+                        ctx.settings.theme_id = cycle_theme(&ctx.settings.theme_id, false);
+                        ctx.save_settings();
+                    }
+                    ROW_ANIMATIONS => {
+                        ctx.settings.animations_enabled = !ctx.settings.animations_enabled;
+                        ctx.save_settings();
+                    }
+                    ROW_SOUNDS => {
+                        ctx.settings.sounds_enabled = !ctx.settings.sounds_enabled;
+                        ctx.save_settings();
+                    }
+                    ROW_BRIGHTNESS => {
+                        self.brightness.adjust(-i16::from(HW_STEP));
+                    }
+                    ROW_VOLUME => {
+                        self.volume.adjust(-i16::from(HW_STEP));
+                    }
+                    _ => {}
+                },
                 Button::Select => {
                     return ScreenAction::ShowOverlay;
                 }
@@ -210,562 +234,390 @@ impl LauncherScreen for SettingsScreen {
     }
 
     fn render(&mut self, screen: &mut Screen, ctx: &ScreenContext) {
-        if neo::is_neo(screen.theme) {
-            self.render_neo(screen, ctx);
-            return;
-        }
-
+        let is_neo = neo::is_neo(screen.theme);
         let theme = screen.theme;
+        let start_y = if is_neo { NEO_LIST_Y } else { CONTENT_TOP + 6 };
+        let row_h = if is_neo { NEO_ROW_H } else { CARD_ROW_H };
+        let pitch = if is_neo { row_h } else { row_h + MARGIN };
+        let bottom = settings_list_bottom(ctx, is_neo);
+        let visible = ((bottom - start_y) / pitch).max(1) as usize;
+        let range = visible_rows(self.selected_row, &mut self.first_row, visible);
+        let rows = self.rows(ctx);
 
-        // -- Header (semi-transparent, atmosphere bleeds through) --
-        screen.draw_rect(
-            Rect::new(0, 0, SCREEN_WIDTH, HEADER_HEIGHT as u32),
-            Some(sdl2::pixels::Color::RGBA(14, 14, 20, 220)),
-            true,
-            0,
-            None,
-        );
-        screen.draw_glow_line(0, 0, SCREEN_WIDTH as i32 - 1, sdl2::pixels::Color::RGBA(100, 180, 255, 80), 3, 1);
-        screen.draw_text_glow("Settings", 12, 8, theme.accent, theme.glow_primary, 20, true, None);
-
-        // -- Settings rows as cards --
-        let start_y = CONTENT_TOP + 6;
-        let row_h = 48;
-        let card_w = SCREEN_WIDTH - 24;
-
-        // Row 0: Registry URL
-        {
-            let y = start_y;
-            let is_sel = self.selected_row == 0;
-            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
-            let border = if is_sel { theme.accent } else { theme.card_border };
-
-            screen.draw_card(
-                Rect::new(12, y, card_w, row_h as u32),
-                Some(bg),
-                Some(border),
-                CARD_RADIUS,
-                false,
-            );
-
-            screen.draw_text("Registry URL", 24, y + 8, Some(theme.text), 14, true, None);
-            screen.draw_text(
-                &ctx.settings.registry_url,
-                24,
-                y + 30,
-                Some(theme.text_dim),
-                12,
-                false,
-                Some(card_w - 32),
-            );
-        }
-
-        // Row 1: Auto Refresh toggle
-        {
-            let y = start_y + (row_h + MARGIN);
-            let is_sel = self.selected_row == 1;
-            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
-            let border = if is_sel { theme.accent } else { theme.card_border };
-
-            screen.draw_card(
-                Rect::new(12, y, card_w, row_h as u32),
-                Some(bg),
-                Some(border),
-                CARD_RADIUS,
-                false,
-            );
-
-            screen.draw_text("Auto Refresh", 24, y + 8, Some(theme.text), 14, true, None);
-            screen.draw_text(
-                "Automatically refresh registry on launch",
-                24,
-                y + 30,
-                Some(theme.text_dim),
-                12,
-                false,
+        if is_neo {
+            neo::draw_header(screen, "SETTINGS", "", Some(&ctx.sysinfo));
+            neo::draw_bar(screen);
+        } else {
+            screen.draw_rect(
+                Rect::new(0, 0, SCREEN_WIDTH, HEADER_HEIGHT as u32),
+                Some(sdl2::pixels::Color::RGBA(14, 14, 20, 220)),
+                true,
+                0,
                 None,
             );
-
-            // Toggle indicator
-            let toggle_x = SCREEN_WIDTH as i32 - 80;
-            let toggle_label = if ctx.settings.auto_refresh { "ON" } else { "OFF" };
-            let toggle_color = if ctx.settings.auto_refresh {
-                theme.positive
-            } else {
-                theme.text_dim
-            };
-            screen.draw_pill(
-                toggle_label,
-                toggle_x,
-                y + 18,
-                toggle_color,
-                sdl2::pixels::Color::RGB(20, 20, 30),
-                13,
+            screen.draw_glow_line(
+                0,
+                0,
+                SCREEN_WIDTH as i32 - 1,
+                sdl2::pixels::Color::RGBA(100, 180, 255, 80),
+                3,
+                1,
             );
-        }
-
-        // Row 2: Cache Duration
-        {
-            let y = start_y + 2 * (row_h + MARGIN);
-            let is_sel = self.selected_row == 2;
-            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
-            let border = if is_sel { theme.accent } else { theme.card_border };
-
-            screen.draw_card(
-                Rect::new(12, y, card_w, row_h as u32),
-                Some(bg),
-                Some(border),
-                CARD_RADIUS,
-                false,
-            );
-
-            screen.draw_text("Cache Duration", 24, y + 8, Some(theme.text), 14, true, None);
-            screen.draw_text(
-                "How long to cache registry data",
-                24,
-                y + 30,
-                Some(theme.text_dim),
+            screen.draw_text_glow(
+                "Settings",
                 12,
-                false,
-                None,
-            );
-
-            // Duration value with arrows
-            let dur_str = format_cache_duration(ctx.settings.cache_duration_mins);
-            let toggle_x = SCREEN_WIDTH as i32 - 110;
-            if is_sel {
-                screen.draw_text("<", toggle_x, y + 18, Some(theme.text_accent), 14, true, None);
-            }
-            let dw = screen.get_text_width(&dur_str, 13, true);
-            let center_x = toggle_x + 14 + (60 - dw as i32) / 2;
-            screen.draw_text(
-                &dur_str,
-                center_x,
-                y + 19,
-                Some(theme.text_accent),
-                13,
+                8,
+                theme.accent,
+                theme.glow_primary,
+                20,
                 true,
                 None,
             );
-            if is_sel {
-                screen.draw_text(">", toggle_x + 78, y + 18, Some(theme.text_accent), 14, true, None);
-            }
         }
 
-        // Row 3: Process panel toggle
-        {
-            let y = start_y + 3 * (row_h + MARGIN);
-            let is_sel = self.selected_row == 3;
-            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
-            let border = if is_sel { theme.accent } else { theme.card_border };
-
-            screen.draw_card(
-                Rect::new(12, y, card_w, row_h as u32),
-                Some(bg),
-                Some(border),
-                CARD_RADIUS,
-                false,
-            );
-
-            screen.draw_text("Show Process Panel", 24, y + 8, Some(theme.text), 14, true, None);
-            screen.draw_text(
-                "htop-like view on home screen (uses CPU)",
-                24,
-                y + 30,
-                Some(theme.text_dim),
-                12,
-                false,
-                None,
-            );
-
-            let toggle_x = SCREEN_WIDTH as i32 - 80;
-            let toggle_label = if ctx.settings.show_processes { "ON" } else { "OFF" };
-            let toggle_color = if ctx.settings.show_processes {
-                theme.positive
+        // Only whole, visible rows are drawn. This also reserves room for the
+        // shared Store notice banner so About/hardware errors stay reachable.
+        for (slot, index) in range.enumerate() {
+            let row = &rows[index];
+            let y = start_y + slot as i32 * pitch;
+            let selected = index == self.selected_row;
+            let left = if is_neo { neo::MARGIN_X } else { 12 };
+            let right = SCREEN_WIDTH as i32 - left;
+            let tx = left + 16;
+            let width = (right - left) as u32;
+            if is_neo {
+                if selected {
+                    screen.fill(Rect::new(left, y, width, row_h as u32), theme.card_bg);
+                    screen.fill(Rect::new(left, y, 4, row_h as u32), theme.accent);
+                }
+                screen.fill(Rect::new(left, y + row_h - 1, width, 1), theme.border);
             } else {
-                theme.text_dim
-            };
-            screen.draw_pill(
-                toggle_label,
-                toggle_x,
-                y + 18,
-                toggle_color,
-                sdl2::pixels::Color::RGB(20, 20, 30),
-                13,
-            );
-        }
-
-        // Row 4: Theme
-        {
-            let y = start_y + ROW_THEME as i32 * (row_h + MARGIN);
-            let is_sel = self.selected_row == ROW_THEME;
-            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
-            let border = if is_sel { theme.accent } else { theme.card_border };
-
-            screen.draw_card(
-                Rect::new(12, y, card_w, row_h as u32),
-                Some(bg),
-                Some(border),
-                CARD_RADIUS,
-                false,
-            );
-
-            screen.draw_text("Theme", 24, y + 8, Some(theme.text), 14, true, None);
-            screen.draw_text(
-                "Visual style for the launcher",
-                24,
-                y + 30,
-                Some(theme.text_dim),
-                12,
-                false,
-                None,
-            );
-
-            let name = theme_display_name(&ctx.settings.theme_id);
-            let toggle_x = SCREEN_WIDTH as i32 - 170;
-            if is_sel {
-                screen.draw_text("<", toggle_x, y + 18, Some(theme.text_accent), 14, true, None);
-            }
-            let nw = screen.get_text_width(name, 13, true);
-            let center_x = toggle_x + 14 + (130 - nw as i32) / 2;
-            screen.draw_text(
-                name,
-                center_x,
-                y + 19,
-                Some(theme.text_accent),
-                13,
-                true,
-                None,
-            );
-            if is_sel {
-                screen.draw_text(">", toggle_x + 148, y + 18, Some(theme.text_accent), 14, true, None);
-            }
-        }
-
-        // Row 5: Animations
-        {
-            let y = start_y + ROW_ANIMATIONS as i32 * (row_h + MARGIN);
-            let is_sel = self.selected_row == ROW_ANIMATIONS;
-            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
-            let border = if is_sel { theme.accent } else { theme.card_border };
-
-            screen.draw_card(
-                Rect::new(12, y, card_w, row_h as u32),
-                Some(bg),
-                Some(border),
-                CARD_RADIUS,
-                false,
-            );
-
-            screen.draw_text("Animations", 24, y + 8, Some(theme.text), 14, true, None);
-            screen.draw_text(
-                "Sweep line and other moving theme effects",
-                24,
-                y + 30,
-                Some(theme.text_dim),
-                12,
-                false,
-                None,
-            );
-
-            let toggle_x = SCREEN_WIDTH as i32 - 80;
-            let label = if ctx.settings.animations_enabled { "ON" } else { "OFF" };
-            let color = if ctx.settings.animations_enabled {
-                theme.positive
-            } else {
-                theme.text_dim
-            };
-            screen.draw_pill(
-                label,
-                toggle_x,
-                y + 18,
-                color,
-                sdl2::pixels::Color::RGB(20, 20, 30),
-                13,
-            );
-        }
-
-        // Row 6: Sounds
-        {
-            let y = start_y + ROW_SOUNDS as i32 * (row_h + MARGIN);
-            let is_sel = self.selected_row == ROW_SOUNDS;
-            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
-            let border = if is_sel { theme.accent } else { theme.card_border };
-
-            screen.draw_card(
-                Rect::new(12, y, card_w, row_h as u32),
-                Some(bg),
-                Some(border),
-                CARD_RADIUS,
-                false,
-            );
-
-            screen.draw_text("Sounds", 24, y + 8, Some(theme.text), 14, true, None);
-            screen.draw_text(
-                "Click feedback on navigation and launch",
-                24,
-                y + 30,
-                Some(theme.text_dim),
-                12,
-                false,
-                None,
-            );
-
-            let toggle_x = SCREEN_WIDTH as i32 - 80;
-            let label = if ctx.settings.sounds_enabled { "ON" } else { "OFF" };
-            let color = if ctx.settings.sounds_enabled {
-                theme.positive
-            } else {
-                theme.text_dim
-            };
-            screen.draw_pill(
-                label,
-                toggle_x,
-                y + 18,
-                color,
-                sdl2::pixels::Color::RGB(20, 20, 30),
-                13,
-            );
-        }
-
-        // Row 7: WiFi
-        {
-            let y = start_y + ROW_WIFI as i32 * (row_h + MARGIN);
-            let is_sel = self.selected_row == ROW_WIFI;
-            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
-            let border = if is_sel { theme.accent } else { theme.card_border };
-
-            screen.draw_card(
-                Rect::new(12, y, card_w, row_h as u32),
-                Some(bg),
-                Some(border),
-                CARD_RADIUS,
-                false,
-            );
-
-            screen.draw_text("WiFi", 24, y + 8, Some(theme.text), 14, true, None);
-
-            let wifi_status = match &ctx.sysinfo.wifi_ssid {
-                Some(ssid) => format!("Connected to {ssid}"),
-                None => "Not connected".to_string(),
-            };
-            screen.draw_text(
-                &wifi_status,
-                24,
-                y + 30,
-                Some(theme.text_dim),
-                12,
-                false,
-                Some(card_w - 100),
-            );
-
-            if is_sel {
-                screen.draw_text(
-                    ">",
-                    card_w as i32 - 4,
-                    y + 18,
-                    Some(theme.text_accent),
-                    16,
-                    true,
-                    None,
+                screen.draw_card(
+                    Rect::new(left, y, width, row_h as u32),
+                    Some(if selected {
+                        theme.card_highlight
+                    } else {
+                        theme.card_bg
+                    }),
+                    Some(if selected {
+                        theme.accent
+                    } else {
+                        theme.card_border
+                    }),
+                    CARD_RADIUS,
+                    false,
                 );
             }
-        }
-
-        // Row 5: Brightness slider
-        {
-            let y = start_y + ROW_BRIGHTNESS as i32 * (row_h + MARGIN);
-            let is_sel = self.selected_row == ROW_BRIGHTNESS;
-            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
-            let border = if is_sel { theme.accent } else { theme.card_border };
-            screen.draw_card(
-                Rect::new(12, y, card_w, row_h as u32),
-                Some(bg), Some(border), CARD_RADIUS, false,
-            );
-            screen.draw_text("Brightness", 24, y + 8, Some(theme.text), 14, true, None);
-            let pct = get_brightness_percent();
+            let title = if is_neo {
+                row.title.to_uppercase()
+            } else {
+                row.title.into()
+            };
+            let title_color = if selected || !is_neo {
+                theme.text
+            } else {
+                theme.text_dim
+            };
             screen.draw_text(
-                &format!("{}%  (\u{25C0} \u{25B6} to adjust)", pct),
-                24, y + 30, Some(theme.text_dim), 12, false, None,
+                &title,
+                tx,
+                y + 8,
+                Some(title_color),
+                14,
+                true,
+                Some(width - 32),
             );
-            // Slider bar
-            let bar_x = SCREEN_WIDTH as i32 - 200;
-            let bar_y = y + 22;
-            let bar_w = 180u32;
-            let bar_h = 6u32;
-            screen.draw_rect(Rect::new(bar_x, bar_y, bar_w, bar_h), Some(theme.card_border), true, 3, None);
-            let fill_w = (bar_w as f32 * pct as f32 / 100.0) as u32;
-            if fill_w > 0 {
-                screen.draw_rect(Rect::new(bar_x, bar_y, fill_w, bar_h), Some(theme.accent), true, 3, None);
-            }
-        }
-
-        // Row 6: Volume slider
-        {
-            let y = start_y + ROW_VOLUME as i32 * (row_h + MARGIN);
-            let is_sel = self.selected_row == ROW_VOLUME;
-            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
-            let border = if is_sel { theme.accent } else { theme.card_border };
-            screen.draw_card(
-                Rect::new(12, y, card_w, row_h as u32),
-                Some(bg), Some(border), CARD_RADIUS, false,
-            );
-            screen.draw_text("Volume", 24, y + 8, Some(theme.text), 14, true, None);
-            let pct = get_volume_percent();
             screen.draw_text(
-                &format!("{}%  (\u{25C0} \u{25B6} to adjust)", pct),
-                24, y + 30, Some(theme.text_dim), 12, false, None,
-            );
-            let bar_x = SCREEN_WIDTH as i32 - 200;
-            let bar_y = y + 22;
-            let bar_w = 180u32;
-            let bar_h = 6u32;
-            screen.draw_rect(Rect::new(bar_x, bar_y, bar_w, bar_h), Some(theme.card_border), true, 3, None);
-            let fill_w = (bar_w as f32 * pct as f32 / 100.0) as u32;
-            if fill_w > 0 {
-                screen.draw_rect(Rect::new(bar_x, bar_y, fill_w, bar_h), Some(theme.text_success), true, 3, None);
-            }
-        }
-
-        // Row 8: About
-        {
-            let y = start_y + ROW_ABOUT as i32 * (row_h + MARGIN);
-            let is_sel = self.selected_row == ROW_ABOUT;
-            let bg = if is_sel { theme.card_highlight } else { theme.card_bg };
-            let border = if is_sel { theme.accent } else { theme.card_border };
-
-            screen.draw_card(
-                Rect::new(12, y, card_w, row_h as u32),
-                Some(bg),
-                Some(border),
-                CARD_RADIUS,
-                false,
-            );
-
-            screen.draw_text("About CartridgeOS", 24, y + 8, Some(theme.text), 14, true, None);
-            screen.draw_text(
-                concat!("CartridgeOS v", env!("CARGO_PKG_VERSION"), " -- A cyberdeck OS for Linux handhelds"),
-                24,
-                y + 30,
-                Some(theme.text_dim),
+                &row.subtitle,
+                tx,
+                y + row_h - 20,
+                Some(if row.error {
+                    theme.text_error
+                } else {
+                    theme.text_dim
+                }),
                 12,
                 false,
-                Some(card_w - 32),
+                Some(width - 32),
             );
+
+            // Values occupy the title line; subtitles have the full row width.
+            let value_right = right - 12;
+            match &row.value {
+                RowValue::Toggle(on) => {
+                    let label = if *on { "ON" } else { "OFF" };
+                    if is_neo {
+                        let width =
+                            screen.get_text_width(label, neo::LABEL_SIZE, false) as i32 + 16;
+                        neo::draw_chip(
+                            screen,
+                            label,
+                            value_right - width,
+                            y + 6,
+                            if *on {
+                                Chip::FilledRed
+                            } else {
+                                Chip::OutlineDim
+                            },
+                        );
+                    } else {
+                        screen.draw_pill(
+                            label,
+                            value_right - 50,
+                            y + 6,
+                            if *on { theme.positive } else { theme.text_dim },
+                            theme.card_bg,
+                            13,
+                        );
+                    }
+                }
+                RowValue::Cycle(value) => {
+                    let label = if selected {
+                        format!("<  {value}  >")
+                    } else {
+                        value.clone()
+                    };
+                    neo::text_right(
+                        screen,
+                        &label,
+                        value_right,
+                        y + 23,
+                        if selected {
+                            theme.text_accent
+                        } else {
+                            theme.text_dim
+                        },
+                        13,
+                        true,
+                    );
+                }
+                RowValue::Slider(value) => {
+                    let bar_w = 160;
+                    let bar_x = value_right - bar_w;
+                    let bar_y = y + 15;
+                    screen.fill(Rect::new(bar_x, bar_y, bar_w as u32, 4), theme.card_border);
+                    if let Some(value) = value {
+                        let fill_w = bar_w as u32 * u32::from(*value) / 100;
+                        if fill_w > 0 {
+                            screen.fill(
+                                Rect::new(bar_x, bar_y, fill_w, 4),
+                                if row.error {
+                                    theme.text_error
+                                } else {
+                                    theme.accent
+                                },
+                            );
+                        }
+                    }
+                    let label = value.map_or_else(|| "--".into(), |v| format!("{v}%"));
+                    neo::text_right(
+                        screen,
+                        &label,
+                        bar_x - 12,
+                        y + 23,
+                        theme.text_dim,
+                        12,
+                        false,
+                    );
+                }
+                RowValue::Chevron => {
+                    screen.draw_text(
+                        ">",
+                        value_right - 10,
+                        y + 8,
+                        Some(if selected {
+                            theme.accent
+                        } else {
+                            theme.text_dim
+                        }),
+                        14,
+                        true,
+                        None,
+                    );
+                }
+                RowValue::None => {}
+            }
         }
 
-        // -- Footer --
-        draw_settings_footer(screen);
+        let action = self.primary_action();
+        if is_neo {
+            let mut hints = Vec::with_capacity(3);
+            if let Some(action) = action {
+                hints.push(Hint::a(action));
+            }
+            hints.push(Hint::b("Back"));
+            hints.push(Hint::wide("D-PAD", "Navigate / adjust"));
+            neo::draw_footer(screen, &hints);
+        } else {
+            draw_settings_footer(screen, action);
+        }
+        let footer_y = if is_neo {
+            neo::FOOTER_Y
+        } else {
+            SCREEN_HEIGHT as i32 - FOOTER_HEIGHT
+        };
+        neo::text_right(
+            screen,
+            &format!("{} / {SETTINGS_ROWS}", self.selected_row + 1),
+            SCREEN_WIDTH as i32 - 18,
+            footer_y + 26,
+            theme.text_dim,
+            12,
+            false,
+        );
     }
 }
 
-/// What a settings row shows on its right-hand side.
 enum RowValue {
     Toggle(bool),
-    /// A cycling value with < > arrows.
     Cycle(String),
-    /// 0..=100 slider.
-    Slider(u8),
-    /// Static text.
-    Text(String),
-    /// Navigates into a sub-screen.
+    Slider(Option<u8>),
     Chevron,
+    None,
+}
+
+struct SettingsRow {
+    title: &'static str,
+    subtitle: String,
+    value: RowValue,
+    error: bool,
+}
+
+impl SettingsRow {
+    fn new(title: &'static str, subtitle: impl Into<String>, value: RowValue) -> Self {
+        Self {
+            title,
+            subtitle: subtitle.into(),
+            value,
+            error: false,
+        }
+    }
+
+    fn hardware(title: &'static str, control: &HardwareControl) -> Self {
+        Self {
+            title,
+            subtitle: control.status(),
+            value: RowValue::Slider(control.value()),
+            error: control.has_error(),
+        }
+    }
 }
 
 impl SettingsScreen {
-    fn render_neo(&self, screen: &mut Screen, ctx: &ScreenContext) {
-        let theme = screen.theme;
-        neo::draw_header(screen, "SETTINGS", "", Some(&ctx.sysinfo));
-        neo::draw_bar(screen);
+    fn rows(&self, ctx: &ScreenContext) -> [SettingsRow; SETTINGS_ROWS] {
+        let wifi = ctx.sysinfo.wifi_ssid.as_ref().map_or_else(
+            || "Not connected".into(),
+            |ssid| format!("Connected to {ssid}"),
+        );
+        [
+            SettingsRow::new("Registry URL", &ctx.settings.registry_url, RowValue::None),
+            SettingsRow::new(
+                "Auto Refresh",
+                "Refresh the catalog when opening Store",
+                RowValue::Toggle(ctx.settings.auto_refresh),
+            ),
+            SettingsRow::new(
+                "Cache Duration",
+                "How long to keep registry data",
+                RowValue::Cycle(format_cache_duration(ctx.settings.cache_duration_mins)),
+            ),
+            SettingsRow::new(
+                "Show Process Panel",
+                "Show top processes on the home screen",
+                RowValue::Toggle(ctx.settings.show_processes),
+            ),
+            SettingsRow::new(
+                "Theme",
+                "Visual style for the launcher",
+                RowValue::Cycle(theme_display_name(&ctx.settings.theme_id).into()),
+            ),
+            SettingsRow::new(
+                "Animations",
+                "Moving theme effects",
+                RowValue::Toggle(ctx.settings.animations_enabled),
+            ),
+            SettingsRow::new(
+                "Sounds",
+                "Click feedback on navigation and launch",
+                RowValue::Toggle(ctx.settings.sounds_enabled),
+            ),
+            SettingsRow::new("WiFi", wifi, RowValue::Chevron),
+            SettingsRow::hardware("Brightness", &self.brightness),
+            SettingsRow::hardware("Volume", &self.volume),
+            SettingsRow::new("About CartridgeOS", about_status(ctx), RowValue::None),
+            SettingsRow::new("System Update", "Check for signed CartridgeOS releases", RowValue::Chevron),
+        ]
+    }
 
-        let wifi_status = match &ctx.sysinfo.wifi_ssid {
-            Some(ssid) => format!("Connected to {ssid}"),
-            None => "Not connected".to_string(),
+    fn primary_action(&self) -> Option<&'static str> {
+        let control = match self.selected_row {
+            ROW_BRIGHTNESS => Some(&self.brightness),
+            ROW_VOLUME => Some(&self.volume),
+            _ => None,
         };
-        let rows: [(&str, String, RowValue); SETTINGS_ROWS] = [
-            ("Registry URL", ctx.settings.registry_url.clone(), RowValue::Text(String::new())),
-            ("Auto Refresh", "Refresh the registry on launch".into(), RowValue::Toggle(ctx.settings.auto_refresh)),
-            ("Cache Duration", "How long to keep registry data".into(), RowValue::Cycle(format_cache_duration(ctx.settings.cache_duration_mins))),
-            ("Process Panel", "Show top processes on the home screen".into(), RowValue::Toggle(ctx.settings.show_processes)),
-            ("Theme", "Visual style for the launcher".into(), RowValue::Cycle(theme_display_name(&ctx.settings.theme_id).to_string())),
-            ("Animations", "Moving theme effects".into(), RowValue::Toggle(ctx.settings.animations_enabled)),
-            ("Sounds", "Click feedback on navigation and launch".into(), RowValue::Toggle(ctx.settings.sounds_enabled)),
-            ("WiFi", wifi_status, RowValue::Chevron),
-            ("Brightness", "Left / right to adjust".into(), RowValue::Slider(get_brightness_percent())),
-            ("Volume", "Left / right to adjust".into(), RowValue::Slider(get_volume_percent())),
-            ("About", format!("CartridgeOS {} · a pocket OS for Linux handhelds", neo::os_version()), RowValue::Text(String::new())),
-        ];
-
-        let right = SCREEN_WIDTH as i32 - neo::MARGIN_X;
-        let sub_lh = screen.get_line_height(neo::LABEL_SIZE, false) as i32;
-
-        for (i, (title, subtitle, value)) in rows.iter().enumerate() {
-            let y = NEO_LIST_Y + i as i32 * NEO_ROW_H;
-            let is_sel = i == self.selected_row;
-            if is_sel {
-                screen.fill(Rect::new(neo::MARGIN_X, y, SCREEN_WIDTH - neo::MARGIN_X as u32 * 2, NEO_ROW_H as u32), theme.card_bg);
-                screen.fill(Rect::new(neo::MARGIN_X, y, 4, NEO_ROW_H as u32), theme.accent);
-            }
-            screen.fill(Rect::new(neo::MARGIN_X, y + NEO_ROW_H - 1, SCREEN_WIDTH - neo::MARGIN_X as u32 * 2, 1), theme.border);
-
-            let tx = neo::MARGIN_X + 16;
-            let title_color = if is_sel { theme.text } else { theme.text_dim };
-            screen.draw_text(&title.to_uppercase(), tx, y + 8, Some(title_color), 14, true, None);
-            screen.draw_text(subtitle, tx, y + NEO_ROW_H - 8 - sub_lh, Some(theme.text_dim), neo::LABEL_SIZE, false, Some(400));
-
-            match value {
-                RowValue::Toggle(on) => {
-                    let label = if *on { "On" } else { "Off" };
-                    let w = screen.get_text_width(&label.to_uppercase(), neo::LABEL_SIZE, false) as i32 + 16;
-                    let kind = if *on { Chip::FilledRed } else { Chip::OutlineDim };
-                    neo::draw_chip(screen, label, right - w, y + 15, kind);
-                }
-                RowValue::Cycle(text) => {
-                    let label = text.to_uppercase();
-                    let w = screen.display_text_width(&label, 22) as i32;
-                    let color = if is_sel { theme.text } else { theme.text_dim };
-                    let arrow_pad = if is_sel { 22 } else { 0 };
-                    neo::display_at_baseline(screen, &label, right - arrow_pad - w, y + 32, color, 22);
-                    if is_sel {
-                        screen.draw_text(">", right - 12, y + 18, Some(theme.accent), 14, true, None);
-                        screen.draw_text("<", right - arrow_pad - w - 18, y + 18, Some(theme.accent), 14, true, None);
-                    }
-                }
-                RowValue::Slider(pct) => {
-                    let bar_w = 180u32;
-                    let bar_x = right - bar_w as i32;
-                    let bar_y = y + NEO_ROW_H / 2 - 2;
-                    screen.fill(Rect::new(bar_x, bar_y, bar_w, 3), theme.border);
-                    let fill_w = (bar_w as f32 * (*pct as f32 / 100.0)) as u32;
-                    if fill_w > 0 {
-                        screen.fill(Rect::new(bar_x, bar_y, fill_w, 3), if is_sel { theme.accent } else { theme.text });
-                    }
-                    let pct_label = format!("{pct}%");
-                    neo::text_right(screen, &pct_label, bar_x - 12, bar_y + 6, theme.text_dim, neo::LABEL_SIZE, false);
-                }
-                RowValue::Text(t) => {
-                    if !t.is_empty() {
-                        neo::text_right(screen, t, right, y + 30, theme.text_dim, neo::LABEL_SIZE, false);
-                    }
-                }
-                RowValue::Chevron => {
-                    let color = if is_sel { theme.accent } else { theme.text_muted };
-                    screen.draw_text(">", right - 10, y + 18, Some(color), 14, true, None);
-                }
+        if let Some(control) = control {
+            Some(if control.has_error() {
+                "Retry"
+            } else {
+                "Increase"
+            })
+        } else {
+            match self.selected_row {
+                ROW_WIFI | ROW_SYSTEM_UPDATE => Some("Open"),
+                2 | ROW_THEME => Some("Next"),
+                0 | ROW_ABOUT => None,
+                _ => Some("Toggle"),
             }
         }
-
-        neo::draw_footer(
-            screen,
-            &[Hint::a("Toggle"), Hint::b("Back"), Hint::wide("D-PAD", "Navigate")],
-        );
     }
 }
 
-fn draw_settings_footer(screen: &mut Screen) {
+fn about_status(ctx: &ScreenContext) -> String {
+    let store = if ctx.store_jobs.is_busy() {
+        "busy"
+    } else if ctx.store_jobs.notices.iter().any(|notice| notice.is_error) {
+        "needs attention"
+    } else if ctx.registry_client.is_none() {
+        "unavailable"
+    } else if ctx.registry.apps.iter().any(|app| app.package.is_some()) {
+        "catalog ready"
+    } else {
+        "local catalog"
+    };
+    // Package version identifies this running binary, not an OS release file.
+    // All remaining data is already cached by the launcher; no stat/read here.
+    format!(
+        "Runtime {} · {} · Store: {store}",
+        env!("CARGO_PKG_VERSION"),
+        ctx.sysinfo.hostname
+    )
+}
+
+fn settings_list_bottom(ctx: &ScreenContext, is_neo: bool) -> i32 {
+    let has_notice = ctx.has_background_notice();
+    if has_notice {
+        if is_neo { neo::FOOTER_Y - 112 } else { 572 }
+    } else if is_neo {
+        neo::FOOTER_Y - 8
+    } else {
+        CONTENT_BOTTOM - 8
+    }
+}
+
+fn visible_rows(selected: usize, first: &mut usize, capacity: usize) -> std::ops::Range<usize> {
+    let capacity = capacity.max(1).min(SETTINGS_ROWS);
+    *first = (*first).min(SETTINGS_ROWS - capacity);
+    if selected < *first {
+        *first = selected;
+    } else if selected >= *first + capacity {
+        *first = selected + 1 - capacity;
+    }
+    *first..(*first + capacity).min(SETTINGS_ROWS)
+}
+
+fn draw_settings_footer(screen: &mut Screen, action: Option<&str>) {
     let theme = screen.theme;
     let footer_y = SCREEN_HEIGHT as i32 - FOOTER_HEIGHT;
-
     screen.draw_rect(
         Rect::new(0, footer_y, SCREEN_WIDTH, FOOTER_HEIGHT as u32),
         Some(sdl2::pixels::Color::RGBA(14, 14, 20, 220)),
@@ -773,21 +625,85 @@ fn draw_settings_footer(screen: &mut Screen) {
         0,
         None,
     );
-    screen.draw_glow_line(footer_y, 0, SCREEN_WIDTH as i32 - 1, sdl2::pixels::Color::RGBA(100, 180, 255, 50), 2, -1);
-
-    let mut fx = 12;
-    let w = screen.draw_button_hint("A", "Toggle", fx, footer_y + 8, Some(theme.btn_a), 12);
-    fx += w as i32 + 12;
-    let w = screen.draw_button_hint("B", "Back", fx, footer_y + 8, Some(theme.btn_b), 12);
-    fx += w as i32 + 12;
-    screen.draw_button_hint("D-Pad", "Navigate", fx, footer_y + 8, Some(theme.btn_l), 12);
+    screen.draw_glow_line(
+        footer_y,
+        0,
+        SCREEN_WIDTH as i32 - 1,
+        sdl2::pixels::Color::RGBA(100, 180, 255, 50),
+        2,
+        -1,
+    );
+    let mut x = 12;
+    if let Some(action) = action {
+        x += screen.draw_button_hint("A", action, x, footer_y + 8, Some(theme.btn_a), 12) as i32
+            + 12;
+    }
+    x += screen.draw_button_hint("B", "Back", x, footer_y + 8, Some(theme.btn_b), 12) as i32 + 12;
+    screen.draw_button_hint(
+        "D-Pad",
+        "Navigate / adjust",
+        x,
+        footer_y + 8,
+        Some(theme.btn_l),
+        12,
+    );
 }
 
 fn format_cache_duration(mins: u32) -> String {
     if mins < 60 {
         format!("{mins} min")
     } else {
-        let h = mins / 60;
-        format!("{h} hr")
+        format!("{} hr", mins / 60)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_selected_row_is_visible_with_both_themes_and_store_banner() {
+        for (start, bottom, pitch, height) in [
+            (NEO_LIST_Y, neo::FOOTER_Y - 8, NEO_ROW_H, NEO_ROW_H),
+            (NEO_LIST_Y, neo::FOOTER_Y - 112, NEO_ROW_H, NEO_ROW_H),
+            (
+                CONTENT_TOP + 6,
+                CONTENT_BOTTOM - 8,
+                CARD_ROW_H + MARGIN,
+                CARD_ROW_H,
+            ),
+            (CONTENT_TOP + 6, 572, CARD_ROW_H + MARGIN, CARD_ROW_H),
+        ] {
+            let capacity = ((bottom - start) / pitch) as usize;
+            let mut first = 0;
+            for selected in (0..SETTINGS_ROWS).chain((0..SETTINGS_ROWS).rev()) {
+                let range = visible_rows(selected, &mut first, capacity);
+                assert!(range.contains(&selected));
+                let selected_bottom = start + (selected - first) as i32 * pitch + height;
+                assert!(selected_bottom <= bottom);
+            }
+        }
+    }
+
+    #[test]
+    fn system_update_is_after_about_without_changing_existing_row_indices() {
+        assert_eq!(ROW_ABOUT, 10);
+        assert_eq!(ROW_SYSTEM_UPDATE, 11);
+        let mut ctx = super::super::test_context();
+        let mut screen = SettingsScreen::new();
+        screen.selected_row = ROW_SYSTEM_UPDATE;
+        assert_eq!(screen.rows(&ctx)[ROW_SYSTEM_UPDATE].title, "System Update");
+        assert!(matches!(screen.handle_input(&[InputEvent { button: Button::A, action: InputAction::Press }], &mut ctx),
+            ScreenAction::Push(ScreenId::SystemUpdate)));
+        std::fs::remove_dir_all(ctx.storage.data_dir.parent().unwrap().parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn changing_visible_capacity_keeps_about_in_view() {
+        let mut first = 0;
+        assert!(visible_rows(ROW_ABOUT, &mut first, 10).contains(&ROW_ABOUT));
+        assert!(visible_rows(ROW_ABOUT, &mut first, 8).contains(&ROW_ABOUT));
+        assert!(visible_rows(ROW_ABOUT, &mut first, 10).contains(&ROW_ABOUT));
+        assert!(visible_rows(0, &mut first, 10).contains(&0));
     }
 }

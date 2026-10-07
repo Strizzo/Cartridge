@@ -1,0 +1,243 @@
+[
+  {
+    "url_prefix": "http://127.0.0.1:8766/api/state",
+    "delay_polls": 3,
+    "elapsed_ms": 18,
+    "body": {
+      "sessions": {
+        "cartridge:0.0": {
+          "session_name": "cartridge",
+          "pane_id": "cartridge:0.0",
+          "pane_command": "claude",
+          "session_type": "claude_code",
+          "status": "waiting",
+          "screen_content": [
+            "> Build the handheld operations room",
+            "I inspected the Lua runtime and current HTTP service.",
+            "Updated controller navigation and async polling.",
+            "",
+            "Ready to run the integration test suite.",
+            "Allow this command?",
+            "  cargo test -p cartridge-lua --test mission_control",
+            "1. Yes, run the tests",
+            "2. No, keep reviewing",
+            "Waiting for your response..."
+          ],
+          "response_options": [
+            {
+              "text": "Run the focused tests, then report any failures.",
+              "category": "approve",
+              "shortcut": "A"
+            },
+            {
+              "text": "Review the polling error paths before running the tests.",
+              "category": "redirect",
+              "shortcut": null
+            }
+          ],
+          "detected_choices": [
+            {
+              "label": "Yes, run the tests",
+              "key_sequence": "1 Enter",
+              "is_default": true
+            },
+            {
+              "label": "No, keep reviewing",
+              "key_sequence": "2 Enter",
+              "is_default": false
+            }
+          ],
+          "permission_mode": "normal",
+          "last_updated": 1790841600.0
+        },
+        "cartridge:1.0": {
+          "session_name": "cartridge",
+          "pane_id": "cartridge:1.0",
+          "pane_command": "cargo",
+          "session_type": "running_process",
+          "status": "running",
+          "screen_content": [
+            "$ cargo build --release --target aarch64-unknown-linux-gnu",
+            "   Compiling cartridge-core v0.5.3",
+            "   Compiling cartridge-net v0.5.3",
+            "   Compiling cartridge-lua v0.5.3",
+            "   Building cartridge-launcher",
+            "   Linking release binary...",
+            "Process is still running."
+          ],
+          "response_options": [],
+          "detected_choices": [],
+          "permission_mode": null,
+          "last_updated": 1790841600.0
+        },
+        "atlas:0.0": {
+          "session_name": "atlas",
+          "pane_id": "atlas:0.0",
+          "pane_command": "claude",
+          "session_type": "claude_code",
+          "status": "thinking",
+          "screen_content": [
+            "> Add an offline-first expedition journal",
+            "Reading schema and existing migrations.",
+            "Found 12 migration files.",
+            "Working on the implementation..."
+          ],
+          "response_options": [],
+          "detected_choices": [],
+          "permission_mode": "normal",
+          "last_updated": 1790841600.0
+        },
+        "relay:0.0": {
+          "session_name": "relay",
+          "pane_id": "relay:0.0",
+          "pane_command": "pytest",
+          "session_type": "running_process",
+          "status": "error",
+          "screen_content": [
+            "$ pytest tests/integration",
+            "FAILED tests/integration/test_relay.py::test_timeout",
+            "AssertionError: deadline exceeded",
+            "1 failed, 28 passed in 3.82s",
+            "$"
+          ],
+          "response_options": [],
+          "detected_choices": [],
+          "permission_mode": null,
+          "last_updated": 1790841600.0
+        },
+        "atlas:1.0": {
+          "session_name": "atlas",
+          "pane_id": "atlas:1.0",
+          "pane_command": "zsh",
+          "session_type": "idle_shell",
+          "status": "idle",
+          "screen_content": [
+            "~/atlas $ git status --short",
+            "Working tree clean.",
+            "~/atlas $"
+          ],
+          "response_options": [],
+          "detected_choices": [],
+          "permission_mode": null,
+          "last_updated": 1790841600.0
+        },
+        "relay:1.0": {
+          "session_name": "relay",
+          "pane_id": "relay:1.0",
+          "pane_command": "node",
+          "session_type": "running_process",
+          "status": "running",
+          "screen_content": [
+            "relay listening on 127.0.0.1:8080",
+            "GET /health 200",
+            "Connected to upstream service."
+          ],
+          "response_options": [],
+          "detected_choices": [],
+          "permission_mode": null,
+          "last_updated": 1790841600.0
+        }
+      }
+    }
+  },
+  {
+    "url_prefix": "http://127.0.0.1:8766/api/action",
+    "method": "POST",
+    "request_body": {
+      "action": "send_response",
+      "session_id": "cartridge:0.0",
+      "payload": {
+        "text": "Run the focused tests, then report any failures."
+      }
+    },
+    "delay_polls": 3,
+    "status": 200,
+    "body": {
+      "type": "ack",
+      "action": "send_response",
+      "session_id": "cartridge:0.0"
+    }
+  },
+  {
+    "url_prefix": "http://127.0.0.1:8766/api/action",
+    "method": "POST",
+    "request_body": {
+      "action": "send_keys",
+      "session_id": "cartridge:0.0",
+      "payload": {
+        "keys": "1 Enter"
+      }
+    },
+    "delay_polls": 3,
+    "status": 200,
+    "body": {
+      "type": "ack",
+      "action": "send_keys",
+      "session_id": "cartridge:0.0"
+    }
+  },
+  {
+    "url_prefix": "http://127.0.0.1:8766/api/action",
+    "method": "POST",
+    "request_body": {
+      "action": "interrupt",
+      "session_id": "cartridge:0.0",
+      "payload": {}
+    },
+    "delay_polls": 3,
+    "status": 200,
+    "body": {
+      "type": "ack",
+      "action": "interrupt",
+      "session_id": "cartridge:0.0"
+    }
+  },
+  {
+    "url_prefix": "http://127.0.0.1:8766/api/action",
+    "method": "POST",
+    "request_body": {
+      "action": "suspend",
+      "session_id": "cartridge:0.0",
+      "payload": {}
+    },
+    "delay_polls": 3,
+    "status": 200,
+    "body": {
+      "type": "ack",
+      "action": "suspend",
+      "session_id": "cartridge:0.0"
+    }
+  },
+  {
+    "url_prefix": "http://127.0.0.1:8766/api/action",
+    "method": "POST",
+    "request_body": {
+      "action": "escape",
+      "session_id": "cartridge:0.0",
+      "payload": {}
+    },
+    "delay_polls": 3,
+    "status": 200,
+    "body": {
+      "type": "ack",
+      "action": "escape",
+      "session_id": "cartridge:0.0"
+    }
+  },
+  {
+    "url_prefix": "http://127.0.0.1:8766/api/action",
+    "method": "POST",
+    "request_body": {
+      "action": "accept_ghost",
+      "session_id": "cartridge:0.0",
+      "payload": {}
+    },
+    "delay_polls": 3,
+    "status": 200,
+    "body": {
+      "type": "ack",
+      "action": "accept_ghost",
+      "session_id": "cartridge:0.0"
+    }
+  }
+]

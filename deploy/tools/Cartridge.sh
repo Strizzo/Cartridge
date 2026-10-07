@@ -40,6 +40,9 @@ fi
     ./cartridge "$@"
 } >> "${LOG_FILE}" 2>&1
 STATUS=$?
+# These are intentional session handoffs, not errors. ES already owns the
+# parent session when this entry point is launched from its Tools menu.
+[[ "$STATUS" -eq 20 || "$STATUS" -eq 30 ]] && STATUS=0
 
 if [[ "$STATUS" -ne 0 ]]; then
     echo "Cartridge exited with code ${STATUS}. Returning to EmulationStation."

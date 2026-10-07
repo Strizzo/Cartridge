@@ -56,7 +56,7 @@ function on_render()
     screen.clear(theme.bg.r, theme.bg.g, theme.bg.b)
 
     -- Title bar
-    screen.draw_rect(0, 0, SCREEN_WIDTH, 50, {
+    ui.rect(0, 0, SCREEN_WIDTH, 50, {
         color = theme.bg_header, filled = true,
     })
     screen.draw_text("Hello World", 16, 14, {
@@ -74,13 +74,13 @@ function on_render()
     screen.draw_circle(state.x, state.y, 30, c[1], c[2], c[3])
 
     -- A border around the playfield
-    screen.draw_rect(20, 60, SCREEN_WIDTH - 40, SCREEN_HEIGHT - 120, {
+    ui.rect(20, 60, SCREEN_WIDTH - 40, SCREEN_HEIGHT - 120, {
         color = theme.card_border, filled = false, radius = 8,
     })
 
     -- Footer hints
     local fy = SCREEN_HEIGHT - 50
-    screen.draw_rect(0, fy, SCREEN_WIDTH, 50, {color = theme.bg_header, filled = true})
+    ui.rect(0, fy, SCREEN_WIDTH, 50, {color = theme.bg_header, filled = true})
     screen.draw_button_hint("D-pad", "Move", 16, fy + 16, {color = theme.btn_l})
     screen.draw_button_hint("A", "Color + beep", 200, fy + 16, {color = theme.btn_a})
     screen.draw_button_hint("Select", "Quit", 480, fy + 16, {color = theme.btn_b})

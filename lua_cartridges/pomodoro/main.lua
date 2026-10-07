@@ -66,22 +66,12 @@ local state = {
 
 -- ── Drawing Helpers ──────────────────────────────────────────────────────────
 
-local function draw_header(title)
-    screen.draw_gradient_rect(0, 0, 720, 40,
-        theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
-        theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
-    screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
+local function draw_header(title, right_text, right_color)
+    ui.header(title, right_text, right_color)
 end
 
 local function draw_footer(hints)
-    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 684, 720, 684, {color=theme.border})
-    local x = 10
-    for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
-        x = x + w + 14
-    end
+    ui.footer(hints)
 end
 
 -- ── Timer Engine ─────────────────────────────────────────────────────────────
@@ -307,8 +297,8 @@ local function draw_stats_screen()
     local cards_x = 57
 
     -- Card 1: Completed
-    screen.draw_card(cards_x, y, card_w, card_h, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
-    screen.draw_rect(cards_x + 10, y + 6, card_w - 20, 3, {color={220, 80, 80}, filled=true, radius=2})
+    ui.card(cards_x, y, card_w, card_h, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
+    ui.rect(cards_x + 10, y + 6, card_w - 20, 3, {color={220, 80, 80}, filled=true, radius=2})
     local val_str = tostring(state.total_completed)
     local vw = screen.get_text_width(val_str, 28, true)
     screen.draw_text(val_str, cards_x + card_w / 2 - vw / 2, y + 26, {color=theme.text, size=28, bold=true})
@@ -324,8 +314,8 @@ local function draw_stats_screen()
     else
         focus_str = focus_min .. "m"
     end
-    screen.draw_card(cards_x + card_w + card_gap, y, card_w, card_h, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
-    screen.draw_rect(cards_x + card_w + card_gap + 10, y + 6, card_w - 20, 3, {color={80, 200, 120}, filled=true, radius=2})
+    ui.card(cards_x + card_w + card_gap, y, card_w, card_h, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
+    ui.rect(cards_x + card_w + card_gap + 10, y + 6, card_w - 20, 3, {color={80, 200, 120}, filled=true, radius=2})
     vw = screen.get_text_width(focus_str, 28, true)
     screen.draw_text(focus_str, cards_x + card_w + card_gap + card_w / 2 - vw / 2, y + 26, {color=theme.text, size=28, bold=true})
     lbl = "Focus Time"
@@ -334,8 +324,8 @@ local function draw_stats_screen()
 
     -- Card 3: Streak
     local streak_str = state.work_count .. "/4"
-    screen.draw_card(cards_x + 2 * (card_w + card_gap), y, card_w, card_h, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
-    screen.draw_rect(cards_x + 2 * (card_w + card_gap) + 10, y + 6, card_w - 20, 3, {color={80, 140, 240}, filled=true, radius=2})
+    ui.card(cards_x + 2 * (card_w + card_gap), y, card_w, card_h, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
+    ui.rect(cards_x + 2 * (card_w + card_gap) + 10, y + 6, card_w - 20, 3, {color={80, 140, 240}, filled=true, radius=2})
     vw = screen.get_text_width(streak_str, 28, true)
     screen.draw_text(streak_str, cards_x + 2 * (card_w + card_gap) + card_w / 2 - vw / 2, y + 26, {color=theme.text, size=28, bold=true})
     lbl = "Streak"
@@ -438,11 +428,11 @@ local function draw_settings_screen()
         -- Row card
         local border_color = selected and theme.accent or theme.border
         local bg = selected and theme.card_highlight or theme.card_bg
-        screen.draw_card(20, y, 680, h, {bg=bg, border=border_color, radius=10, shadow=true})
+        ui.card(20, y, 680, h, {bg=bg, border=border_color, radius=10, shadow=true})
 
         -- Selection indicator
         if selected then
-            screen.draw_rect(24, y + 14, 3, h - 28, {color=theme.accent, filled=true, radius=2})
+            ui.rect(24, y + 14, 3, h - 28, {color=theme.accent, filled=true, radius=2})
         end
 
         -- Label
@@ -466,7 +456,7 @@ local function draw_settings_screen()
                 pill_text_color = theme.text_dim
             end
 
-            local pw = screen.draw_pill(text, pill_x, pill_y,
+            local pw = ui.pill(text, pill_x, pill_y,
                 pill_bg[1] or pill_bg.r, pill_bg[2] or pill_bg.g, pill_bg[3] or pill_bg.b,
                 {text_color=pill_text_color, size=13})
             pill_x = pill_x + pw + 8
@@ -503,7 +493,7 @@ local function draw_settings_screen()
 
     local px = 20
     for _, item in ipairs(cycle) do
-        local pw = screen.draw_pill(item[1], px, y,
+        local pw = ui.pill(item[1], px, y,
             item[2][1], item[2][2], item[2][3], {text_color={18, 18, 24}, size=12})
         px = px + pw + 4
         if px > 680 then break end
