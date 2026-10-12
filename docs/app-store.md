@@ -11,6 +11,7 @@ The catalogue repository is [Strizzo/cartridge-apps](https://github.com/Strizzo/
 | Frequency | [frequency-cartridge](https://github.com/Strizzo/frequency-cartridge) | `dev.cartridge.frequency` |
 | Mission Control | [mission-control-cartridge](https://github.com/Strizzo/mission-control-cartridge) | `dev.cartridge.mission-control` |
 | Outside | [outside-cartridge](https://github.com/Strizzo/outside-cartridge) | `dev.cartridge.outside` |
+| VibeBoy | [vibeboy-cartridge](https://github.com/Strizzo/vibeboy-cartridge) | `dev.cartridge.vibeboy` |
 
 No device account or API token is needed. The device fetches one catalogue and downloads explicitly versioned release packages over HTTPS. There is no per-app GitHub API polling and no server to operate. GitHub hosting availability and quotas still apply.
 
@@ -30,7 +31,7 @@ The catalogue is an Ed25519-signed envelope. The exact UTF-8 `payload` string is
 
 Unsigned remote registries are no longer install sources. Local `registry.json` remains the trusted fallback shipped with the OS bundle; legacy bundled apps continue to launch. The old official registry URL migrates to the signed catalogue. Custom URLs are retained but must serve a catalogue signed with the pinned official key; third-party signing keys are not yet supported. The UI retains its current catalogue if a refresh fails.
 
-App API compatibility is explicit. Frequency 1.2.0 requires **CartridgeOS 0.6.2 or newer** for independent stick input; Mission Control and Outside 1.0.0 require 0.6.0. On an already bootstrapped 0.6.1-or-newer device, install the OS update from **Settings → System Update** and restart before updating Frequency. Older installations need the offline updater bootstrap once. App updates never replace the runtime or kernel.
+App API compatibility is explicit. Frequency 1.2.0 requires **CartridgeOS 0.6.2 or newer** for independent stick input; Mission Control and Outside 1.0.0 require 0.6.0. VibeBoy 0.4.0 requires 0.7.0 for shared app layouts and asynchronous SSH. World Pulse's refresh remains a development preview until its live GDELT sources are verified. On an already bootstrapped 0.6.1-or-newer device, install the OS update from **Settings → System Update** and restart before updating Frequency. Older installations need the offline updater bootstrap once. App updates never replace the runtime or kernel.
 
 CartridgeOS 0.6.4 checks each package's required runtime before starting a Store download. An incompatible update displays the app name, required and running OS versions, and the System Update steps. Store failures stay in front of old catalogue-refresh successes until dismissed; retrying does not duplicate them. R2 reads additional pages or dismisses the current result. While a task is running, its progress is shown instead of an older notice. After successful installation, the installed version and local library are reconciled.
 
@@ -52,7 +53,7 @@ Review and approve the new version, hash, size and permissions in `cartridge-app
 
 ## Bundled snapshots
 
-`lua_cartridges/frequency`, `mission_control`, and `outside` are pinned release snapshots for first boot and offline installations. Treat the separate app repositories as their source of truth. `store-apps.lock.json` records each release URL/hash and every packaged file's hash. CI detects modifications to those files.
+`lua_cartridges/frequency`, `mission_control`, `outside`, and `vibeboy` are pinned release snapshots for first boot and offline installations. Treat the separate app repositories as their source of truth. `store-apps.lock.json` records each release URL/hash and every packaged file's hash. CI detects modifications to those files.
 
 To refresh the bundled copies from a locally downloaded official signed catalogue:
 

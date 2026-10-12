@@ -1,11 +1,20 @@
 {
   "id": "dev.cartridge.ai-papers",
   "name": "AI Papers",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Browse top AI research papers from HuggingFace Daily Papers with arxiv reader",
   "author": "CartridgeOS",
   "entry": "main.lua",
   "category": "utility",
-  "permissions": ["network"],
-  "tags": ["ai", "research", "papers", "arxiv"]
+  "permissions": [
+    "network"
+  ],
+  "tags": [
+    "ai",
+    "research",
+    "papers",
+    "arxiv"
+  ],
+  "min_runtime": "0.7.0",
+  "repo_url": "https://github.com/Strizzo/Cartridge/tree/v0.7.0/lua_cartridges/ai_papers"
 }

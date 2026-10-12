@@ -6,9 +6,13 @@ fn app() -> Lua {
     register_json_api(&lua).unwrap();
     let root =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../lua_cartridges/frequency");
-    for module in ["station", "directory", "view"] {
+    for module in ["station", "directory", "view", "atlas_data", "atlas"] {
         let source = std::fs::read_to_string(root.join(format!("{module}.lua"))).unwrap();
-        let value: mlua::Value = lua.load(source).set_name(module).eval().unwrap();
+        let value: mlua::Value = if module == "atlas_data" {
+            // Directory tests use one explicitly reported location; the released
+            // worldwide dataset is verified by asset pins and native captures.
+            lua.load("return {schema=1,built_at='2026-10-07',tile_w=672,tile_h=252,stations={{'known',0,0,'GB','Known'}}}").eval().unwrap()
+        } else { lua.load(source).set_name(module).eval().unwrap() };
         let package: mlua::Table = lua.globals().get("package").unwrap();
         let loaded: mlua::Table = package.get("loaded").unwrap();
         loaded.set(module, value).unwrap();
@@ -109,14 +113,14 @@ fn rejects_unsupported_streams_invalid_geo_and_invented_locations() {
         populate({hls,unresolved,suffix,station('he','HE','AAC+'),station('opus','Opus','OPUS'),
             station('unknown','Unknown',''),station('aac','AAC','AAC',999,10),station('known','Known','MP3',0,0)})
         local rendered=render_text();assert(rendered:find('2 candidates / 8 checked / 6 omitted',1,true))
-        assert(rendered:find('1 reported locations  /  1 without coordinates',1,true))
+        assert(rendered:find('1 locations / 1 countries',1,true))
         local m=require('station')
         local x,y=m.project(m.normalize(station('zero','Zero','MP3',0,0)))
         assert(x==360 and y==276,'zero coordinates are valid and correctly projected')
         assert(m.project(m.normalize(station('none')))==nil)
         assert(m.normalize(station('bad','Bad','MP3',0/0,180)).geo_lat==nil)
-        press('dpad_down');press('dpad_right');assert(render_text():find('MAP / D-PAD',1,true))
-        press('a');assert(plays[1]=='https://example.invalid/known','map chooses actual pin only')
+        press('dpad_down');press('dpad_right');on_update(.1);assert(render_text():find('NEARBY STATIONS',1,true))
+        press('a');respond(latest('/stations/byuuid/known'),{station('known','Known','MP3',0,0)});on_update(.1);assert(plays[1]=='https://example.invalid/known','map tunes verified metadata for the selected reported pin')
     "#).exec().unwrap();
 }
 

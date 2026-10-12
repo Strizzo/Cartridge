@@ -18,5 +18,1459 @@
     "api": "https://docs.radio-browser.info/",
     "license": "Community data; Radio Browser states its database is public domain.",
     "notes": "Stream content and station marks remain with their respective owners. No station logos are fabricated or redistributed. Coordinates and codec labels are contributor-supplied and may be inaccurate."
+  },
+  "atlas": {
+    "schema": 1,
+    "built_at": "2026-10-07",
+    "fetched_at": "2026-10-06T22:08:10Z",
+    "source": "https://de1.api.radio-browser.info/json/stations/search?has_geo_info=true&hidebroken=true&limit=100000&order=stationuuid",
+    "response_sha256": "9dbe7691d51bc231a5141dcb6c8d2e621b22477902ab2d39e180397e7b4c3aa6",
+    "response_bytes": 16765229,
+    "input_mode": "live-build",
+    "license": "Radio Browser community database; public domain",
+    "count": 13179,
+    "per_country": {
+      "AE": 36,
+      "AF": 1,
+      "AG": 1,
+      "AL": 5,
+      "AM": 4,
+      "AO": 5,
+      "AR": 205,
+      "AS": 3,
+      "AT": 99,
+      "AU": 214,
+      "AW": 1,
+      "AX": 1,
+      "AZ": 10,
+      "BA": 34,
+      "BB": 10,
+      "BD": 8,
+      "BE": 182,
+      "BF": 4,
+      "BG": 75,
+      "BH": 4,
+      "BJ": 2,
+      "BO": 43,
+      "BQ": 4,
+      "BR": 567,
+      "BS": 2,
+      "BY": 17,
+      "CA": 630,
+      "CD": 3,
+      "CH": 94,
+      "CI": 7,
+      "CL": 98,
+      "CM": 1,
+      "CN": 28,
+      "CO": 116,
+      "CR": 18,
+      "CU": 7,
+      "CV": 16,
+      "CY": 9,
+      "CZ": 48,
+      "DE": 1437,
+      "DK": 78,
+      "DM": 1,
+      "DO": 23,
+      "DZ": 94,
+      "EC": 37,
+      "EE": 47,
+      "EG": 8,
+      "ES": 392,
+      "ET": 12,
+      "FI": 46,
+      "FK": 1,
+      "FO": 8,
+      "FR": 561,
+      "GB": 446,
+      "GE": 13,
+      "GF": 1,
+      "GG": 1,
+      "GH": 30,
+      "GI": 1,
+      "GN": 1,
+      "GP": 4,
+      "GR": 160,
+      "GT": 16,
+      "GU": 1,
+      "GY": 5,
+      "HK": 13,
+      "HN": 8,
+      "HR": 97,
+      "HT": 5,
+      "HU": 54,
+      "ID": 113,
+      "IE": 78,
+      "IL": 13,
+      "IM": 3,
+      "IN": 78,
+      "IQ": 6,
+      "IR": 3,
+      "IS": 8,
+      "IT": 215,
+      "JE": 2,
+      "JM": 17,
+      "JO": 5,
+      "JP": 9,
+      "KE": 5,
+      "KH": 6,
+      "KM": 4,
+      "KP": 3,
+      "KR": 24,
+      "KW": 10,
+      "KY": 4,
+      "KZ": 14,
+      "LB": 9,
+      "LC": 10,
+      "LI": 1,
+      "LK": 17,
+      "LT": 12,
+      "LU": 9,
+      "LV": 34,
+      "LY": 3,
+      "MA": 12,
+      "MC": 3,
+      "MD": 12,
+      "ME": 2,
+      "MF": 1,
+      "MG": 3,
+      "MH": 1,
+      "MK": 15,
+      "ML": 1,
+      "MM": 1,
+      "MQ": 2,
+      "MU": 10,
+      "MV": 4,
+      "MX": 2141,
+      "MY": 12,
+      "MZ": 3,
+      "NA": 9,
+      "NC": 1,
+      "NE": 1,
+      "NG": 17,
+      "NI": 8,
+      "NL": 405,
+      "NO": 53,
+      "NP": 6,
+      "NZ": 50,
+      "OM": 3,
+      "PA": 4,
+      "PE": 80,
+      "PF": 7,
+      "PH": 23,
+      "PK": 11,
+      "PL": 227,
+      "PM": 2,
+      "PR": 11,
+      "PS": 2,
+      "PT": 75,
+      "PY": 8,
+      "QA": 5,
+      "RE": 15,
+      "RO": 485,
+      "RS": 53,
+      "RU": 206,
+      "SA": 15,
+      "SC": 3,
+      "SD": 1,
+      "SE": 112,
+      "SG": 20,
+      "SH": 2,
+      "SI": 33,
+      "SK": 32,
+      "SM": 1,
+      "SN": 1,
+      "SO": 1,
+      "SR": 4,
+      "SV": 19,
+      "SX": 1,
+      "SY": 2,
+      "TF": 1,
+      "TG": 1,
+      "TH": 16,
+      "TN": 13,
+      "TO": 3,
+      "TR": 162,
+      "TT": 5,
+      "TW": 16,
+      "TZ": 3,
+      "UA": 54,
+      "UG": 3,
+      "UM": 4,
+      "US": 1602,
+      "UY": 29,
+      "VA": 2,
+      "VC": 1,
+      "VE": 29,
+      "VG": 1,
+      "VI": 1,
+      "VN": 1,
+      "VU": 3,
+      "XK": 2,
+      "YE": 2,
+      "YT": 2,
+      "ZA": 56,
+      "ZW": 2
+    },
+    "filtering": {
+      "received": 13180,
+      "rejected": 1,
+      "duplicates": 0,
+      "valid_unique": 13179,
+      "capped": 0
+    },
+    "max_stations": 30000,
+    "station_fields": [
+      "uuid",
+      "lat",
+      "lon",
+      "countrycode",
+      "name"
+    ],
+    "snapshot_sha256": "18efe56b7b6f474f1f22e92f3fa6cb7cbf6476ed2fc8d0620031d0b36374485c",
+    "snapshot_bytes": 1585119,
+    "tile_w": 672,
+    "tile_h": 252,
+    "zooms": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "tile_count": 85,
+    "projection": {
+      "name": "Equirectangular",
+      "world": {
+        "west": -180,
+        "east": 180,
+        "north": 90,
+        "south": -90
+      },
+      "x": "(lon+180)/360*672*zoom",
+      "y": "(90-lat)/180*252*zoom",
+      "origin": "northwest; x east, y south",
+      "tile": "assets/atlas/z{zoom}-{col}-{row}.png; col,row are integers in [0,zoom-1]",
+      "tile_x": "world_x-col*672",
+      "tile_y": "world_y-row*252",
+      "edge_policy": "+180 and -90 clamp inside the last tile; marker artwork wraps at the antimeridian",
+      "viewport": "672x252 pixels at native scale; at most four cropped tile blits per frame"
+    },
+    "clusters": {
+      "cell_pixels": 7,
+      "anchor": "whole-world pixel origin",
+      "position": "mean of actual projected station points in each cell",
+      "radius_pixels": [
+        1.5,
+        3.0
+      ],
+      "colors": {
+        "ocean": "#192f38",
+        "land": "#466063",
+        "grid": "#29424a",
+        "outlines": "#69807b",
+        "peach": "#efb195",
+        "cream": "#efe8d6"
+      }
+    },
+    "background": {
+      "source": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_110m_admin_0_countries.geojson",
+      "version": "5.1.2",
+      "license": "Public domain",
+      "source_sha256": "6866c877d39cba9c357620878839b336d569f8c662d3cfab4cb1dbe2d39c977f"
+    },
+    "notes": "Offline build snapshot. No launch-time catalogue fetch, stream URLs, logos or synthetic coordinates. Country codes and coordinates are contributor-supplied.",
+    "tiles": [
+      {
+        "file": "assets/atlas/z1-0-0.png",
+        "zoom": 1,
+        "col": 0,
+        "row": 0,
+        "bounds": {
+          "west": -180.0,
+          "east": 180.0,
+          "north": 90.0,
+          "south": -90.0
+        },
+        "bytes": 119845,
+        "sha256": "1df4c3dea2d966f32cc0f79e1d2b6af6b5b150c0fee7d302d73352187487004b"
+      },
+      {
+        "file": "assets/atlas/z2-0-0.png",
+        "zoom": 2,
+        "col": 0,
+        "row": 0,
+        "bounds": {
+          "west": -180.0,
+          "east": 0.0,
+          "north": 90.0,
+          "south": 0.0
+        },
+        "bytes": 93089,
+        "sha256": "4d58fb64c5f51f941806ce24ad3fb7133766b496210958f7a63b97944235cfda"
+      },
+      {
+        "file": "assets/atlas/z2-0-1.png",
+        "zoom": 2,
+        "col": 0,
+        "row": 1,
+        "bounds": {
+          "west": -180.0,
+          "east": 0.0,
+          "north": 0.0,
+          "south": -90.0
+        },
+        "bytes": 39080,
+        "sha256": "4ae1faf94081741de97c0b5de12a5dcbba52032f007285224654c41d22230f18"
+      },
+      {
+        "file": "assets/atlas/z2-1-0.png",
+        "zoom": 2,
+        "col": 1,
+        "row": 0,
+        "bounds": {
+          "west": 0.0,
+          "east": 180.0,
+          "north": 90.0,
+          "south": 0.0
+        },
+        "bytes": 104634,
+        "sha256": "9706ecc62a01ce65b2db9bd1b8bb7012a44f5f03cc93105f39e2ca7a4929a909"
+      },
+      {
+        "file": "assets/atlas/z2-1-1.png",
+        "zoom": 2,
+        "col": 1,
+        "row": 1,
+        "bounds": {
+          "west": 0.0,
+          "east": 180.0,
+          "north": 0.0,
+          "south": -90.0
+        },
+        "bytes": 42968,
+        "sha256": "3681e8c5ffdc9f66ec853495e963afee30aeae43342eaddb4c0a242ba0caa250"
+      },
+      {
+        "file": "assets/atlas/z4-0-0.png",
+        "zoom": 4,
+        "col": 0,
+        "row": 0,
+        "bounds": {
+          "west": -180.0,
+          "east": -90.0,
+          "north": 90.0,
+          "south": 45.0
+        },
+        "bytes": 42603,
+        "sha256": "0b50eb0d20d35f3bfa1a6dda6a01697f7bdcd75a2ea7692a43212c4c7d2ffb97"
+      },
+      {
+        "file": "assets/atlas/z4-0-1.png",
+        "zoom": 4,
+        "col": 0,
+        "row": 1,
+        "bounds": {
+          "west": -180.0,
+          "east": -90.0,
+          "north": 45.0,
+          "south": 0.0
+        },
+        "bytes": 35960,
+        "sha256": "0a799eaefa0a261fe3415c1fbe45ae2a66b4b738941d5d2e1a46a96e91691b5d"
+      },
+      {
+        "file": "assets/atlas/z4-0-2.png",
+        "zoom": 4,
+        "col": 0,
+        "row": 2,
+        "bounds": {
+          "west": -180.0,
+          "east": -90.0,
+          "north": 0.0,
+          "south": -45.0
+        },
+        "bytes": 1737,
+        "sha256": "b8576b5cdb629a4ba6e9804b629a01a11c2825e3c51d7fc5c684f4965000595d"
+      },
+      {
+        "file": "assets/atlas/z4-0-3.png",
+        "zoom": 4,
+        "col": 0,
+        "row": 3,
+        "bounds": {
+          "west": -180.0,
+          "east": -90.0,
+          "north": -45.0,
+          "south": -90.0
+        },
+        "bytes": 9510,
+        "sha256": "a5a0de5636e5b6460539e23f26cc2ebf602253e4ddc4c9ab59422ec44a844f1b"
+      },
+      {
+        "file": "assets/atlas/z4-1-0.png",
+        "zoom": 4,
+        "col": 1,
+        "row": 0,
+        "bounds": {
+          "west": -90.0,
+          "east": 0.0,
+          "north": 90.0,
+          "south": 45.0
+        },
+        "bytes": 50767,
+        "sha256": "7c87ce390f6b0730a9807714b071eaaea20f92f9b5dacd3597e974073a27c237"
+      },
+      {
+        "file": "assets/atlas/z4-1-1.png",
+        "zoom": 4,
+        "col": 1,
+        "row": 1,
+        "bounds": {
+          "west": -90.0,
+          "east": 0.0,
+          "north": 45.0,
+          "south": 0.0
+        },
+        "bytes": 69222,
+        "sha256": "c9f9fbc89f6e551836ae40f2d5db16644e67fa2785cbbe5184253ad26d0c654d"
+      },
+      {
+        "file": "assets/atlas/z4-1-2.png",
+        "zoom": 4,
+        "col": 1,
+        "row": 2,
+        "bounds": {
+          "west": -90.0,
+          "east": 0.0,
+          "north": 0.0,
+          "south": -45.0
+        },
+        "bytes": 46178,
+        "sha256": "9607bf4458905f4ba71484ef40513f816d8d1a0888639b6c90a994802addc890"
+      },
+      {
+        "file": "assets/atlas/z4-1-3.png",
+        "zoom": 4,
+        "col": 1,
+        "row": 3,
+        "bounds": {
+          "west": -90.0,
+          "east": 0.0,
+          "north": -45.0,
+          "south": -90.0
+        },
+        "bytes": 19951,
+        "sha256": "ee216d2caeaddf446632a7c263c6f37f59e5f2c3a91e080e6a065eb1e3ea05a1"
+      },
+      {
+        "file": "assets/atlas/z4-2-0.png",
+        "zoom": 4,
+        "col": 2,
+        "row": 0,
+        "bounds": {
+          "west": 0.0,
+          "east": 90.0,
+          "north": 90.0,
+          "south": 45.0
+        },
+        "bytes": 69106,
+        "sha256": "a948ac99e1b55729069b0827846fd7b5ef6d9f842571890b4cbbed10ade70656"
+      },
+      {
+        "file": "assets/atlas/z4-2-1.png",
+        "zoom": 4,
+        "col": 2,
+        "row": 1,
+        "bounds": {
+          "west": 0.0,
+          "east": 90.0,
+          "north": 45.0,
+          "south": 0.0
+        },
+        "bytes": 91327,
+        "sha256": "d0ee4131d9f781aad6f56af8e0b40d20036faf6931c3ab19bda5fd0c97aaf0d8"
+      },
+      {
+        "file": "assets/atlas/z4-2-2.png",
+        "zoom": 4,
+        "col": 2,
+        "row": 2,
+        "bounds": {
+          "west": 0.0,
+          "east": 90.0,
+          "north": 0.0,
+          "south": -45.0
+        },
+        "bytes": 28405,
+        "sha256": "60ee08cd0b04a5230816483fd105877b463d6857a5317b140abce87534e98d45"
+      },
+      {
+        "file": "assets/atlas/z4-2-3.png",
+        "zoom": 4,
+        "col": 2,
+        "row": 3,
+        "bounds": {
+          "west": 0.0,
+          "east": 90.0,
+          "north": -45.0,
+          "south": -90.0
+        },
+        "bytes": 8271,
+        "sha256": "172aacb0eb2129ae338ccdc41ec242a53aecd809abb6fcc3ade9baa585c81646"
+      },
+      {
+        "file": "assets/atlas/z4-3-0.png",
+        "zoom": 4,
+        "col": 3,
+        "row": 0,
+        "bounds": {
+          "west": 90.0,
+          "east": 180.0,
+          "north": 90.0,
+          "south": 45.0
+        },
+        "bytes": 24194,
+        "sha256": "23e7eaa286833a60023474f067719b9e2b4d4285e101df5e120e833e72850f9b"
+      },
+      {
+        "file": "assets/atlas/z4-3-1.png",
+        "zoom": 4,
+        "col": 3,
+        "row": 1,
+        "bounds": {
+          "west": 90.0,
+          "east": 180.0,
+          "north": 45.0,
+          "south": 0.0
+        },
+        "bytes": 41907,
+        "sha256": "506acc487e8274836fa602c3dd790e92790d024e277408f899e64e6d33454553"
+      },
+      {
+        "file": "assets/atlas/z4-3-2.png",
+        "zoom": 4,
+        "col": 3,
+        "row": 2,
+        "bounds": {
+          "west": 90.0,
+          "east": 180.0,
+          "north": 0.0,
+          "south": -45.0
+        },
+        "bytes": 40778,
+        "sha256": "5834b525d1ecc74a03f0be1bbb24907261af6817566197d19abd19fe68c0779d"
+      },
+      {
+        "file": "assets/atlas/z4-3-3.png",
+        "zoom": 4,
+        "col": 3,
+        "row": 3,
+        "bounds": {
+          "west": 90.0,
+          "east": 180.0,
+          "north": -45.0,
+          "south": -90.0
+        },
+        "bytes": 8754,
+        "sha256": "f18dd6aea825d9621aa42239fcf0ed24bc34e91cd45de4a594275803ec1cde20"
+      },
+      {
+        "file": "assets/atlas/z8-0-0.png",
+        "zoom": 8,
+        "col": 0,
+        "row": 0,
+        "bounds": {
+          "west": -180.0,
+          "east": -135.0,
+          "north": 90.0,
+          "south": 67.5
+        },
+        "bytes": 5261,
+        "sha256": "dd427854130a91949b5f187ba4e09eac890935e3431e1b658fa5bbff14e15b41"
+      },
+      {
+        "file": "assets/atlas/z8-0-1.png",
+        "zoom": 8,
+        "col": 0,
+        "row": 1,
+        "bounds": {
+          "west": -180.0,
+          "east": -135.0,
+          "north": 67.5,
+          "south": 45.0
+        },
+        "bytes": 18281,
+        "sha256": "21f1de00dd4cebee637f8523e4dae7f247b5149479253b9c9295d7466bc2afcb"
+      },
+      {
+        "file": "assets/atlas/z8-0-2.png",
+        "zoom": 8,
+        "col": 0,
+        "row": 2,
+        "bounds": {
+          "west": -180.0,
+          "east": -135.0,
+          "north": 45.0,
+          "south": 22.5
+        },
+        "bytes": 964,
+        "sha256": "45e05d2a0079a9848edd5f45fb08391223a3ae77de1c4fc6907438ce085e39a5"
+      },
+      {
+        "file": "assets/atlas/z8-0-3.png",
+        "zoom": 8,
+        "col": 0,
+        "row": 3,
+        "bounds": {
+          "west": -180.0,
+          "east": -135.0,
+          "north": 22.5,
+          "south": 0.0
+        },
+        "bytes": 3008,
+        "sha256": "9a137133a35d7a6bdf29c47e3769036864c56a755287052d2ad8bd40ddfc931e"
+      },
+      {
+        "file": "assets/atlas/z8-0-4.png",
+        "zoom": 8,
+        "col": 0,
+        "row": 4,
+        "bounds": {
+          "west": -180.0,
+          "east": -135.0,
+          "north": 0.0,
+          "south": -22.5
+        },
+        "bytes": 1806,
+        "sha256": "06fa918d547971fef4166e22053852dfe1f98abc5c0f9b324b2e1e5b20014fbb"
+      },
+      {
+        "file": "assets/atlas/z8-0-5.png",
+        "zoom": 8,
+        "col": 0,
+        "row": 5,
+        "bounds": {
+          "west": -180.0,
+          "east": -135.0,
+          "north": -22.5,
+          "south": -45.0
+        },
+        "bytes": 965,
+        "sha256": "bd7e3cef9a7cca38cb32d58d5ec9f67049c21bba973853c421b07d43e4adcfe0"
+      },
+      {
+        "file": "assets/atlas/z8-0-6.png",
+        "zoom": 8,
+        "col": 0,
+        "row": 6,
+        "bounds": {
+          "west": -180.0,
+          "east": -135.0,
+          "north": -45.0,
+          "south": -67.5
+        },
+        "bytes": 964,
+        "sha256": "45e05d2a0079a9848edd5f45fb08391223a3ae77de1c4fc6907438ce085e39a5"
+      },
+      {
+        "file": "assets/atlas/z8-0-7.png",
+        "zoom": 8,
+        "col": 0,
+        "row": 7,
+        "bounds": {
+          "west": -180.0,
+          "east": -135.0,
+          "north": -67.5,
+          "south": -90.0
+        },
+        "bytes": 10188,
+        "sha256": "a850dfcab32b0ce1d22d545872290d4b9b6d7d91ce9115e7571f4efcbaf61d44"
+      },
+      {
+        "file": "assets/atlas/z8-1-0.png",
+        "zoom": 8,
+        "col": 1,
+        "row": 0,
+        "bounds": {
+          "west": -135.0,
+          "east": -90.0,
+          "north": 90.0,
+          "south": 67.5
+        },
+        "bytes": 29870,
+        "sha256": "13b0a40a52e4757056e9da957c684cc3ce3917606e443d3ca071710d18b0a064"
+      },
+      {
+        "file": "assets/atlas/z8-1-1.png",
+        "zoom": 8,
+        "col": 1,
+        "row": 1,
+        "bounds": {
+          "west": -135.0,
+          "east": -90.0,
+          "north": 67.5,
+          "south": 45.0
+        },
+        "bytes": 23620,
+        "sha256": "ddefd78b16ed9f24286169b9904ca015da2e4f87e09594220c45e486752d1e73"
+      },
+      {
+        "file": "assets/atlas/z8-1-2.png",
+        "zoom": 8,
+        "col": 1,
+        "row": 2,
+        "bounds": {
+          "west": -135.0,
+          "east": -90.0,
+          "north": 45.0,
+          "south": 22.5
+        },
+        "bytes": 38921,
+        "sha256": "528a3d8c2b864152bfba2f30f62cd754448ac915d8283b0692917743826c7dc7"
+      },
+      {
+        "file": "assets/atlas/z8-1-3.png",
+        "zoom": 8,
+        "col": 1,
+        "row": 3,
+        "bounds": {
+          "west": -135.0,
+          "east": -90.0,
+          "north": 22.5,
+          "south": 0.0
+        },
+        "bytes": 19734,
+        "sha256": "84808802f809215ba3c8763c9f9c3e6c86f795054b1b4a83e020810e0203f647"
+      },
+      {
+        "file": "assets/atlas/z8-1-4.png",
+        "zoom": 8,
+        "col": 1,
+        "row": 4,
+        "bounds": {
+          "west": -135.0,
+          "east": -90.0,
+          "north": 0.0,
+          "south": -22.5
+        },
+        "bytes": 935,
+        "sha256": "f4130f03a7e3137239806e1aeb02debd76c27cc37564136b7472b9293da61d28"
+      },
+      {
+        "file": "assets/atlas/z8-1-5.png",
+        "zoom": 8,
+        "col": 1,
+        "row": 5,
+        "bounds": {
+          "west": -135.0,
+          "east": -90.0,
+          "north": -22.5,
+          "south": -45.0
+        },
+        "bytes": 973,
+        "sha256": "a7e2fb6c29cfb601620d0781051a353c55285382db9547f3eefde53e241cf072"
+      },
+      {
+        "file": "assets/atlas/z8-1-6.png",
+        "zoom": 8,
+        "col": 1,
+        "row": 6,
+        "bounds": {
+          "west": -135.0,
+          "east": -90.0,
+          "north": -45.0,
+          "south": -67.5
+        },
+        "bytes": 973,
+        "sha256": "30191e31f5e240a3a540f7a72be047fd3538586928f8002f2c926345b6b72a12"
+      },
+      {
+        "file": "assets/atlas/z8-1-7.png",
+        "zoom": 8,
+        "col": 1,
+        "row": 7,
+        "bounds": {
+          "west": -135.0,
+          "east": -90.0,
+          "north": -67.5,
+          "south": -90.0
+        },
+        "bytes": 7262,
+        "sha256": "8ef94fd66301ec56df22b5f5304e85fc0c1bc17be8d279c4d3aea6ba3dfa4977"
+      },
+      {
+        "file": "assets/atlas/z8-2-0.png",
+        "zoom": 8,
+        "col": 2,
+        "row": 0,
+        "bounds": {
+          "west": -90.0,
+          "east": -45.0,
+          "north": 90.0,
+          "south": 67.5
+        },
+        "bytes": 24678,
+        "sha256": "5608df7fad463b25844448c70463e9a03e12c555b814cc079d470ad2aa07faa9"
+      },
+      {
+        "file": "assets/atlas/z8-2-1.png",
+        "zoom": 8,
+        "col": 2,
+        "row": 1,
+        "bounds": {
+          "west": -90.0,
+          "east": -45.0,
+          "north": 67.5,
+          "south": 45.0
+        },
+        "bytes": 38943,
+        "sha256": "2cc4506573529ed289777a03e3bd0ef4d86f86c188ae8f891cc92171dab8d55f"
+      },
+      {
+        "file": "assets/atlas/z8-2-2.png",
+        "zoom": 8,
+        "col": 2,
+        "row": 2,
+        "bounds": {
+          "west": -90.0,
+          "east": -45.0,
+          "north": 45.0,
+          "south": 22.5
+        },
+        "bytes": 41945,
+        "sha256": "4144c59460591276adfff31ec14aaedb931d90c1bd5dd59ed904e9b9775511f3"
+      },
+      {
+        "file": "assets/atlas/z8-2-3.png",
+        "zoom": 8,
+        "col": 2,
+        "row": 3,
+        "bounds": {
+          "west": -90.0,
+          "east": -45.0,
+          "north": 22.5,
+          "south": 0.0
+        },
+        "bytes": 45480,
+        "sha256": "1e7ddf28158a6234b5c93d04a4fa372f8cfe1e899efb0f1d03f0d141488b7d35"
+      },
+      {
+        "file": "assets/atlas/z8-2-4.png",
+        "zoom": 8,
+        "col": 2,
+        "row": 4,
+        "bounds": {
+          "west": -90.0,
+          "east": -45.0,
+          "north": 0.0,
+          "south": -22.5
+        },
+        "bytes": 30393,
+        "sha256": "d56dba1e2321136d95b10888b3bb8ac7236602c54a83e85b6d33311f64c3e4b9"
+      },
+      {
+        "file": "assets/atlas/z8-2-5.png",
+        "zoom": 8,
+        "col": 2,
+        "row": 5,
+        "bounds": {
+          "west": -90.0,
+          "east": -45.0,
+          "north": -22.5,
+          "south": -45.0
+        },
+        "bytes": 35699,
+        "sha256": "c811d7b3357dc5a6e29e2e9de572490fced19dd640966f1466fb0ca7a16edea5"
+      },
+      {
+        "file": "assets/atlas/z8-2-6.png",
+        "zoom": 8,
+        "col": 2,
+        "row": 6,
+        "bounds": {
+          "west": -90.0,
+          "east": -45.0,
+          "north": -45.0,
+          "south": -67.5
+        },
+        "bytes": 14852,
+        "sha256": "91b097026eb582b472529c60d602269f81ca724b93ff28877ffe8ad20effd469"
+      },
+      {
+        "file": "assets/atlas/z8-2-7.png",
+        "zoom": 8,
+        "col": 2,
+        "row": 7,
+        "bounds": {
+          "west": -90.0,
+          "east": -45.0,
+          "north": -67.5,
+          "south": -90.0
+        },
+        "bytes": 15231,
+        "sha256": "ed32d5387626fd827333da1104cb7a89fc6e14b8978225b78fe2f81b3c4bfdeb"
+      },
+      {
+        "file": "assets/atlas/z8-3-0.png",
+        "zoom": 8,
+        "col": 3,
+        "row": 0,
+        "bounds": {
+          "west": -45.0,
+          "east": 0.0,
+          "north": 90.0,
+          "south": 67.5
+        },
+        "bytes": 10018,
+        "sha256": "b813aa982d819148dfd06e2b12ea10d474acdd0f1a096028591f1a675dd7e167"
+      },
+      {
+        "file": "assets/atlas/z8-3-1.png",
+        "zoom": 8,
+        "col": 3,
+        "row": 1,
+        "bounds": {
+          "west": -45.0,
+          "east": 0.0,
+          "north": 67.5,
+          "south": 45.0
+        },
+        "bytes": 26242,
+        "sha256": "d1873ac681a75224a038c147d9e646e75cc6e33e16d928d36365392a14ff366f"
+      },
+      {
+        "file": "assets/atlas/z8-3-2.png",
+        "zoom": 8,
+        "col": 3,
+        "row": 2,
+        "bounds": {
+          "west": -45.0,
+          "east": 0.0,
+          "north": 45.0,
+          "south": 22.5
+        },
+        "bytes": 25806,
+        "sha256": "18a433ae0f45d3313e0330e567a26b5facc9357baea4d76c5f999c43241be797"
+      },
+      {
+        "file": "assets/atlas/z8-3-3.png",
+        "zoom": 8,
+        "col": 3,
+        "row": 3,
+        "bounds": {
+          "west": -45.0,
+          "east": 0.0,
+          "north": 22.5,
+          "south": 0.0
+        },
+        "bytes": 19560,
+        "sha256": "9175acef9bfb3ec20b19e32961b8f6a8fb93df160bf6796a7004ccf5e56bf018"
+      },
+      {
+        "file": "assets/atlas/z8-3-4.png",
+        "zoom": 8,
+        "col": 3,
+        "row": 4,
+        "bounds": {
+          "west": -45.0,
+          "east": 0.0,
+          "north": 0.0,
+          "south": -22.5
+        },
+        "bytes": 12793,
+        "sha256": "866f5ecd8400ff7b5891f0e3cd9d95cb5b6b4fdba875fbb9c44be3f490e21608"
+      },
+      {
+        "file": "assets/atlas/z8-3-5.png",
+        "zoom": 8,
+        "col": 3,
+        "row": 5,
+        "bounds": {
+          "west": -45.0,
+          "east": 0.0,
+          "north": -22.5,
+          "south": -45.0
+        },
+        "bytes": 2385,
+        "sha256": "66814d1e21dc5b720d82093d6d802885e32c51aef8cef6cb738ae2fe9fc8ceb7"
+      },
+      {
+        "file": "assets/atlas/z8-3-6.png",
+        "zoom": 8,
+        "col": 3,
+        "row": 6,
+        "bounds": {
+          "west": -45.0,
+          "east": 0.0,
+          "north": -45.0,
+          "south": -67.5
+        },
+        "bytes": 1317,
+        "sha256": "fadb86e1170e20e00adc7350c32f0cc183a1e6d4fde1b6bb8c10c99333bb4507"
+      },
+      {
+        "file": "assets/atlas/z8-3-7.png",
+        "zoom": 8,
+        "col": 3,
+        "row": 7,
+        "bounds": {
+          "west": -45.0,
+          "east": 0.0,
+          "north": -67.5,
+          "south": -90.0
+        },
+        "bytes": 7530,
+        "sha256": "b37aa7de224d7d05fcdbf25de80313507e8856ab9c555e56e0e1a2ab103a25fe"
+      },
+      {
+        "file": "assets/atlas/z8-4-0.png",
+        "zoom": 8,
+        "col": 4,
+        "row": 0,
+        "bounds": {
+          "west": 0.0,
+          "east": 45.0,
+          "north": 90.0,
+          "south": 67.5
+        },
+        "bytes": 12281,
+        "sha256": "0452c16da7b8bd6c1510ceccfd65679727b71b824a39f9fa32eb724f20acbaae"
+      },
+      {
+        "file": "assets/atlas/z8-4-1.png",
+        "zoom": 8,
+        "col": 4,
+        "row": 1,
+        "bounds": {
+          "west": 0.0,
+          "east": 45.0,
+          "north": 67.5,
+          "south": 45.0
+        },
+        "bytes": 98187,
+        "sha256": "7719449ab548168de8ce52c651fae9634f64ddad9022a45f3e4842e3a773eb8b"
+      },
+      {
+        "file": "assets/atlas/z8-4-2.png",
+        "zoom": 8,
+        "col": 4,
+        "row": 2,
+        "bounds": {
+          "west": 0.0,
+          "east": 45.0,
+          "north": 45.0,
+          "south": 22.5
+        },
+        "bytes": 71092,
+        "sha256": "aada80757935fb3be22e03c9d4ba05c016bb15a565173c41e811f415ddd9dbd7"
+      },
+      {
+        "file": "assets/atlas/z8-4-3.png",
+        "zoom": 8,
+        "col": 4,
+        "row": 3,
+        "bounds": {
+          "west": 0.0,
+          "east": 45.0,
+          "north": 22.5,
+          "south": 0.0
+        },
+        "bytes": 38703,
+        "sha256": "631e44af2d9449b478e2b1951baa3412c462032ff6497f03af6d0826c33f8c3b"
+      },
+      {
+        "file": "assets/atlas/z8-4-4.png",
+        "zoom": 8,
+        "col": 4,
+        "row": 4,
+        "bounds": {
+          "west": 0.0,
+          "east": 45.0,
+          "north": 0.0,
+          "south": -22.5
+        },
+        "bytes": 30688,
+        "sha256": "5637a8d81d495ee4e7556d6d7f84d547ae9f2ca2df5a3ef1cecdb057b0380317"
+      },
+      {
+        "file": "assets/atlas/z8-4-5.png",
+        "zoom": 8,
+        "col": 4,
+        "row": 5,
+        "bounds": {
+          "west": 0.0,
+          "east": 45.0,
+          "north": -22.5,
+          "south": -45.0
+        },
+        "bytes": 15572,
+        "sha256": "f8eac343737629e335ed6ba845f7b429682eb3d353714b4c023982b9684b601f"
+      },
+      {
+        "file": "assets/atlas/z8-4-6.png",
+        "zoom": 8,
+        "col": 4,
+        "row": 6,
+        "bounds": {
+          "west": 0.0,
+          "east": 45.0,
+          "north": -45.0,
+          "south": -67.5
+        },
+        "bytes": 1278,
+        "sha256": "592b2697ccaa525c58e8201cf0d125a9255c07b01f4a126261dc3a62eb2716e7"
+      },
+      {
+        "file": "assets/atlas/z8-4-7.png",
+        "zoom": 8,
+        "col": 4,
+        "row": 7,
+        "bounds": {
+          "west": 0.0,
+          "east": 45.0,
+          "north": -67.5,
+          "south": -90.0
+        },
+        "bytes": 6216,
+        "sha256": "21f2691c2aaaa0a63991c31884c17bdeef6599d44e375027865d3c59ede049f8"
+      },
+      {
+        "file": "assets/atlas/z8-5-0.png",
+        "zoom": 8,
+        "col": 5,
+        "row": 0,
+        "bounds": {
+          "west": 45.0,
+          "east": 90.0,
+          "north": 90.0,
+          "south": 67.5
+        },
+        "bytes": 15066,
+        "sha256": "09c3bfda924bd4634eed39554cd41017770205feaa38bd40fce1de8a0cd43075"
+      },
+      {
+        "file": "assets/atlas/z8-5-1.png",
+        "zoom": 8,
+        "col": 5,
+        "row": 1,
+        "bounds": {
+          "west": 45.0,
+          "east": 90.0,
+          "north": 67.5,
+          "south": 45.0
+        },
+        "bytes": 15247,
+        "sha256": "4ec6f532a808f1f188edced39f49aae632d4d638ee3b34de284de57192b2a53d"
+      },
+      {
+        "file": "assets/atlas/z8-5-2.png",
+        "zoom": 8,
+        "col": 5,
+        "row": 2,
+        "bounds": {
+          "west": 45.0,
+          "east": 90.0,
+          "north": 45.0,
+          "south": 22.5
+        },
+        "bytes": 44814,
+        "sha256": "aa04086b2a58fe3a1e6c280f2d6f7652b1b44e076bd83c2e34da561328ec9842"
+      },
+      {
+        "file": "assets/atlas/z8-5-3.png",
+        "zoom": 8,
+        "col": 5,
+        "row": 3,
+        "bounds": {
+          "west": 45.0,
+          "east": 90.0,
+          "north": 22.5,
+          "south": 0.0
+        },
+        "bytes": 20830,
+        "sha256": "0cda68275a84b7a8ba4dfec27a4053ff6ae23ee4c4a82cef74d45c5b76b8bbf4"
+      },
+      {
+        "file": "assets/atlas/z8-5-4.png",
+        "zoom": 8,
+        "col": 5,
+        "row": 4,
+        "bounds": {
+          "west": 45.0,
+          "east": 90.0,
+          "north": 0.0,
+          "south": -22.5
+        },
+        "bytes": 5589,
+        "sha256": "4128fc94d6bf0dad5ebfa68c834d88e054e4284ac33d951e12d6097c7786f93b"
+      },
+      {
+        "file": "assets/atlas/z8-5-5.png",
+        "zoom": 8,
+        "col": 5,
+        "row": 5,
+        "bounds": {
+          "west": 45.0,
+          "east": 90.0,
+          "north": -22.5,
+          "south": -45.0
+        },
+        "bytes": 1829,
+        "sha256": "41e6bc269ffc849ed6937a228b845fedb21c93b98f278e1cce5728f89ab165b5"
+      },
+      {
+        "file": "assets/atlas/z8-5-6.png",
+        "zoom": 8,
+        "col": 5,
+        "row": 6,
+        "bounds": {
+          "west": 45.0,
+          "east": 90.0,
+          "north": -45.0,
+          "south": -67.5
+        },
+        "bytes": 4189,
+        "sha256": "9e2b89261a24cd85baa33423578500bc13d127fba9ee7617c6bf600190cd7390"
+      },
+      {
+        "file": "assets/atlas/z8-5-7.png",
+        "zoom": 8,
+        "col": 5,
+        "row": 7,
+        "bounds": {
+          "west": 45.0,
+          "east": 90.0,
+          "north": -67.5,
+          "south": -90.0
+        },
+        "bytes": 5168,
+        "sha256": "6762c70cb4f08dcce887c17504a5dbad9f92b72e4fa548df74b8ecd623bb8ee4"
+      },
+      {
+        "file": "assets/atlas/z8-6-0.png",
+        "zoom": 8,
+        "col": 6,
+        "row": 0,
+        "bounds": {
+          "west": 90.0,
+          "east": 135.0,
+          "north": 90.0,
+          "south": 67.5
+        },
+        "bytes": 10154,
+        "sha256": "fa7c0f750bfbcda679677945ba7f34fdb76cbf2aaf5cb2404814b44f4faa5018"
+      },
+      {
+        "file": "assets/atlas/z8-6-1.png",
+        "zoom": 8,
+        "col": 6,
+        "row": 1,
+        "bounds": {
+          "west": 90.0,
+          "east": 135.0,
+          "north": 67.5,
+          "south": 45.0
+        },
+        "bytes": 10657,
+        "sha256": "8b26d74b7308e0914df823d14ec40deca9220508adc0b0c32fe8eed069d8368f"
+      },
+      {
+        "file": "assets/atlas/z8-6-2.png",
+        "zoom": 8,
+        "col": 6,
+        "row": 2,
+        "bounds": {
+          "west": 90.0,
+          "east": 135.0,
+          "north": 45.0,
+          "south": 22.5
+        },
+        "bytes": 27706,
+        "sha256": "71c9720bc07199b866d1ce4c5ad1be4044020f8fd4a6b93496b7f03cb06e3a27"
+      },
+      {
+        "file": "assets/atlas/z8-6-3.png",
+        "zoom": 8,
+        "col": 6,
+        "row": 3,
+        "bounds": {
+          "west": 90.0,
+          "east": 135.0,
+          "north": 22.5,
+          "south": 0.0
+        },
+        "bytes": 44994,
+        "sha256": "b0d0c46a3e893db47aa46707565a27a23c3d9afdbd6e4cea78bef634058f81ae"
+      },
+      {
+        "file": "assets/atlas/z8-6-4.png",
+        "zoom": 8,
+        "col": 6,
+        "row": 4,
+        "bounds": {
+          "west": 90.0,
+          "east": 135.0,
+          "north": 0.0,
+          "south": -22.5
+        },
+        "bytes": 27564,
+        "sha256": "5e5cb4e51962f28e12053f4a7e355156f69f1f99706f2eda9b9b15617920707b"
+      },
+      {
+        "file": "assets/atlas/z8-6-5.png",
+        "zoom": 8,
+        "col": 6,
+        "row": 5,
+        "bounds": {
+          "west": 90.0,
+          "east": 135.0,
+          "north": -22.5,
+          "south": -45.0
+        },
+        "bytes": 7535,
+        "sha256": "3276275f6fa0eb76aec1707b8bca20347f32c89357563ec174cd3fb772e41b39"
+      },
+      {
+        "file": "assets/atlas/z8-6-6.png",
+        "zoom": 8,
+        "col": 6,
+        "row": 6,
+        "bounds": {
+          "west": 90.0,
+          "east": 135.0,
+          "north": -45.0,
+          "south": -67.5
+        },
+        "bytes": 4873,
+        "sha256": "a4ea1706ba15139613d60bc5d8f3b5f70eee63635db517a7bd216919d5e24c2a"
+      },
+      {
+        "file": "assets/atlas/z8-6-7.png",
+        "zoom": 8,
+        "col": 6,
+        "row": 7,
+        "bounds": {
+          "west": 90.0,
+          "east": 135.0,
+          "north": -67.5,
+          "south": -90.0
+        },
+        "bytes": 943,
+        "sha256": "32b4123ea456215c762a22fd4cb4ef5f7b4699961d27bab081fe32e7950568a7"
+      },
+      {
+        "file": "assets/atlas/z8-7-0.png",
+        "zoom": 8,
+        "col": 7,
+        "row": 0,
+        "bounds": {
+          "west": 135.0,
+          "east": 180.0,
+          "north": 90.0,
+          "south": 67.5
+        },
+        "bytes": 8216,
+        "sha256": "207784bf4766b232a71602cb21ed364ab314723dda260720b0b64f6b7cfcff9b"
+      },
+      {
+        "file": "assets/atlas/z8-7-1.png",
+        "zoom": 8,
+        "col": 7,
+        "row": 1,
+        "bounds": {
+          "west": 135.0,
+          "east": 180.0,
+          "north": 67.5,
+          "south": 45.0
+        },
+        "bytes": 16751,
+        "sha256": "74cc9170697351a2f3855882321a560cb1bd529b4840a0d1bf390fac9ed59295"
+      },
+      {
+        "file": "assets/atlas/z8-7-2.png",
+        "zoom": 8,
+        "col": 7,
+        "row": 2,
+        "bounds": {
+          "west": 135.0,
+          "east": 180.0,
+          "north": 45.0,
+          "south": 22.5
+        },
+        "bytes": 7830,
+        "sha256": "9c5eaa97cc5dad310e2531eca29a580f48d2af764fc0dc5427c7a0898abb39f8"
+      },
+      {
+        "file": "assets/atlas/z8-7-3.png",
+        "zoom": 8,
+        "col": 7,
+        "row": 3,
+        "bounds": {
+          "west": 135.0,
+          "east": 180.0,
+          "north": 22.5,
+          "south": 0.0
+        },
+        "bytes": 1265,
+        "sha256": "0229198dc5e159d6c2704d3582f68011d61f5088ea29d11d2b1130ff0dd5654f"
+      },
+      {
+        "file": "assets/atlas/z8-7-4.png",
+        "zoom": 8,
+        "col": 7,
+        "row": 4,
+        "bounds": {
+          "west": 135.0,
+          "east": 180.0,
+          "north": 0.0,
+          "south": -22.5
+        },
+        "bytes": 23109,
+        "sha256": "427d29383bcff8c721d69c7c998b1cbfe3a2daed096ba9f6d79ed9cdb057af6f"
+      },
+      {
+        "file": "assets/atlas/z8-7-5.png",
+        "zoom": 8,
+        "col": 7,
+        "row": 5,
+        "bounds": {
+          "west": 135.0,
+          "east": 180.0,
+          "north": -22.5,
+          "south": -45.0
+        },
+        "bytes": 22200,
+        "sha256": "92464ce75cd2ff52d32183955d40ebf22a7c54b62f5d7223e2922e16ac45ef1c"
+      },
+      {
+        "file": "assets/atlas/z8-7-6.png",
+        "zoom": 8,
+        "col": 7,
+        "row": 6,
+        "bounds": {
+          "west": 135.0,
+          "east": 180.0,
+          "north": -45.0,
+          "south": -67.5
+        },
+        "bytes": 3190,
+        "sha256": "8ba214f680a5a67239e179f8f1aa1bb6cfec5d22909cca09725b701d19aa49b0"
+      },
+      {
+        "file": "assets/atlas/z8-7-7.png",
+        "zoom": 8,
+        "col": 7,
+        "row": 7,
+        "bounds": {
+          "west": 135.0,
+          "east": 180.0,
+          "north": -67.5,
+          "south": -90.0
+        },
+        "bytes": 8375,
+        "sha256": "c69a7ffe6200eaeba300fd329b26bd041d2e9b69641fd28a8140614fb3980802"
+      }
+    ]
   }
 }

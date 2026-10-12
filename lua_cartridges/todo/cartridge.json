@@ -1,1 +1,19 @@
-{"id":"dev.cartridge.todo","name":"Todo","version":"0.1.0","author":"CartridgeOS Team","description":"Task manager with priorities and persistence","category":"Productivity","tags":["todo","tasks","productivity"],"permissions":["storage"],"entry":"main.lua"}
+{
+  "id": "dev.cartridge.todo",
+  "name": "Todo",
+  "version": "0.2.0",
+  "author": "CartridgeOS Team",
+  "description": "Task manager with priorities and persistence",
+  "category": "Productivity",
+  "tags": [
+    "todo",
+    "tasks",
+    "productivity"
+  ],
+  "permissions": [
+    "storage"
+  ],
+  "entry": "main.lua",
+  "min_runtime": "0.7.0",
+  "repo_url": "https://github.com/Strizzo/Cartridge/tree/v0.7.0/lua_cartridges/todo"
+}

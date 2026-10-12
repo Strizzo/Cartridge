@@ -497,22 +497,43 @@ local mem_history = system.mem_history()
 SSH tunnel for cartridges that need to reach services on a remote
 machine securely. Used by the VibeBoy cartridge.
 
-```lua
-local result = ssh.tunnel({
-  host = "myserver.example.com",  -- or IP
-  user = "alice",                 -- optional; leave nil for SSH config default
-  remote_port = 8000,             -- the port to forward
-  key_path = "/path/to/key",      -- optional
-  key_dir = "/roms/Cartridge/ssh", -- optional dir to scan for keys
-})
--- result = {ok = true, local_port = 12345}  -- or {ok = false, error = "..."}
+Use the asynchronous API for UI apps (runtime 0.7.0 or newer):
 
-ssh.is_alive()  -- bool
-ssh.close()
+```lua
+local id = ssh.tunnel_async({host="server.example", user="alice", remote_port=8766})
+-- Poll from on_update; returns zero or more completion records.
+for _, result in ipairs(ssh.poll()) do
+  if result.id == id then
+    if result.ok then
+      local url = "http://127.0.0.1:" .. result.local_port .. "/api/state"
+      -- Start asynchronous HTTP here.
+    else
+      -- Show result.error; keep controls usable.
+    end
+  end
+end
+ssh.is_alive() -- true only for an active tunnel
+ssh.close()    -- cancels a pending attempt and closes the active tunnel
 ```
 
-Connect to `127.0.0.1:result.local_port` — traffic is forwarded through
-SSH to the remote `host:remote_port`.
+Options also accept `key_path` or `key_dir`. Leave `user` empty for SSH's configured default. Host and user may not begin with `-`. One opening job is pending at a time, with a bounded worker queue; keep polling and ignore results for cancelled IDs. The worker owns Rust data only and never calls Lua. A successful attempt replaces the active tunnel; a failed attempt keeps it. Closing or destroying the app releases tunnels, including late results.
+
+Legacy `ssh.tunnel(opts)` remains available and returns `{ok=true, local_port=...}` or `{ok=false, error=...}`, but it blocks the calling thread. Prefer `tunnel_async` for interactive apps. Explicit app-check HTTP fixture mode also supplies a simulated SSH connector; it never opens SSH processes or reads keys.
+
+## `ui.public` — shared app components
+
+Runtime 0.7.0 adds fixed 720×720 components without changing legacy `ui.*` helpers. `ui.public.C` is an indexed RGB palette. Helpers include `header`, `footer`, `panel`, `row`, `tabs`, `metric`, `text`, `display`, `wrap`, `empty` and `sparkline`. Headers use the cartridge's `icon.png`; footers accept up to five short `{key,label}` hints. Display fitting, wrapping and option tables use bounded caches. Prefer flat surfaces and precomputed layouts rather than rebuilding decorative geometry every frame.
+
+```lua
+local U = ui.public
+function on_render()
+  U.header("My App", "PERSONAL / TOOLS")
+  U.metric(24, 130, 672, 120, "OPEN ITEMS", "12", "tasks", U.C.red)
+  U.footer({{"A", "Open"}, {"B", "Back"}})
+end
+```
+
+Use `app.set_idle_fps(1)` for static utilities and return `false` from `on_update` when no visible state changed. Request a redraw after an input mutation. `system.is_simulated` distinguishes simulator/desktop system data from Linux device readings; label simulated telemetry and leave unsupported measurements unavailable.
 
 ## Sandboxing
 

@@ -7,9 +7,12 @@ fn app(name: &str) -> Lua {
     lua.load(r#"
         theme = setmetatable({}, {__index=function() return {r=220,g=210,b=200} end})
         drawn = {}
+        app = {request_redraw=function() end}
         storage = {load=function() return nil end,save=function() end}
         screen = setmetatable({
             draw_text=function(text) drawn[#drawn+1]=text; return #text*7 end,
+            draw_display_text=function(text) drawn[#drawn+1]=text end,
+            get_display_text_width=function(text) return (utf8.len(text) or #text)*7 end,
             draw_pill=function(text) drawn[#drawn+1]=text; return #text*7 end,
             draw_image=function(path) drawn[#drawn+1]=path end,
             get_text_width=function(text) return #text*7 end,
