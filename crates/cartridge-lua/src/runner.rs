@@ -10,7 +10,7 @@ use mlua::prelude::*;
 use crate::api::{
     new_app_control, new_screen_handle, new_text_input, register_app_api,
     register_audio_api, register_http_api, register_json_api, register_screen_api,
-    register_ssh_api, register_storage_api, register_system_api,
+    register_ssh_api_with_fixture, register_storage_api, register_system_api,
     register_text_input_api, register_theme_api, Phase, SharedAppControl,
     SharedScreenHandle, SharedTextInput,
 };
@@ -93,7 +93,7 @@ impl LuaAppRunner {
             }
         }
         if has("ssh") {
-            register_ssh_api(&lua)
+            register_ssh_api_with_fixture(&lua, fixture.is_some())
                 .map_err(|e| format!("Failed to register SSH API: {e}"))?;
         }
         if has("system") {

@@ -26,8 +26,10 @@ local function star(x,y,on)
 end
 local function footer(s)
     rect(0,684,720,36,C.paper);line(24,684,696,684)
-    if s.menu or s.view=='settings' or s.view=='about' or s.view=='details' then
-        hint('A','Choose',24,694);hint('B','Back',154,694);hint('L2/R2','Volume',274,694);hint('SELECT','Quit',538,694)
+    if s.focus=='map' and (s.view=='explore' or s.view=='favorites' or s.view=='recent') and not s.menu then
+        hint('LS','Pan',24,694);hint('RS','Zoom',124,694);hint('L1/R1','Station',256,694);hint('A','Tune',467,694);hint('B','List',590,694)
+    elseif s.menu or s.view=='settings' or s.view=='about' or s.view=='details' then
+        hint('A','Choose',24,694);hint('B','Back',154,694);hint('LS','Move',274,694);hint('L2/R2','Volume',382,694);hint('SELECT','Quit',554,694)
     elseif s.view=='countries' then
         hint('A','Country / retry',24,694);hint('Y','Find',226,694);hint('B','Back',348,694);hint('START','Menu',538,694)
     else
@@ -73,58 +75,66 @@ local function empty(title_text,detail,y)
     text(detail,40,y+40,14,C.dim,false,635)
 end
 local function map(s,rows,Station)
-    screen.draw_image('assets/world.png',24,150,{w=672,h=252})
-    -- Coordinate dots only; no country-centroid substitution.
-    local pins=0
-    for i,station in ipairs(rows) do
-        local x,y=Station.project(station)
-        if x then
-            pins=pins+1
-            screen.draw_image('assets/pin.png',x-3,y-3,{w=7,h=7})
+    local atlas=s.atlas
+    if not atlas or atlas.error then
+        screen.draw_image('assets/world.png',24,150,{w=672,h=252})
+        text('World atlas unavailable. Reinstall Frequency from Store.',40,270,14,C.cream)
+    else
+        for _,tile in ipairs(atlas:tiles()) do screen.draw_image(tile.path,tile.x,tile.y,tile.opts) end
+        local selected=s.focus=='map' and s.map_rows[s.map_selected] or rows[s.selected]
+        if selected then
+            local x,y=atlas:project(selected.geo_lat,selected.geo_long)
+            if x then
+                screen.draw_image('assets/pin-selected.png',x-9,y-9,{w=19,h=19})
+                local label=selected.countrycode~='' and selected.countrycode or 'STATION'
+                local cx=math.min(596,math.max(34,x+14));local cy=math.max(164,math.min(366,y+12))
+                rect(cx,cy,80,25,C.ink);text(label,cx+8,cy+4,12,C.cream,true,65)
+            end
         end
-    end
-    local selected=rows[s.selected]
-    local x,y=Station.project(selected)
-    if x then
-        screen.draw_image('assets/pin-selected.png',x-9,y-9,{w=19,h=19})
-        line(x-13,y,x-10,y,C.peach);line(x+10,y,x+13,y,C.peach)
-        line(x,y-13,x,y-10,C.peach);line(x,y+10,x,y+13,C.peach)
-        local caption=selected.country~='' and selected.country or selected.countrycode
-        if caption=='' then caption='Reported position' end
-        local cx=math.min(488,math.max(34,x+14));local cy=math.max(164,math.min(365,y+12))
-        rect(cx,cy,194,25,C.ink,3);text(caption,cx+8,cy+4,12,C.cream,true,177)
-    end
-    if s.focus=='map' then
-        rect(25,151,178,26,C.orange);text('MAP / D-PAD MOVES PINS',33,158,10,C.cream,true)
+        if s.focus=='map' then
+            local x,y=atlas:cursor()
+            if x then
+                line(math.max(25,x-13),y,math.max(25,x-4),y,C.cream,2)
+                line(math.min(695,x+4),y,math.min(695,x+13),y,C.cream,2)
+                line(x,math.max(151,y-13),x,math.max(151,y-4),C.cream,2)
+                line(x,math.min(401,y+4),x,math.min(401,y+13),C.cream,2)
+            end
+        end
+        rect(25,151,109,24,C.ink);text('WORLD / '..atlas.zoom..'X',33,157,11,C.cream,true)
     end
     rect(24,402,672,28,C.ink)
-    text(pins..' reported locations  /  '..(#rows-pins)..' without coordinates',35,409,11,C.muted)
-    text('NATURAL EARTH',579,409,10,C.muted)
+    text((atlas and #atlas.records or 0)..' locations / '..(atlas and atlas.countries or 0)..' countries',35,409,11,C.muted)
+    text(atlas and atlas.date or '',590,409,10,C.muted)
     if s.focus=='map' then
-        text('B returns to the station list',24,438,12,C.orange,true)
+        text('LS/D-PAD pan   RS up/down zoom; recenter   X/Y zoom   L1/R1 stations',24,438,12,C.dim)
     else
-        text('UP/DOWN stations   LEFT countries   RIGHT map',24,438,12,C.dim)
+        text('LS / D-PAD: UP/DOWN stations, LEFT countries, RIGHT map',24,438,12,C.dim)
+        text('L1/R1 genre',588,438,11,C.dim)
     end
-    text('L1 / R1  genre',571,438,12,C.dim)
 end
 local function explorer(s,rows,Station)
-    local collection=s.view=='favorites' and 'Favorites' or s.view=='recent' and 'Recently tuned' or nil
+    if s.focus=='map' then rows=s.map_rows end
+    local cursor=s.focus=='map' and s.map_selected or s.selected
+    local collection=s.focus~='map' and (s.view=='favorites' and 'Favorites' or s.view=='recent' and 'Recently tuned') or nil
     rect(24,105,285,34,C.ink,4)
-    text(collection or (s.country=='' and 'All countries' or s.country),36,113,16,C.cream,true,258)
-    rect(319,105,174,34,C.cream,4);text(s.genres[s.genre],331,113,16,C.ink,true,150)
-    if s.query~='' and not collection then text('“'..s.query..'”',509,114,14,C.orange,false,184)
+    text((s.focus=='map' and 'Explore the world') or collection or (s.country=='' and 'All countries' or s.country),36,113,16,C.cream,true,258)
+    rect(319,105,174,34,C.cream,4);text((s.focus=='map' and 'NEARBY STATIONS' or s.genres[s.genre]),331,113,16,C.ink,true,150)
+    if s.focus=='map' then text(s.map_loading and 'TUNING...' or (#rows..' nearby'),509,115,12,C.dim,true,183)
+    elseif s.query~='' and not collection then text('“'..s.query..'”',509,114,14,C.orange,false,184)
     else text(collection and (#rows..' stations') or ('DIRECTORY  /  '..(math.floor(s.offset/100)+1)),509,115,12,C.dim,true,183) end
     map(s,rows,Station)
     local status=collection and (#rows..' saved records') or (#rows..' candidates / '..s.raw_count..' checked')
     if not collection then
-        if s.loading then status=s.stale and 'Refreshing saved page...' or 'Tuning the directory...'
+        if s.focus=='map' then status=s.map_loading and 'Loading this station...' or 'Choose with L1/R1. A tunes; B returns to search.'
+        elseif s.loading then status=s.stale and 'Refreshing saved page...' or 'Tuning the directory...'
         elseif s.error then status=s.stale and 'OFFLINE / Saved page may be stale' or 'OFFLINE / Directory unavailable'
         elseif s.skipped>0 then status=status..' / '..s.skipped..' omitted' end
     end
     text(status,24,465,12,s.error and C.orange or C.dim,true,530)
-    if not collection then text(s.more and 'MORE IN MENU' or 'END OF PAGE',579,465,10,C.dim,true) end
+    if s.focus~='map' and not collection then text(s.more and 'MORE IN MENU' or 'END OF PAGE',579,465,10,C.dim,true) end
     if #rows==0 then
-        if collection then empty(s.view=='favorites' and 'Your collection starts here.' or 'No stations tuned yet.',s.view=='favorites' and 'Press X on any station to keep it here.' or 'Play a station to add it to your recent history.',497)
+        if s.focus=='map' then empty('Atlas unavailable.','Reinstall Frequency from Store to restore the world map.',497)
+        elseif collection then empty(s.view=='favorites' and 'Your collection starts here.' or 'No stations tuned yet.',s.view=='favorites' and 'Press X on any station to keep it here.' or 'Play a station to add it to your recent history.',497)
         elseif s.loading then empty('Finding your next frequency.','Discovering mirrors and loading one small directory page.',497)
         elseif s.error then empty('The world is a little quiet.','Check your connection. Press A to retry, or open saved stations.',497)
         elseif s.raw_count>0 then empty('No compatible streams on this page.','HLS, Opus and HE-AAC are unsupported. Try another genre or page.',497)
@@ -132,24 +142,24 @@ local function explorer(s,rows,Station)
         return
     end
     local visible=(s.status.state=='error' or s.notice) and 2 or 3
-    local first=math.max(1,math.min(s.selected-1,#rows-visible+1))
+    local first=math.max(1,math.min(cursor-1,#rows-visible+1))
     for i=first,math.min(#rows,first+visible-1) do
-        local station=rows[i];local y=488+(i-first)*36;local chosen=i==s.selected
+        local station=rows[i];local y=488+(i-first)*36;local chosen=i==cursor
         if chosen then rect(24,y,672,34,C.cream,3);rect(24,y,3,34,C.orange) end
         text(string.format('%02d',i),36,y+8,12,chosen and C.orange or C.dim,true)
         text(station.name,76,y+5,17,C.ink,chosen,346)
         local location=station.countrycode~='' and station.countrycode or (station.custom and 'URL' or '--')
-        text(location..' / '..(station.codec~='' and station.codec or 'AUTO'),449,y+8,11,C.dim,true,148)
+        text(location..' / '..(station.atlas and 'TUNE' or (station.codec~='' and station.codec or 'AUTO')),449,y+8,11,C.dim,true,148)
         if station.geo_lat then dot(620,y+16,3,C.green) else line(617,y+16,623,y+16,C.dim) end
         star(659,y+16,Station.index(s.favorites,station.stationuuid)~=nil)
     end
-    scroll(#rows,s.selected,492,visible==2 and 62 or 98,visible)
+    scroll(#rows,cursor,492,visible==2 and 62 or 98,visible)
 end
 local function countries(s)
     heading('Choose a country',24,113,38)
-    text('Stations without coordinates are included here.',25,162,15,C.dim)
+    text('LS / D-PAD selects. Stations without coordinates stay here.',25,162,15,C.dim)
     text(s.country_filter~='' and ('FILTER: '..s.country_filter) or 'Y to find a country by name',25,190,13,C.orange,true,650)
-    local status=s.country_loading and 'Loading countries...' or s.country_error and 'OFFLINE / A on first row retries' or 'LEFT / RIGHT pages  ·  Page '..(math.floor(s.country_offset/100)+1)
+    local status=s.country_loading and 'Loading countries...' or s.country_error and 'OFFLINE / A on first row retries' or 'LS / D-PAD left/right pages  ·  Page '..(math.floor(s.country_offset/100)+1)
     text(status,25,219,13,C.dim,true,665)
     local first=math.max(1,math.min(s.country_cursor-3,#s.countries-6))
     for i=first,math.min(#s.countries,first+6) do
@@ -164,7 +174,7 @@ local function countries(s)
 end
 local function settings(s)
     heading('Your receiver',24,113,38)
-    text('Small controls. A much bigger world.',25,163,16,C.dim)
+    text('LS / D-PAD selects; left/right adjusts Volume.',25,163,16,C.dim)
     for i,label in ipairs(s.settings_items) do
         local y=212+(i-1)*65;local chosen=i==s.settings_cursor
         rect(24,y,672,55,chosen and C.cream or C.paper,4)
@@ -215,8 +225,8 @@ local function menu(s)
     rect(174,121,522,481,C.ink,8)
     text('YOUR FREQUENCY',200,144,12,C.muted,true)
     for i,label in ipairs(s.menu_items) do
-        local y=173+(i-1)*42
-        if i==s.menu_cursor then rect(190,y,490,41,C.cream,4) end
+        local y=173+(i-1)*38
+        if i==s.menu_cursor then rect(190,y,490,37,C.cream,4) end
         text(string.format('%02d',i),203,y+11,12,i==s.menu_cursor and C.orange or C.muted,true)
         text(label,245,y+8,20,i==s.menu_cursor and C.ink or C.cream,i==s.menu_cursor)
     end

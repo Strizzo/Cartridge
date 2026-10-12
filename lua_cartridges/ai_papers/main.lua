@@ -1,35 +1,17 @@
--- AI Papers - Browse top AI research papers from HuggingFace Daily Papers
--- with arxiv paper reader
-
+-- AI Papers / research index and reading desk.
+local U = ui.public
+local C = U.C
 local API_URL = "https://huggingface.co/api/daily_papers"
 local AR5IV_BASE = "https://ar5iv.labs.arxiv.org/html/"
-
--- ── State ────────────────────────────────────────────────────────────────────
+local ROW_HEIGHT, LIST_VISIBLE = 116, 4
+local DOC_Y, DOC_BOTTOM = 164, 630
 
 local state = {
-    screen_stack = {"list"},
-    papers = {},
-    cursor = 1,
-    loading = false,
-    error_msg = "",
-    -- Detail state
-    detail_paper = nil,
-    detail_lines = {},
-    detail_scroll = 0,
-    detail_needs_layout = false,
-    -- Reader state
-    reader_lines = {},
-    reader_scroll = 0,
-    reader_loading = false,
-    reader_raw_body = nil,
-    reader_needs_layout = false,
-    reader_generation = 0,
+    screen_stack = {"list"}, papers = {}, cursor = 1, loading = false, error_msg = "",
+    detail_paper = nil, detail_lines = {}, detail_scroll = 0, detail_max_scroll = 0, detail_needs_layout = false,
+    reader_lines = {}, reader_scroll = 0, reader_max_scroll = 0, reader_loading = false,
+    reader_raw_body = nil, reader_needs_layout = false, reader_generation = 0, reader_error = "",
 }
-
-local ROW_HEIGHT = 72
-local CARD_RADIUS = 6
-
--- ── Utility Functions ────────────────────────────────────────────────────────
 
 local function time_ago(iso_date)
     if not iso_date or iso_date == "" then return "" end
@@ -42,49 +24,6 @@ local function time_ago(iso_date)
     if diff < 86400 then return "today" end
     if diff < 172800 then return "yesterday" end
     return math.floor(diff / 86400) .. "d ago"
-end
-
-local function word_wrap(text, max_width, font_size, bold)
-    if not text or text == "" then return {""} end
-    local words = {}
-    for w in text:gmatch("%S+") do
-        words[#words + 1] = w
-    end
-    if #words == 0 then return {""} end
-
-    local lines = {}
-    local current = ""
-    for _, word in ipairs(words) do
-        local test = current == "" and word or (current .. " " .. word)
-        local tw = screen.get_text_width(test, font_size, bold or false)
-        if tw <= max_width then
-            current = test
-        else
-            if current ~= "" then
-                lines[#lines + 1] = current
-            end
-            if screen.get_text_width(word, font_size, bold or false) > max_width then
-                local chunk = ""
-                for i = 1, #word do
-                    local c = word:sub(i, i)
-                    if screen.get_text_width(chunk .. c, font_size, bold or false) > max_width then
-                        lines[#lines + 1] = chunk
-                        chunk = c
-                    else
-                        chunk = chunk .. c
-                    end
-                end
-                current = chunk
-            else
-                current = word
-            end
-        end
-    end
-    if current ~= "" then
-        lines[#lines + 1] = current
-    end
-    if #lines == 0 then return {""} end
-    return lines
 end
 
 local function strip_html_body(body)
@@ -123,52 +62,57 @@ local function strip_html_body(body)
     return body:match("^%s*(.-)%s*$") or ""
 end
 
--- ── Drawing Helpers ──────────────────────────────────────────────────────────
-
-local function draw_header(title, right_text, right_color)
-    ui.header(title, right_text, right_color)
+-- Cached line records keep long abstracts and readers out of idle updates.
+local function add_text(lines, value, size, color, bold)
+    for _, text in ipairs(U.wrap(value, 620, size, 1024, bold)) do
+        lines[#lines + 1] = {text=text, size=size, color=color, bold=bold,
+            height=size >= 20 and 31 or (size >= 18 and 27 or 23)}
+    end
 end
 
-local function draw_footer(hints)
-    ui.footer(hints)
+local function gap(lines, height)
+    lines[#lines + 1] = {text="", height=height or 14}
 end
 
-local function draw_loading(msg, y, h)
-    local text = msg or "Loading..."
-    local tw = screen.get_text_width(text, 16, false)
-    screen.draw_text(text, (720 - tw) / 2, y + h / 2 - 8, {color=theme.text_dim, size=16})
+local function section(lines, label)
+    gap(lines)
+    lines[#lines + 1] = {text=label, size=14, color=C.red, bold=true, height=34, rule=true}
 end
 
-local function draw_scroll_indicator(y_start, height, cursor, total, visible)
-    if total <= visible then return end
-    local ind_x = 715
-    local bar_top = y_start + 4
-    local bar_h = height - 8
-    screen.draw_line(ind_x, bar_top, ind_x, bar_top + bar_h, {color=theme.border})
-    local thumb_h = math.max(8, math.floor(bar_h * visible / total))
-    local progress = (cursor - 1) / math.max(1, total - 1)
-    local thumb_y = bar_top + math.floor((bar_h - thumb_h) * progress)
-    ui.rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
+local function draw_document(lines, scroll, label)
+    U.panel(U.X, U.TOP, U.W, U.BOTTOM - U.TOP, C.panel)
+    U.text(label, 44, 124, 14, C.muted, 540, true)
+    U.rule(44, 152, 628, C.line)
+    local used, first = 0, #lines + 1
+    for i = #lines, 1, -1 do
+        if used + lines[i].height > DOC_BOTTOM - DOC_Y then break end
+        used, first = used + lines[i].height, i
+    end
+    local max_scroll = math.max(0, first - 1)
+    scroll = math.max(0, math.min(scroll, max_scroll))
+    local y = DOC_Y
+    for i = scroll + 1, #lines do
+        local line = lines[i]
+        if y + line.height > DOC_BOTTOM then break end
+        if line.rule then U.rule(44, y + 27, 620, C.line) end
+        if line.text ~= "" then U.text(line.text, 44, y, line.size or 18, line.color or C.paper, 620, line.bold) end
+        y = y + line.height
+    end
+    if max_scroll > 0 then
+        U.text(string.format("%d%%", math.floor(scroll / max_scroll * 100)), 610, 124, 14, C.muted, 60)
+        U.rect(684, DOC_Y, 3, DOC_BOTTOM - DOC_Y, C.line)
+        local thumb = math.max(24, (DOC_BOTTOM - DOC_Y) / math.max(1, #lines) * (#lines - first + 1))
+        U.rect(684, DOC_Y + (DOC_BOTTOM - DOC_Y - thumb) * scroll / max_scroll, 3, thumb, C.red)
+    end
+    return scroll, max_scroll
 end
 
 local pending = {}
 local function request(url, handler)
     local ok, id = pcall(http.get_async, url)
-    if ok then pending[id] = handler
-    else handler({ok=false, status=0, body=tostring(id), elapsed_ms=0}) end
+    if ok and id then pending[id] = handler
+    else handler({ok=false, status=0, body="Request could not be started.", elapsed_ms=0}) end
 end
-
-local function poll_requests()
-    for _, response in ipairs(http.poll()) do
-        local handler = pending[response.id]
-        if handler then
-            pending[response.id] = nil
-            handler(response)
-        end
-    end
-end
-
--- ── API Functions ────────────────────────────────────────────────────────────
 
 local function fetch_papers()
     if state.loading then return end
@@ -176,11 +120,12 @@ local function fetch_papers()
     state.error_msg = ""
 
     request(API_URL .. "?limit=30", function(resp)
-    if resp.ok then
+    if resp and resp.ok then
         local dok, data = pcall(json.decode, resp.body)
-        if dok and data then
+        if dok and type(data) == "table" then
             state.papers = {}
-            for _, entry in ipairs(data) do
+            for i = 1, math.min(30, #data) do
+                local entry = data[i]
                 local paper = entry.paper or entry
                 local authors = {}
                 if paper.authors then
@@ -200,6 +145,7 @@ local function fetch_papers()
                     authors = authors,
                     authors_str = table.concat(authors, ", "),
                     summary = paper.summary or paper.ai_summary or "",
+                    summary_is_ai = paper.summary == nil and paper.ai_summary ~= nil,
                     ai_summary = paper.ai_summary or "",
                     upvotes = paper.upvotes or entry.upvotes or 0,
                     published = paper.publishedAt or entry.publishedAt or "",
@@ -220,279 +166,96 @@ local function fetch_papers()
     end)
 end
 
--- ── Paper List Screen ────────────────────────────────────────────────────────
-
-local function draw_paper_card(paper, y, is_selected, index)
-    local card_x = 6
-    local card_w = 708
-    local card_h = ROW_HEIGHT - 4
-
-    if is_selected then
-        ui.card(card_x, y, card_w, card_h, {bg=theme.card_highlight, border=theme.accent, radius=CARD_RADIUS})
-    else
-        ui.card(card_x, y, card_w, card_h, {bg=theme.card_bg, radius=CARD_RADIUS})
-    end
-
-    -- Upvote count + rank
-    local score_x = card_x + 6
-    local score_w = 42
-    local intensity = math.min(1.0, paper.upvotes / 100)
-    local score_color = {
-        math.floor(140 + 115 * intensity),
-        math.floor(140 - 40 * intensity),
-        math.floor(140 - 100 * intensity),
-    }
-
-    local score_str = tostring(paper.upvotes)
-    local sw = screen.get_text_width(score_str, 15, true)
-    screen.draw_text(score_str, score_x + (score_w - sw) / 2, y + 6, {color=score_color, size=15, bold=true})
-
-    -- Rank number
-    local rank_str = "#" .. index
-    local rw = screen.get_text_width(rank_str, 10, false)
-    screen.draw_text(rank_str, score_x + (score_w - rw) / 2, y + 24, {color=theme.text_dim, size=10})
-
-    -- Arrow
-    local aw = screen.get_text_width("\226\150\178", 9, false)
-    screen.draw_text("\226\150\178", score_x + (score_w - aw) / 2, y + 38, {color=score_color, size=9})
-
-    -- Title (truncated to 2 lines)
-    local title_x = card_x + score_w + 12
-    local title_max_w = card_w - score_w - 24
-
-    local title = paper.title
-    local tw = screen.get_text_width(title, 13, is_selected)
-    if tw > title_max_w then
-        while #title > 1 and screen.get_text_width(title .. "..", 13, is_selected) > title_max_w do
-            title = title:sub(1, -2)
-        end
-        title = title .. ".."
-    end
-    screen.draw_text(title, title_x, y + 4, {color=theme.text, size=13, bold=is_selected})
-
-    -- Authors
-    local authors = paper.authors_str
-    local auth_max_w = title_max_w - 80
-    local auth_tw = screen.get_text_width(authors, 11, false)
-    if auth_tw > auth_max_w then
-        while #authors > 1 and screen.get_text_width(authors .. "..", 11, false) > auth_max_w do
-            authors = authors:sub(1, -2)
-        end
-        authors = authors .. ".."
-    end
-    screen.draw_text(authors, title_x, y + 22, {color=theme.text_dim, size=11})
-
-    -- Date + arxiv ID
-    local meta = paper.id
-    if paper.published ~= "" then
-        meta = time_ago(paper.published) .. " \194\183 " .. paper.id
-    end
-    screen.draw_text(meta, title_x, y + 38, {color=theme.text_dim, size=10})
-
-    -- Keywords pills (up to 2)
-    local kx = title_x + screen.get_text_width(meta, 10, false) + 8
-    for ki = 1, math.min(2, #paper.keywords) do
-        if kx + 60 > card_x + card_w - 8 then break end
-        local pw = ui.pill(paper.keywords[ki], kx, y + 36,
-            40, 40, 60, {text_color=theme.text_dim, size=9})
-        kx = kx + pw + 4
-    end
-
-    -- Comment count
-    if paper.num_comments > 0 then
-        local cstr = tostring(paper.num_comments)
-        ui.pill(cstr, card_x + card_w - 42, y + (card_h - 18) / 2,
-            60, 60, 80, {text_color=theme.text_dim, size=11})
-    end
+local function draw_paper_card(paper, y, selected, index)
+    local fg, secondary = U.row(U.X, y, U.W, ROW_HEIGHT - 6, selected)
+    U.display(string.format("%02d", index), 40, y + 12, 28, fg, 48)
+    U.text(tostring(paper.upvotes), 40, y + 49, 18, fg, 52, true)
+    U.text("votes", 40, y + 78, 14, secondary, 50)
+    U.rect(88, y + 14, 1, 80, selected and C.quiet or C.line)
+    local category = #paper.keywords > 0 and table.concat(paper.keywords, " / ", 1, math.min(2, #paper.keywords)) or "RESEARCH PAPER"
+    if paper.num_comments > 0 then category = category .. " / " .. paper.num_comments .. " comments" end
+    U.text(category, 104, y + 9, 14, selected and fg or C.teal, 574, true)
+    if not paper.title_layout then paper.title_layout = U.wrap(paper.title, 574, 18, 2, true) end
+    for i, line in ipairs(paper.title_layout) do U.text(line, 104, y + 31 + (i - 1) * 24, 18, fg, 574, true) end
+    U.text(paper.authors_str ~= "" and paper.authors_str or "Authors unavailable", 104, y + 84, 14, secondary, 456)
+    U.text(time_ago(paper.published), 580, y + 84, 14, secondary, 98)
 end
 
 local function draw_paper_list()
     local n = #state.papers
-
-    draw_header("AI Papers",
-        n > 0 and ("HuggingFace Daily \194\183 " .. n) or nil,
-        n > 0 and theme.accent or nil)
-
-    local content_y = 42
-    local footer_y = 684
-    local content_h = footer_y - content_y
-
-    if state.loading then
-        draw_loading("Loading papers from HuggingFace...", content_y, content_h)
-    elseif n > 0 then
-        local visible = math.max(1, math.floor(content_h / ROW_HEIGHT))
+    local status = state.loading and "Refreshing" or (state.error_msg ~= "" and (n > 0 and "Cached feed" or "Unavailable") or (n .. " papers"))
+    U.header("AI Papers", "RESEARCH / HUGGING FACE DAILY", status, state.error_msg ~= "" and C.gold or C.muted)
+    U.panel(24, 112, 672, 50, C.panel)
+    U.display("Community ranking", 40, 119, 24, C.paper, 370)
+    U.text(state.error_msg ~= "" and "X TO RETRY" or "BY UPVOTES", 526, 130, 14, state.error_msg ~= "" and C.gold or C.muted, 154, true)
+    if n > 0 then
         state.cursor = math.max(1, math.min(state.cursor, n))
-
-        local start_idx
-        if n <= visible then
-            start_idx = 1
-        else
-            start_idx = math.max(1, math.min(state.cursor - 1, n - visible + 1))
+        local start = math.max(1, math.min(state.cursor - 1, math.max(1, n - LIST_VISIBLE + 1)))
+        for idx = start, math.min(n, start + LIST_VISIBLE - 1) do
+            draw_paper_card(state.papers[idx], 174 + (idx - start) * ROW_HEIGHT, idx == state.cursor, idx)
         end
-        local end_idx = math.min(start_idx + visible - 1, n)
-
-        local y = content_y + 2
-        for idx = start_idx, end_idx do
-            draw_paper_card(state.papers[idx], y, idx == state.cursor, idx)
-            y = y + ROW_HEIGHT
-        end
-
-        draw_scroll_indicator(content_y, content_h, state.cursor, n, visible)
+    elseif state.loading then
+        U.empty("Fetching daily papers", "Loading up to 30 papers from Hugging Face. The feed is ranked by community upvotes.")
     elseif state.error_msg ~= "" then
-        local ew = screen.get_text_width(state.error_msg, 14, false)
-        screen.draw_text(state.error_msg, (720 - ew) / 2, content_y + content_h / 2 - 8, {color=theme.negative, size=14})
+        U.empty("Papers unavailable", state.error_msg .. ". Press X to retry the daily feed.")
+    else
+        U.empty("No papers returned", "The daily feed returned no entries. Press X to refresh it.")
     end
-
-    draw_footer({
-        {"A", "Details", theme.btn_a},
-        {"X", "Refresh", theme.btn_x},
-        {"\226\134\145\226\134\147", "Navigate", theme.btn_l},
-    })
+    U.footer({{"A", "Details"}, {"X", state.error_msg ~= "" and "Retry" or "Refresh"}, {"D-pad", "Move"}, {"L2/R2", "Page"}})
 end
 
--- ── Paper Detail Screen ──────────────────────────────────────────────────────
-
 local function layout_detail()
-    state.detail_lines = {}
-    local lines = state.detail_lines
-    local paper = state.detail_paper
+    local lines, paper = {}, state.detail_paper
+    state.detail_lines = lines
     if not paper then return end
-
-    local max_w = 680
-
-    -- Title
-    local title_lines = word_wrap(paper.title, max_w, 16, true)
-    for _, line in ipairs(title_lines) do
-        lines[#lines + 1] = {text=line, color=theme.text, size=16, bold=true}
-    end
-    lines[#lines + 1] = {text="", color=theme.text, size=14}
-
-    -- Authors
-    local auth_lines = word_wrap(paper.authors_str, max_w, 13, false)
-    for _, line in ipairs(auth_lines) do
-        lines[#lines + 1] = {text=line, color=theme.text_accent, size=13}
-    end
-
-    -- Meta
-    local meta = paper.upvotes .. " upvotes"
-    if paper.published ~= "" then
-        meta = meta .. " \194\183 " .. time_ago(paper.published)
-    end
-    meta = meta .. " \194\183 arxiv:" .. paper.id
-    lines[#lines + 1] = {text=meta, color=theme.text_dim, size=12}
-    lines[#lines + 1] = {text="", color=theme.text, size=14}
-
-    -- Keywords
+    add_text(lines, paper.title, 22, C.paper, true)
+    gap(lines)
+    add_text(lines, paper.authors_str ~= "" and paper.authors_str or "Authors unavailable", 16, C.teal)
+    add_text(lines, "arXiv:" .. paper.id .. " / " .. paper.upvotes .. " upvotes / " .. paper.num_comments .. " comments", 14, C.muted)
+    if paper.published ~= "" then add_text(lines, "Published " .. paper.published:sub(1, 10), 14, C.muted) end
     if #paper.keywords > 0 then
-        local kw_str = "Keywords: " .. table.concat(paper.keywords, ", ")
-        local kw_lines = word_wrap(kw_str, max_w, 12, false)
-        for _, line in ipairs(kw_lines) do
-            lines[#lines + 1] = {text=line, color=theme.accent, size=12}
-        end
-        lines[#lines + 1] = {text="", color=theme.text, size=14}
+        section(lines, "TOPICS")
+        add_text(lines, table.concat(paper.keywords, " / "), 14, C.teal)
     end
-
-    -- AI Summary (if available and different from full summary)
     if paper.ai_summary and paper.ai_summary ~= "" and paper.ai_summary ~= paper.summary then
-        lines[#lines + 1] = {text="AI Summary", color=theme.accent, size=14, bold=true}
-        local ai_lines = word_wrap(paper.ai_summary, max_w, 13, false)
-        for _, line in ipairs(ai_lines) do
-            lines[#lines + 1] = {text=line, color=theme.text, size=13}
-        end
-        lines[#lines + 1] = {text="", color=theme.text, size=14}
+        section(lines, "AI SUMMARY / PROVIDED BY THE FEED")
+        add_text(lines, paper.ai_summary, 18, C.paper)
     end
-
-    -- Abstract separator
-    local sep = string.rep("\226\148\128", 30) .. " Abstract " .. string.rep("\226\148\128", 15)
-    lines[#lines + 1] = {text=sep, color=theme.text_dim, size=12}
-    lines[#lines + 1] = {text="", color=theme.text, size=14}
-
-    -- Full abstract
+    section(lines, paper.summary_is_ai and "AI SUMMARY / ABSTRACT NOT PROVIDED" or "ABSTRACT")
     if paper.summary and paper.summary ~= "" then
         for paragraph in paper.summary:gmatch("[^\n]+") do
-            local wrapped = word_wrap(paragraph, max_w, 14, false)
-            for _, wl in ipairs(wrapped) do
-                lines[#lines + 1] = {text=wl, color=theme.text, size=14}
-            end
-            lines[#lines + 1] = {text="", color=theme.text, size=14}
+            add_text(lines, paragraph, 18, C.paper)
+            gap(lines)
         end
     else
-        lines[#lines + 1] = {text="No abstract available", color=theme.text_dim, size=14}
+        add_text(lines, "The feed did not provide an abstract. Press X to try the full paper.", 18, C.muted)
     end
 end
 
 local function draw_paper_detail()
-    if state.detail_needs_layout then
-        layout_detail()
-        state.detail_needs_layout = false
-    end
-
-    draw_header("Paper Details", "arxiv:" .. (state.detail_paper and state.detail_paper.id or ""), theme.accent)
-
-    local content_y = 42
-    local content_h = 642
-    local lh = screen.get_line_height(14, false)
-
-    local lines = state.detail_lines
-    local total = #lines
-    local visible_lines = math.max(1, math.floor(content_h / lh))
-    local max_scroll = math.max(0, total - visible_lines)
-    state.detail_scroll = math.min(state.detail_scroll, max_scroll)
-
-    local y = content_y + 6
-    for i = state.detail_scroll + 1, math.min(state.detail_scroll + visible_lines, total) do
-        local line = lines[i]
-        screen.draw_text(line.text, 20, y, {
-            color=line.color,
-            size=line.size or 14,
-            bold=line.bold or false,
-        })
-        y = y + lh
-    end
-
-    -- Scroll indicator
-    if total > visible_lines then
-        local ind_x = 715
-        local bar_top = content_y + 6
-        local bar_h = content_h - 12
-        screen.draw_line(ind_x, bar_top, ind_x, bar_top + bar_h, {color=theme.border})
-        local thumb_h = math.max(8, math.floor(bar_h * visible_lines / total))
-        local progress = max_scroll > 0 and (state.detail_scroll / max_scroll) or 0
-        local thumb_y = bar_top + math.floor((bar_h - thumb_h) * progress)
-        ui.rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
-    end
-
-    draw_footer({
-        {"B", "Back", theme.btn_b},
-        {"X", "Read Paper", theme.btn_x},
-        {"\226\134\145\226\134\147", "Scroll", theme.btn_l},
-        {"L2/R2", "Page", theme.btn_l},
-    })
+    U.header("Paper Details", "AI PAPERS / ABSTRACT & AUTHORS", state.detail_paper and ("arXiv:" .. state.detail_paper.id) or nil)
+    if state.detail_needs_layout then layout_detail(); state.detail_needs_layout = false end
+    state.detail_scroll, state.detail_max_scroll = draw_document(state.detail_lines, state.detail_scroll, "RESEARCH NOTE / FULL ABSTRACT")
+    local hints = {{"B", "Back"}, {"D-pad", "Scroll"}, {"L2/R2", "Page"}}
+    if state.detail_paper and state.detail_paper.id ~= "" then hints[#hints + 1] = {"X", "Paper"} end
+    U.footer(hints)
 end
-
--- ── Reader Screen ────────────────────────────────────────────────────────────
 
 local function layout_reader()
     state.reader_lines = {}
     local body = state.reader_raw_body or ""
     state.reader_raw_body = nil
-    local max_w = 680
     for paragraph in body:gmatch("[^\n]+") do
         local trimmed = paragraph:match("^%s*(.-)%s*$") or ""
         if trimmed ~= "" then
-            -- Detect section headers (lines in brackets from our h1-h6 conversion)
             if trimmed:match("^%[.+%]$") then
-                state.reader_lines[#state.reader_lines + 1] = ""
-                state.reader_lines[#state.reader_lines + 1] = trimmed:sub(2, -2)
-                state.reader_lines[#state.reader_lines + 1] = string.rep("\226\148\128", 40)
+                section(state.reader_lines, "SECTION")
+                add_text(state.reader_lines, trimmed:sub(2, -2), 20, C.paper, true)
             else
-                local wrapped = word_wrap(trimmed, max_w, 14, false)
-                for _, wl in ipairs(wrapped) do
-                    state.reader_lines[#state.reader_lines + 1] = wl
-                end
+                add_text(state.reader_lines, trimmed, 18, C.paper)
             end
+            gap(state.reader_lines)
         end
-        state.reader_lines[#state.reader_lines + 1] = ""
     end
 end
 
@@ -500,96 +263,64 @@ local function load_reader(url)
     state.reader_generation = state.reader_generation + 1
     local generation = state.reader_generation
     state.reader_lines = {}
-    state.reader_scroll = 0
+    state.reader_scroll, state.reader_max_scroll = 0, 0
     state.reader_loading = true
+    state.reader_error = ""
     state.reader_needs_layout = false
     state.reader_raw_body = nil
     request(url, function(resp)
         if generation ~= state.reader_generation then return end
-        if resp.ok then
+        if resp and resp.ok then
             state.reader_raw_body = strip_html_body(resp.body or "")
             state.reader_needs_layout = true
         else
-            state.reader_lines = {"Could not load this paper.", "The ar5iv version may be unavailable.", "", "B to return and try another paper."}
+            state.reader_error = "The ar5iv text version may be unavailable. Press A to retry, or B to return to the abstract."
         end
         state.reader_loading = false
     end)
 end
 
 local function draw_reader()
-    if state.reader_needs_layout then
-        layout_reader()
-        state.reader_needs_layout = false
-    end
-
-    local title = "ar5iv Reader"
-    if state.detail_paper then
-        title = state.detail_paper.id
-    end
-    draw_header(title)
-
-    local content_y = 42
-    local content_h = 642
-    local lh = screen.get_line_height(14, false)
-
+    U.header("Paper Reader", "AR5IV / " .. (state.detail_paper and state.detail_paper.id or ""), state.reader_loading and "Loading" or (state.reader_error ~= "" and "Unavailable" or "Text view"), state.reader_error ~= "" and C.gold or C.muted)
+    if state.reader_needs_layout then layout_reader(); state.reader_needs_layout = false end
     if state.reader_loading then
-        draw_loading("Loading paper from ar5iv...", content_y, content_h)
-        draw_footer({{"B", "Back", theme.btn_b}})
-        return
+        U.empty("Fetching paper text", "Loading the ar5iv HTML edition. Press B to return to the abstract.")
+    elseif state.reader_error ~= "" then
+        U.empty("Paper text unavailable", state.reader_error)
+    elseif #state.reader_lines == 0 then
+        U.empty("No readable paper text", "The HTML edition returned no plain text. Press A to retry, or B for the abstract.")
+    else
+        state.reader_scroll, state.reader_max_scroll = draw_document(state.reader_lines, state.reader_scroll, "TEXT VIEW / MATH & TABLES SIMPLIFIED")
     end
-
-    local lines = state.reader_lines
-    local total = #lines
-    local visible_lines = math.max(1, math.floor(content_h / lh))
-    local max_scroll = math.max(0, total - visible_lines)
-    state.reader_scroll = math.min(state.reader_scroll, max_scroll)
-
-    local y = content_y + 6
-    for i = state.reader_scroll + 1, math.min(state.reader_scroll + visible_lines, total) do
-        local line = lines[i]
-        -- Section headers (followed by separator line)
-        local is_header = (i + 1 <= total and lines[i + 1] and lines[i + 1]:match("^\226\148\128"))
-        local is_sep = line:match("^\226\148\128")
-        if is_header then
-            screen.draw_text(line, 20, y, {color=theme.accent, size=15, bold=true})
-        elseif is_sep then
-            screen.draw_text(line, 20, y, {color=theme.text_dim, size=12})
-        else
-            screen.draw_text(line, 20, y, {color=theme.text, size=14})
-        end
-        y = y + lh
-    end
-
-    -- Scroll indicator
-    if total > visible_lines then
-        local ind_x = 715
-        local bar_top = content_y + 6
-        local bar_h = content_h - 12
-        screen.draw_line(ind_x, bar_top, ind_x, bar_top + bar_h, {color=theme.border})
-        local thumb_h = math.max(8, math.floor(bar_h * visible_lines / total))
-        local progress = max_scroll > 0 and (state.reader_scroll / max_scroll) or 0
-        local thumb_y = bar_top + math.floor((bar_h - thumb_h) * progress)
-        ui.rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
-    end
-
-    draw_footer({
-        {"B", "Back", theme.btn_b},
-        {"\226\134\145\226\134\147", "Scroll", theme.btn_l},
-        {"L2/R2", "Page", theme.btn_l},
-    })
+    local hints = {{"B", "Back"}, {"D-pad", "Scroll"}, {"L2/R2", "Page"}}
+    if not state.reader_loading and (state.reader_error ~= "" or #state.reader_lines == 0) then hints[#hints + 1] = {"A", "Retry"} end
+    U.footer(hints)
 end
 
--- ── Lifecycle Callbacks ──────────────────────────────────────────────────────
+local function visual_key()
+    return table.concat({state.screen_stack[#state.screen_stack], tostring(state.papers), state.cursor,
+        tostring(state.loading), state.error_msg, tostring(state.detail_paper), state.detail_scroll,
+        tostring(state.detail_needs_layout), tostring(state.reader_lines), state.reader_scroll,
+        tostring(state.reader_loading), state.reader_error, tostring(state.reader_needs_layout)}, "\0")
+end
 
 function on_init()
     fetch_papers()
+    app.request_redraw()
 end
 
 function on_update(dt)
-    poll_requests()
+    local before = visual_key()
+    for _, response in ipairs(http.poll()) do
+        local handler = pending[response.id]
+        if handler then pending[response.id] = nil; handler(response) end
+    end
+    local dirty = before ~= visual_key()
+    if dirty then app.request_redraw() end
+    return dirty
 end
 
-function on_input(button, action)
+local function handle_input(button, action)
     if action ~= "press" and action ~= "repeat" then return end
 
     local current = state.screen_stack[#state.screen_stack]
@@ -609,10 +340,10 @@ function on_input(button, action)
         elseif button == "x" then
             fetch_papers()
         elseif button == "l2" then
-            local visible = math.max(1, math.floor(640 / ROW_HEIGHT))
+            local visible = math.max(1, LIST_VISIBLE)
             state.cursor = math.max(1, state.cursor - visible)
         elseif button == "r2" then
-            local visible = math.max(1, math.floor(640 / ROW_HEIGHT))
+            local visible = math.max(1, LIST_VISIBLE)
             state.cursor = math.min(math.max(1, n), state.cursor + visible)
         end
 
@@ -630,40 +361,41 @@ function on_input(button, action)
         elseif button == "dpad_up" then
             state.detail_scroll = math.max(0, state.detail_scroll - 1)
         elseif button == "dpad_down" then
-            state.detail_scroll = state.detail_scroll + 1
+            state.detail_scroll = math.min(state.detail_max_scroll, state.detail_scroll + 1)
         elseif button == "l2" then
             state.detail_scroll = math.max(0, state.detail_scroll - 10)
         elseif button == "r2" then
-            state.detail_scroll = state.detail_scroll + 10
+            state.detail_scroll = math.min(state.detail_max_scroll, state.detail_scroll + 10)
         end
 
     elseif current == "reader" then
-        if button == "b" then
+        if button == "a" and not state.reader_loading and (state.reader_error ~= "" or #state.reader_lines == 0) then
+            load_reader(AR5IV_BASE .. state.detail_paper.id)
+        elseif button == "b" then
             state.reader_generation = state.reader_generation + 1
             state.reader_loading = false
             state.screen_stack[#state.screen_stack] = nil
         elseif button == "dpad_up" then
             state.reader_scroll = math.max(0, state.reader_scroll - 1)
         elseif button == "dpad_down" then
-            state.reader_scroll = state.reader_scroll + 1
+            state.reader_scroll = math.min(state.reader_max_scroll, state.reader_scroll + 1)
         elseif button == "l2" then
             state.reader_scroll = math.max(0, state.reader_scroll - 10)
         elseif button == "r2" then
-            state.reader_scroll = state.reader_scroll + 10
+            state.reader_scroll = math.min(state.reader_max_scroll, state.reader_scroll + 10)
         end
     end
 end
 
+function on_input(button, action)
+    local before = visual_key()
+    handle_input(button, action)
+    if before ~= visual_key() then app.request_redraw() end
+end
+
 function on_render()
-    screen.clear(theme.bg.r, theme.bg.g, theme.bg.b)
-
-
     local current = state.screen_stack[#state.screen_stack]
-    if current == "list" then
-        draw_paper_list()
-    elseif current == "detail" then
-        draw_paper_detail()
-    elseif current == "reader" then
-        draw_reader()
-    end
+    if current == "list" then draw_paper_list()
+    elseif current == "detail" then draw_paper_detail()
+    elseif current == "reader" then draw_reader() end
 end

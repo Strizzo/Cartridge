@@ -3,6 +3,7 @@ pub mod manifest;
 pub mod runner;
 mod http_fixture;
 pub mod stream_audio;
+mod ssh_async;
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};

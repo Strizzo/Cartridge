@@ -1,0 +1,23 @@
+{
+  "id": "dev.cartridge.vibeboy",
+  "name": "VibeBoy",
+  "version": "0.4.0",
+  "author": "VibeBoy Team",
+  "description": "Remote control for VibeBoy daemon - manage tmux sessions and Claude Code",
+  "category": "tools",
+  "tags": [
+    "vibeboy",
+    "tmux",
+    "claude",
+    "remote",
+    "cyberdeck"
+  ],
+  "permissions": [
+    "network",
+    "storage",
+    "ssh"
+  ],
+  "entry": "main.lua",
+  "min_runtime": "0.7.0",
+  "icon": "icon.png"
+}

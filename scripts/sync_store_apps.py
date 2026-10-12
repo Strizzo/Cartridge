@@ -17,7 +17,7 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT/'store-apps.lock.json'
-FOLDERS = {'dev.cartridge.frequency':'frequency', 'dev.cartridge.mission-control':'mission_control', 'dev.cartridge.outside':'outside'}
+FOLDERS = {'dev.cartridge.frequency':'frequency', 'dev.cartridge.mission-control':'mission_control', 'dev.cartridge.outside':'outside', 'dev.cartridge.vibeboy':'vibeboy'}
 
 def safe_name(name):
     path = PurePosixPath(name)
@@ -82,7 +82,7 @@ def refresh(path):
         manifest = json.loads(files['cartridge.json'])
         if any(manifest[k] != app[k] for k in ['id','version','permissions']): raise ValueError('Manifest identity mismatch')
         prepared.append((app,files))
-    if {a['id'] for a,_ in prepared} != set(FOLDERS): raise ValueError('Catalogue is missing one of the three bundled apps')
+    if {a['id'] for a,_ in prepared} != set(FOLDERS): raise ValueError('Catalogue is missing one of the bundled apps')
     entries = []
     registry = json.loads((ROOT/'registry.json').read_text())
     for app,files in prepared:
