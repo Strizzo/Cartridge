@@ -2,13 +2,13 @@
 
 These captures show **released CartridgeOS 0.7.0**. [View its source](https://github.com/Strizzo/Cartridge/tree/v0.7.0) or [download the release](https://github.com/Strizzo/Cartridge/releases/tag/v0.7.0).
 
-Real-device photographs and edited demonstrations from an R36S Plus. The original footage was recorded on 2026-10-13; the simulator captures were rendered on 2026-10-17 from CartridgeOS 0.7.0.
+Real-device photographs and edited demonstrations from an R36S Plus. The overview and focused demos use a new recording from 2026-10-18. Photographs are from 2026-10-13; native simulator captures were rendered on 2026-10-17 from CartridgeOS 0.7.0.
 
 ## Hardware overview
 
 [![Watch the edited CartridgeOS overview](overview-poster.jpg)](overview.mp4)
 
-**[Watch the 43-second overview](overview.mp4).** Launcher navigation, news, markets, a focus timer, system details, radio browsing and weather on actual hardware. This is an edited highlight reel with titles added outside the filmed device image. Audio is omitted; footage runs at normal speed.
+**[Watch the new 36-second overview](overview.mp4).** App-grid navigation, radio-map zooming, illustrated weather, Hacker News, a focus timer and system stats on actual hardware. A tighter edit from one recording, with short labels below the device screen and no still-photo introduction or ending. Audio is omitted; every selected interaction runs at normal speed.
 
 | The launcher | Frequency on the device |
 |---|---|
@@ -18,10 +18,10 @@ Real-device photographs and edited demonstrations from an R36S Plus. The origina
 
 [![D-pad navigation through the CartridgeOS grid](launcher-preview.gif)](launcher-demo.mp4)
 
-- [Launcher navigation — 10.8 seconds](launcher-demo.mp4): continuous D-pad navigation through the app grid.
-- [Frequency — 13.8 seconds](frequency-demo.mp4): continuous station selection on the radio map. Audio omitted.
+- [Launcher navigation — 5.1 seconds](launcher-demo.mp4): continuous navigation through the app grid and onto its next page.
+- [Frequency — 17.5 seconds](frequency-demo.mp4): continuous zooming and panning from the world map into Europe. Audio omitted.
 
-The MP4 files are smaller web copies at 540×960 with H.264 video and fast-start metadata. The animated preview is deliberately small; use the linked video for a clearer view.
+The MP4 files are smaller web copies at 720×1280 with H.264 video and fast-start metadata. The animated preview is deliberately small; use the linked video for a clearer view.
 
 ## Native simulator captures
 
@@ -43,6 +43,6 @@ A photograph of the startup artwork. This is not a timed boot demonstration.
 
 ## Captions and provenance
 
-The media derives from recordings and photographs supplied by the project owner. Camera HDR footage was converted to SDR Rec.709 for browser playback; photographs were cropped and resized. Exported media omits embedded location metadata. Device screens were not replaced or composited, and no footage was sped up.
+The media derives from recordings and photographs supplied by the project owner. Camera HDR footage was converted to SDR Rec.709 with a restrained shadow lift and saturation correction; photographs were cropped and resized. Exported media omits embedded location metadata. Device screens were not replaced or composited, and no footage was sped up.
 
 [media-provenance.json](media-provenance.json) records the source filenames, exact in/out times, screenshot provenance and exported file checksums. Complete original recordings are not stored in this repository. The full local blog kit additionally contains seven focused cuts, full-size stills, all six simulator captures, English captions, alt text, SRT/VTT tracks and copy-and-paste embed examples.

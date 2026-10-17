@@ -8,9 +8,9 @@ Built in Rust with SDL2. Apps are scripted in Lua.
 
 [![CartridgeOS running on a green R36S Plus](docs/media/overview-poster.jpg)](docs/media/overview.mp4)
 
-**[Watch the 43-second hardware overview](docs/media/overview.mp4)** · [Photos, focused demos and simulator gallery](docs/media/README.md)
+**[Watch the new 36-second hardware overview](docs/media/overview.mp4)** · [Photos, focused demos and simulator gallery](docs/media/README.md)
 
-Real R36S Plus footage: launcher navigation, news, markets, focus timer, radio and weather. The overview is edited and muted; the gallery clearly labels simulator screenshots that use sample data.
+New R36S Plus footage: launcher navigation, radio-map zooming, illustrated weather, news, focus timer and system stats. The overview is edited and muted; the gallery clearly labels simulator screenshots that use sample data.
 
 ## Install on R36S Plus
 
