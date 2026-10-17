@@ -1,0 +1,262 @@
+{
+  "created": "2026-10-17",
+  "source": "Project owner supplied physical-device media. Original files unchanged.",
+  "physical_recording_date": "2026-10-13",
+  "source_cuts": [
+    {
+      "id": "01-launcher",
+      "source": "IMG_2012.MOV",
+      "start": 2.0,
+      "end": 12.8,
+      "caption": "CartridgeOS on the R36S Plus: moving through the app grid with the D-pad."
+    },
+    {
+      "id": "02-news",
+      "source": "IMG_2012.MOV",
+      "start": 20.5,
+      "end": 28.6,
+      "caption": "Reading Hacker News stories and comments on the handheld, using its physical controls."
+    },
+    {
+      "id": "03-stocks",
+      "source": "IMG_2013.MOV",
+      "start": 72.5,
+      "end": 84.4,
+      "caption": "The Stocks app moves from a watchlist to a cryptocurrency price-history chart. Prices shown are from the recording."
+    },
+    {
+      "id": "04-focus-timer",
+      "source": "IMG_2013.MOV",
+      "start": 96.2,
+      "end": 104.8,
+      "caption": "Starting and pausing a Pomodoro focus timer with the handheld controls. This clip runs at normal speed."
+    },
+    {
+      "id": "05-system-monitor",
+      "source": "IMG_2013.MOV",
+      "start": 118.2,
+      "end": 127.7,
+      "caption": "System Monitor shows device measurements, storage use and network history on the R36S Plus."
+    },
+    {
+      "id": "06-radio-atlas",
+      "source": "IMG_2012.MOV",
+      "start": 153.2,
+      "end": 167.0,
+      "caption": "Exploring Frequency’s radio directory and selecting stations on the map. Audio is omitted from this edit."
+    },
+    {
+      "id": "07-outside-weather",
+      "source": "IMG_2013.MOV",
+      "start": 162.0,
+      "end": 166.8,
+      "caption": "Outside presents current weather and a forecast on the physical handheld. Conditions shown are from the recording."
+    }
+  ],
+  "overview": {
+    "file": "overview.mp4",
+    "duration": 43.3,
+    "caption": "An edited tour of CartridgeOS on the R36S Plus: launcher, news, markets, focus timer, system details, radio atlas and weather. Filmed on real hardware; audio omitted; no speed changes.",
+    "segments": [
+      {
+        "start": 0,
+        "end": 1.8,
+        "title": "CARTRIDGE OS",
+        "description": "A pocket computer, built around controller keys.",
+        "source": {
+          "file": "IMG_7764.HEIC",
+          "type": "still photograph",
+          "display_seconds": 1.8
+        }
+      },
+      {
+        "start": 1.8,
+        "end": 7.3,
+        "title": "A launcher built for buttons",
+        "description": "D-pad navigation through the app grid.",
+        "source": {
+          "file": "IMG_2012.MOV",
+          "in_seconds": 2.0,
+          "out_seconds": 7.5,
+          "playback_rate": 1
+        }
+      },
+      {
+        "start": 7.3,
+        "end": 12.7,
+        "title": "News, with a D-pad",
+        "description": "Browse Hacker News stories and comments.",
+        "source": {
+          "file": "IMG_2012.MOV",
+          "in_seconds": 20.5,
+          "out_seconds": 25.9,
+          "playback_rate": 1
+        }
+      },
+      {
+        "start": 12.7,
+        "end": 16.3,
+        "title": "Markets in your pocket",
+        "description": "Switch from a watchlist to a price chart.",
+        "source": {
+          "file": "IMG_2013.MOV",
+          "in_seconds": 80.8,
+          "out_seconds": 84.4,
+          "playback_rate": 1
+        }
+      },
+      {
+        "start": 16.3,
+        "end": 23.5,
+        "title": "A small focus companion",
+        "description": "Start a timer, then pause with a button.",
+        "source": {
+          "file": "IMG_2013.MOV",
+          "in_seconds": 96.5,
+          "out_seconds": 103.7,
+          "playback_rate": 1
+        }
+      },
+      {
+        "start": 23.5,
+        "end": 28.1,
+        "title": "See the system underneath",
+        "description": "CPU, storage and network details.",
+        "source": {
+          "file": "IMG_2013.MOV",
+          "in_seconds": 118.2,
+          "out_seconds": 122.8,
+          "playback_rate": 1
+        }
+      },
+      {
+        "start": 28.1,
+        "end": 36.7,
+        "title": "Explore world radio",
+        "description": "Browse stations through Frequency’s atlas.",
+        "source": {
+          "file": "IMG_2012.MOV",
+          "in_seconds": 153.4,
+          "out_seconds": 162.0,
+          "playback_rate": 1
+        }
+      },
+      {
+        "start": 36.7,
+        "end": 41.5,
+        "title": "A glance at the weather",
+        "description": "Outside brings the forecast to the handheld.",
+        "source": {
+          "file": "IMG_2013.MOV",
+          "in_seconds": 162.0,
+          "out_seconds": 166.8,
+          "playback_rate": 1
+        }
+      },
+      {
+        "start": 41.5,
+        "end": 43.3,
+        "title": "BUILT FOR THE HANDHELD",
+        "description": "Real hardware footage / edited highlights",
+        "source": {
+          "file": "IMG_7769.HEIC",
+          "type": "still photograph",
+          "display_seconds": 1.8
+        }
+      }
+    ],
+    "poster_file": "overview-poster.jpg"
+  },
+  "processing": "Native portrait orientation; HDR/HLG to SDR Rec.709; H.264 MP4, 720x1280, 30fps, fast-start; no speed changes; location metadata removed.",
+  "simulator": {
+    "runtime": "0.7.0",
+    "source_revision": "149bf04d1438f4d8933df38440027e00a805d71b",
+    "dimensions": [
+      720,
+      720
+    ],
+    "disclosure": "Actual simulator-rendered screenshots, not physical-device captures. Every image contains simulated or fixture data. Weather, news, completion statistics and remote sessions are demo data; Frequency displays its bundled offline atlas snapshot. Do not describe these values as live data or device measurements.",
+    "capture_method": "Existing native snapshot/app-check binaries, SDL dummy video/audio, hidden software renderer; each binary creates an isolated temporary storage home."
+  },
+  "original_source_hashes": [
+    {
+      "file": "IMG_2012.MOV",
+      "bytes": 293531815,
+      "sha256": "1da1d29c5f9c7500357f65526a8c9ab5dcbbe39532bde0df4e3fd183dee6b414"
+    },
+    {
+      "file": "IMG_2013.MOV",
+      "bytes": 388536101,
+      "sha256": "910e87f7a59678840eefa6eafd63e337a5133d3c6466ed7eb4b862ec4920e39d"
+    },
+    {
+      "file": "IMG_7764.HEIC",
+      "bytes": 1629801,
+      "sha256": "2c6c2201944b54e1f32ab02104a74f11a3b8a608e3244ef927afaf901d021772"
+    },
+    {
+      "file": "IMG_7765.HEIC",
+      "bytes": 3172037,
+      "sha256": "e0454187124b42ab75f2d169bc32ab75fb65a25d726683777ac2611598fd7443"
+    },
+    {
+      "file": "IMG_7769.HEIC",
+      "bytes": 1706772,
+      "sha256": "58a59111b6fe987e86c729b7ea20034c5045973904e8a77701bc09f31d49bd81"
+    }
+  ],
+  "exported_files": {
+    "README.md": {
+      "bytes": 3035,
+      "sha256": "b62291dc8e2812c76dc2d16980f62866d80d7b90e5e1b47a5a3dd4d4eae13ff6"
+    },
+    "boot-artwork.jpg": {
+      "bytes": 169484,
+      "sha256": "e47431d64a86727564816d63d84f2ff258a0e730a34a0cd40acb28ea4818620a"
+    },
+    "device-launcher.jpg": {
+      "bytes": 190622,
+      "sha256": "06f85223285bf5a4b5df8921b6129059572f13755238962049541244d93fa47d"
+    },
+    "frequency-demo.mp4": {
+      "bytes": 541224,
+      "sha256": "55be477f35c239bbac7ddb02f7c2b89e656c74c8697decf34a010f82b68ec940"
+    },
+    "frequency-on-device.jpg": {
+      "bytes": 185990,
+      "sha256": "f63e75608c80d3e7eeeb11b7667ffc27c2717de4a9a09d1b86879c2db74fb254"
+    },
+    "frequency-simulator.png": {
+      "bytes": 221574,
+      "sha256": "a1e0cd50505226463d4667f1f9692e7fe9f2e9d32a6ddfe7fa40a827a62cfa09"
+    },
+    "launcher-demo.mp4": {
+      "bytes": 1211497,
+      "sha256": "88994764260a963fadd97b1ca3e5e7d3cfe17bced1768add834d4263abf4d091"
+    },
+    "launcher-preview.gif": {
+      "bytes": 2084102,
+      "sha256": "19c94621b9fdf4ec221344811fd9087c3fc099027586b5222829f47442044cdf"
+    },
+    "launcher-simulator.png": {
+      "bytes": 72903,
+      "sha256": "60fbbb45b972963eb2ea6d97b3535e54091b997a566b3a6901e6c00f65e0235a"
+    },
+    "overview-poster.jpg": {
+      "bytes": 37000,
+      "sha256": "4de6e991d8480f44fe8867020299c208bc27206b50fb06688051d77deff2b2b9"
+    },
+    "overview.mp4": {
+      "bytes": 2103166,
+      "sha256": "009730eaa79d9c318807996051821c818dc92f7793c96446d971f0608d5f50a1"
+    },
+    "vibeboy-simulator.png": {
+      "bytes": 65314,
+      "sha256": "815d43ba01fccad200082cc544d871576dbaeee7c0f48a0e03c16a46d4f2137e"
+    },
+    "weather-simulator.png": {
+      "bytes": 64836,
+      "sha256": "df9c48bfbdb06f8003a5bf6117b46d0476398a7463b3fda97ccf070657bf6663"
+    }
+  }
+}
