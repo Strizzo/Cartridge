@@ -54,10 +54,11 @@ impl UiSounds {
         self.play_tone(440.0, 24, 0.18);
     }
 
-    /// Two-tone ascending chirp for app launch.
-    pub fn launch(&mut self) {
+    /// Queue the launch chirp. False means no audio needs time to finish.
+    pub fn launch(&mut self) -> bool {
         self.play_tone(660.0, 35, 0.20);
         self.play_tone(990.0, 60, 0.22);
+        self.enabled && self.sink.is_some()
     }
 
     fn play_tone(&mut self, freq_hz: f32, duration_ms: u64, amplitude: f32) {

@@ -62,7 +62,7 @@ info "Install: $DEST"
 
 # -- Copy ---------------------------------------------------------------------
 
-mkdir -p "$DEST/assets/fonts" "$DEST/assets/overlays" "$TOOLS"
+mkdir -p "$DEST/assets/fonts" "$DEST/assets/overlays" "$DEST/assets/brand" "$TOOLS"
 
 if [[ "$APPS_ONLY" == "0" ]]; then
     [[ -f "$TARGET_DIR/cartridge" ]] || fail "No device binary at $TARGET_DIR/cartridge.
@@ -89,6 +89,7 @@ info "Registry and assets..."
 [[ -f "$REPO_DIR/registry.json" ]] && cp "$REPO_DIR/registry.json" "$DEST/"
 cp "$REPO_DIR/assets/fonts/"* "$DEST/assets/fonts/" 2>/dev/null || true
 cp "$REPO_DIR/assets/overlays/"* "$DEST/assets/overlays/" 2>/dev/null || true
+cp "$REPO_DIR/assets/brand/"* "$DEST/assets/brand/" 2>/dev/null || true
 [[ -f "$REPO_DIR/assets/boot_logo.png" ]] && cp "$REPO_DIR/assets/boot_logo.png" "$DEST/assets/"
 [[ -f "$REPO_DIR/assets/gamecontrollerdb.txt" ]] && cp "$REPO_DIR/assets/gamecontrollerdb.txt" "$DEST/assets/"
 

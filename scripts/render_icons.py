@@ -119,6 +119,15 @@ ICONS = {
         f'<path d="M5 7h38v25H21l-9 9v-9H5z" fill="{W}"/>',
         f'<circle cx="24" cy="19.5" r="4.5" fill="{R}"/>',
     ],
+    "worldpulse": [
+        f'<circle cx="24" cy="26" r="18" fill="{W}"/>',
+        f'<circle cx="24" cy="26" r="14.5" fill="{K}"/>',
+        f'<ellipse cx="24" cy="26" rx="7.5" ry="17" fill="none" stroke="{W}" stroke-width="2.5"/>',
+        f'<path d="M7 26h34M11 16c8 5 18 5 26 0M11 36c8-5 18-5 26 0" fill="none" stroke="{W}" stroke-width="2.4"/>',
+        f'<circle cx="36" cy="12" r="8" fill="{R}"/>',
+        f'<circle cx="36" cy="12" r="3" fill="{W}"/>',
+        f'<path d="M32 18l4 6 4-6z" fill="{R}"/>',
+    ],
 }
 
 

@@ -48,8 +48,7 @@ pub struct SystemInfo {
     prev_net_rx: u64,
     #[cfg(target_os = "linux")]
     prev_net_tx: u64,
-    // macOS simulation state
-    #[cfg(not(target_os = "linux"))]
+    // Desktop/VM simulator state
     sim_time: f32,
     last_poll: Option<Instant>,
 }
@@ -91,7 +90,6 @@ impl SystemInfo {
             prev_net_rx: 0,
             #[cfg(target_os = "linux")]
             prev_net_tx: 0,
-            #[cfg(not(target_os = "linux"))]
             sim_time: 0.0,
             last_poll: None,
         }
@@ -99,6 +97,7 @@ impl SystemInfo {
 
     /// Read hostname once at startup.
     fn read_hostname() -> String {
+        if crate::sim::is_sim() { return crate::sim::hostname(); }
         #[cfg(target_os = "linux")]
         {
             std::fs::read_to_string("/etc/hostname")
@@ -131,7 +130,7 @@ impl SystemInfo {
         self.last_poll = Some(now);
 
         #[cfg(target_os = "linux")]
-        self.poll_linux(dt);
+        if crate::sim::is_sim() { self.poll_simulated(dt); } else { self.poll_linux(dt); }
 
         #[cfg(not(target_os = "linux"))]
         self.poll_simulated(dt);
@@ -433,7 +432,6 @@ impl SystemInfo {
     // `crate::sim` (CARTRIDGE_SIM_PROFILE + CARTRIDGE_SIM_* overrides), with
     // gentle sine-wave variation so graphs are not flat lines.
     // -----------------------------------------------------------------------
-    #[cfg(not(target_os = "linux"))]
     fn poll_simulated(&mut self, dt: f32) {
         let profile = crate::sim::profile();
         self.sim_time += dt;
@@ -456,7 +454,7 @@ impl SystemInfo {
 
         // Uptime: real uptime via sysctl or just count up
         self.uptime_secs += dt as u64;
-        if self.uptime_secs == 0 {
+        if self.uptime_secs == 0 && !crate::sim::is_sim() {
             // Try to get real uptime on macOS
             if let Ok(output) = std::process::Command::new("sysctl")
                 .args(["-n", "kern.boottime"])
@@ -482,8 +480,16 @@ impl SystemInfo {
         self.net_rx_rate = 1.2 + 2.0 * (t * 0.5).sin().abs();
         self.net_tx_rate = 0.3 + 0.5 * (t * 0.7).cos().abs();
 
-        // Processes: use real ps on macOS
-        self.poll_top_processes_macos();
+        if crate::sim::is_sim() {
+            self.process_count = 1;
+            self.top_processes = vec![ProcessEntry {
+                pid: 100, name: "cartridge (simulated)".into(),
+                cpu_percent: self.cpu_percent, mem_mb: self.mem_used_mb as f32, state: 'S',
+            }];
+        } else {
+            #[cfg(not(target_os = "linux"))]
+            self.poll_top_processes_macos();
+        }
 
         // WiFi: live simulated state (connect/disconnect in Settings update it)
         match crate::sim::wifi_status() {

@@ -18,6 +18,7 @@ struct CacheEntry {
 ///
 /// Each cached response is stored as `{cache_dir}/{hash}.json` where the hash
 /// is derived from the URL.
+#[derive(Clone)]
 pub struct DiskCache {
     cache_dir: PathBuf,
 }

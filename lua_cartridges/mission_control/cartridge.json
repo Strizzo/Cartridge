@@ -1,0 +1,22 @@
+{
+  "id": "dev.cartridge.mission-control",
+  "name": "Mission Control",
+  "version": "1.0.0",
+  "author": "CartridgeOS Team",
+  "description": "A controller-first operations room for real VibeBoy sessions, agents and terminal workflows.",
+  "category": "tools",
+  "tags": [
+    "vibeboy",
+    "tmux",
+    "agents",
+    "terminal",
+    "developer"
+  ],
+  "permissions": [
+    "network",
+    "storage"
+  ],
+  "entry": "main.lua",
+  "icon": "icon.png",
+  "min_runtime": "0.6.0"
+}

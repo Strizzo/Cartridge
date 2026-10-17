@@ -1,1 +1,21 @@
-{"id":"dev.cartridge.pomodoro","name":"Pomodoro","version":"0.1.0","author":"Cartridge Team","description":"Pomodoro productivity timer with stats","category":"Productivity","tags":["pomodoro","timer","productivity","focus"],"permissions":["storage","audio"],"entry":"main.lua"}
+{
+  "id": "dev.cartridge.pomodoro",
+  "name": "Pomodoro",
+  "version": "0.2.0",
+  "author": "Cartridge Team",
+  "description": "Pomodoro productivity timer with stats",
+  "category": "Productivity",
+  "tags": [
+    "pomodoro",
+    "timer",
+    "productivity",
+    "focus"
+  ],
+  "permissions": [
+    "storage",
+    "audio"
+  ],
+  "entry": "main.lua",
+  "min_runtime": "0.7.0",
+  "repo_url": "https://github.com/Strizzo/Cartridge/tree/v0.7.0/lua_cartridges/pomodoro"
+}

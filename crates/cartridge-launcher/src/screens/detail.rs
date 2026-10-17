@@ -7,166 +7,45 @@ use crate::neo::{self, Chip, Hint};
 use crate::ui_constants::*;
 use super::{LauncherScreen, ScreenAction, ScreenContext};
 
-/// Focus zone on detail screen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DetailFocus {
-    Info,
-    Action,
-}
-
 pub struct DetailScreen {
-    app_index: usize,
-    focus: DetailFocus,
-    scroll_y: i32,
-    status_msg: Option<(String, std::time::Instant, bool)>, // (message, when, is_error)
+    app_id: String,
 }
 
 impl DetailScreen {
-    pub fn new(app_index: usize) -> Self {
-        Self {
-            app_index,
-            focus: DetailFocus::Info,
-            scroll_y: 0,
-            status_msg: None,
-        }
-    }
-
-    fn set_status(&mut self, msg: &str, is_error: bool) {
-        self.status_msg = Some((msg.to_string(), std::time::Instant::now(), is_error));
-    }
+    pub fn new(app_id: String) -> Self { Self { app_id } }
 }
 
 impl LauncherScreen for DetailScreen {
     fn handle_input(&mut self, events: &[InputEvent], ctx: &mut ScreenContext) -> ScreenAction {
-        for ie in events {
-            if ie.action != InputAction::Press && ie.action != InputAction::Repeat {
-                continue;
-            }
-
-            match ie.button {
-                Button::B => {
-                    return ScreenAction::Pop;
-                }
-                Button::DpadDown => {
-                    if self.focus == DetailFocus::Info {
-                        self.focus = DetailFocus::Action;
-                    } else {
-                        self.scroll_y = (self.scroll_y + 20).min(100);
-                    }
-                }
-                Button::DpadUp => {
-                    if self.focus == DetailFocus::Action {
-                        self.focus = DetailFocus::Info;
-                    } else {
-                        self.scroll_y = (self.scroll_y - 20).max(0);
-                    }
-                }
-                Button::A => {
-                    if self.focus == DetailFocus::Action
-                        && let Some(app) = ctx.registry.apps.get(self.app_index) {
-                            let app_id = app.id.clone();
-                            if ctx.installed.is_installed(&app_id) {
-                                // Record a recent entry, then launch
-                                let now = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .map(|d| d.as_secs())
-                                    .unwrap_or(0);
-                                let entry = crate::data::RecentEntry {
-                                    app_id: app_id.clone(),
-                                    name: app.name.clone(),
-                                    timestamp_secs: now,
-                                };
-                                // Remove old entry for same app
-                                ctx.recents.retain(|r| r.app_id != app_id);
-                                ctx.recents.insert(0, entry);
-                                if ctx.recents.len() > 10 {
-                                    ctx.recents.truncate(10);
-                                }
-                                ctx.save_recents();
-                                return ScreenAction::LaunchApp(app_id);
-                            } else {
-                                // Install via network
-                                if app.repo_url.is_empty() {
-                                    self.set_status("This app is bundled and cannot be installed separately", true);
-                                } else {
-                                    self.set_status("Installing...", false);
-                                    let net_app = to_net_app(app);
-                                    if let Some(installer) = &ctx.installer {
-                                        log::info!("Attempting network install of {}...", app_id);
-                                        match installer.install(&net_app) {
-                                            Ok(()) => {
-                                                log::info!("Successfully installed {} via network", app_id);
-                                                ctx.installed.install(&app_id);
-                                                ctx.save_installed();
-                                                self.set_status("Installed successfully", false);
-                                            }
-                                            Err(e) => {
-                                                log::warn!("Network install failed for {}: {e}", app_id);
-                                                self.set_status(&format!("Install failed: {e}"), true);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+        use crate::store_jobs::StoreOperation;
+        for event in events {
+            if event.action != InputAction::Press { continue }
+            match event.button {
+                Button::B => return ScreenAction::Pop,
+                Button::Start => return ScreenAction::Push(super::ScreenId::Settings),
+                Button::Select => return ScreenAction::ShowOverlay,
+                Button::A | Button::X | Button::Y | Button::L1 if !ctx.store_jobs.is_busy() => {
+                    let Some(app) = ctx.app(&self.app_id).cloned() else { continue };
+                    match event.button {
+                        Button::A if ctx.installed.is_installed(&self.app_id) => {
+                            let name = ctx.local_apps.apps.iter().find(|a| a.id == self.app_id).map(|a| a.name.clone()).unwrap_or(app.name);
+                            ctx.recents.retain(|r| r.app_id != self.app_id);
+                            ctx.recents.insert(0, crate::data::RecentEntry {
+                                app_id: self.app_id.clone(), name,
+                                timestamp_secs: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+                            });
+                            ctx.recents.truncate(10);
+                            ctx.save_recents();
+                            return ScreenAction::LaunchApp(self.app_id.clone());
                         }
-                }
-                Button::X => {
-                    // Remove if installed
-                    if let Some(app) = ctx.registry.apps.get(self.app_index) {
-                        let app_id = app.id.clone();
-                        if ctx.installed.is_installed(&app_id) {
-                            if let Some(installer) = &ctx.installer {
-                                log::info!("Removing {} from disk...", app_id);
-                                match installer.remove(&app_id) {
-                                    Ok(()) => {
-                                        log::info!("Successfully removed {} from disk", app_id);
-                                        self.set_status("Removed", false);
-                                    }
-                                    Err(e) => {
-                                        log::warn!("Disk removal failed for {}: {e}", app_id);
-                                        self.set_status(&format!("Remove failed: {e}"), true);
-                                    }
-                                }
-                            }
-                            ctx.installed.remove(&app_id);
-                            ctx.save_installed();
-                        }
+                        Button::A => ctx.start_store_job(StoreOperation::Install(app)),
+                        Button::Y => ctx.start_store_job(StoreOperation::Update(app)),
+                        Button::X => ctx.start_store_job(StoreOperation::Remove(self.app_id.clone())),
+                        Button::L1 => ctx.start_store_job(StoreOperation::Rollback(self.app_id.clone())),
+                        _ => {},
                     }
                 }
-                Button::Y => {
-                    // Update: reinstall if newer version available
-                    if let Some(app) = ctx.registry.apps.get(self.app_index) {
-                        let app_id = app.id.clone();
-                        if ctx.installed.is_installed(&app_id) {
-                            if let Some(installer) = &ctx.installer {
-                                let installed_ver = installer.installed_version(&app_id);
-                                let registry_ver = &app.version;
-                                if installed_ver.as_deref() != Some(registry_ver) {
-                                    self.set_status(&format!("Updating to v{}...", registry_ver), false);
-                                    log::info!("Updating {} to v{}...", app_id, registry_ver);
-                                    let net_app = to_net_app(app);
-                                    match installer.install(&net_app) {
-                                        Ok(()) => {
-                                            log::info!("Updated {} to v{}", app_id, registry_ver);
-                                            self.set_status(&format!("Updated to v{}", registry_ver), false);
-                                        }
-                                        Err(e) => {
-                                            log::warn!("Update failed for {}: {e}", app_id);
-                                            self.set_status(&format!("Update failed: {e}"), true);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Button::Start => {
-                    return ScreenAction::Push(super::ScreenId::Settings);
-                }
-                Button::Select => {
-                    return ScreenAction::ShowOverlay;
-                }
-                _ => {}
+                _ => {},
             }
         }
         ScreenAction::None
@@ -174,15 +53,13 @@ impl LauncherScreen for DetailScreen {
 
     fn render(&mut self, screen: &mut Screen, ctx: &ScreenContext) {
         let theme = screen.theme;
-        let app = match ctx.registry.apps.get(self.app_index) {
+        let app = match detail_app(ctx, &self.app_id) {
             Some(a) => a,
             None => return,
         };
 
         let is_installed = ctx.installed.is_installed(&app.id);
-        let has_update = is_installed && ctx.installer.as_ref().map_or(false, |inst| {
-            inst.installed_version(&app.id).as_deref() != Some(&app.version)
-        });
+        let has_update = ctx.has_update(&app.id);
 
         if neo::is_neo(theme) {
             self.render_neo(screen, ctx, app, is_installed, has_update);
@@ -398,54 +275,10 @@ impl LauncherScreen for DetailScreen {
             }
         }
 
-        // -- Action button area --
-        let action_y = perm_card_y + perm_card_h + MARGIN + 4;
-        let is_action_focused = self.focus == DetailFocus::Action;
+        let availability = availability_text(ctx, &app.id);
+        screen.draw_text(&availability, 24, perm_card_y + perm_card_h + 24, Some(theme.text_dim), 13, false, Some(SCREEN_WIDTH - 48));
+        draw_detail_footer(screen, ctx, &app.id);
 
-        {
-            // Action hints — show which button does what (not navigable)
-            let mut ax = 12;
-            if is_installed {
-                let w = screen.draw_button_hint("A", "Launch", ax, action_y + 8, Some(theme.positive), 14);
-                ax += w as i32 + 16;
-                if has_update {
-                    let w = screen.draw_button_hint("Y", "Update", ax, action_y + 8, Some(theme.text_warning), 14);
-                    ax += w as i32 + 16;
-                }
-                let w = screen.draw_button_hint("X", "Remove", ax, action_y + 8, Some(theme.negative), 14);
-                ax += w as i32 + 20;
-            } else {
-                let w = screen.draw_button_hint("A", "Install", ax, action_y + 8, Some(theme.accent), 14);
-                ax += w as i32 + 20;
-            }
-
-            // Category pill
-            let cat_upper = app.category.to_uppercase();
-            screen.draw_pill(
-                &cat_upper,
-                ax,
-                action_y + 6,
-                cat_color,
-                Color::RGB(20, 20, 30),
-                11,
-            );
-        }
-
-        // -- Status message --
-        if let Some((ref msg, when, is_error)) = self.status_msg {
-            let elapsed = when.elapsed().as_secs_f32();
-            if elapsed < 5.0 {
-                let msg_color = if is_error { theme.negative } else { theme.positive };
-                let msg_y = action_y + 44;
-                screen.draw_text(msg, 12, msg_y, Some(msg_color), 13, false, Some(SCREEN_WIDTH - 24));
-            } else {
-                // Auto-clear after 5 seconds — can't mutate self here,
-                // so it will be cleared on next input.
-            }
-        }
-
-        // -- Footer --
-        draw_detail_footer(screen, is_installed, has_update);
     }
 }
 
@@ -526,69 +359,73 @@ impl DetailScreen {
         let source = if app.repo_url.is_empty() { "Bundled with CartridgeOS".to_string() } else { app.repo_url.clone() };
         screen.draw_text(&source, neo::MARGIN_X, y, Some(theme.text), 12, false, Some(SCREEN_WIDTH - neo::MARGIN_X as u32 * 2));
 
-        // Status message, above the footer.
-        if let Some((ref msg, when, is_error)) = self.status_msg {
-            if when.elapsed().as_secs_f32() < 5.0 {
-                let color = if is_error { theme.accent } else { theme.text };
-                let my = neo::FOOTER_Y - 30;
-                if is_error {
-                    screen.fill(Rect::new(neo::MARGIN_X, my - 2, 3, 18), theme.accent);
-                }
-                screen.draw_text(&msg.to_uppercase(), neo::MARGIN_X + 12, my, Some(color), neo::LABEL_SIZE, false, Some(SCREEN_WIDTH - 60));
-            }
-        }
-
-        let mut hints = vec![Hint::a(if is_installed { "Launch" } else { "Install" }), Hint::b("Back")];
-        if is_installed {
-            hints.push(Hint::x("Remove"));
-            if has_update {
-                hints.push(Hint::y("Update"));
-            }
-        }
+        let availability = availability_text(ctx, &app.id);
+        screen.draw_text(&availability, neo::MARGIN_X, y + 38, Some(theme.text_dim), 12, false, Some(SCREEN_WIDTH - 48));
+        let hints = detail_hints(ctx, &app.id);
         neo::draw_footer(screen, &hints);
     }
 }
 
-/// Convert a launcher `AppEntry` into the `cartridge_net::RegistryApp`
-/// expected by `AppInstaller::install`.
-fn to_net_app(app: &crate::data::AppEntry) -> cartridge_net::RegistryApp {
-    cartridge_net::RegistryApp {
-        id: app.id.clone(),
-        name: app.name.clone(),
-        description: app.description.clone(),
-        version: app.version.clone(),
-        author: app.author.clone(),
-        category: app.category.clone(),
-        tags: app.tags.clone(),
-        repo_url: app.repo_url.clone(),
-        permissions: app.permissions.clone(),
+// Show the available release's description and permissions before Update is
+// accepted. Installed version remains explicit in the availability line.
+fn detail_app<'a>(ctx: &'a ScreenContext, id: &str) -> Option<&'a crate::data::AppEntry> {
+    ctx.app(id).or_else(|| ctx.local_apps.apps.iter().find(|app| app.id == id))
+}
+
+fn availability_text(ctx: &ScreenContext, id: &str) -> String {
+    let installed = ctx.installed_version(id);
+    let remote = ctx.app(id);
+    if let Some(package) = remote.and_then(|app| app.package.as_ref()) {
+        if package.check_runtime().is_err() {
+            return format!("Requires CartridgeOS {} · Update OS in Settings > System Update", package.min_runtime);
+        }
+    }
+    match (installed, remote) {
+        (Some(current), Some(app)) if app.package.is_some() => format!("Installed v{current} · Store v{}", app.version),
+        (Some(current), _) => format!("Installed v{current} · No signed download available"),
+        (_, Some(app)) if app.package.is_some() => format!("Signed package · v{}", app.version),
+        _ => "No signed download available".into(),
     }
 }
 
-fn draw_detail_footer(screen: &mut Screen, is_installed: bool, has_update: bool) {
+fn detail_hints(ctx: &ScreenContext, id: &str) -> Vec<Hint> {
+    let mut hints = vec![];
+    if !ctx.store_jobs.is_busy() {
+        if ctx.installed.is_installed(id) { hints.push(Hint::a("Launch")); }
+        else if ctx.app(id).is_some_and(|a| a.package.is_some()) { hints.push(Hint::a("Install")); }
+        if ctx.has_update(id) { hints.push(Hint::y("Update")); }
+        if ctx.has_override(id) { hints.push(Hint::x("Remove")); }
+        if ctx.can_rollback(id) { hints.push(Hint::wide("L1", "Rollback")); }
+    }
+    hints.push(Hint::b("Back"));
+    hints
+}
+
+fn draw_detail_footer(screen: &mut Screen, ctx: &ScreenContext, id: &str) {
     let theme = screen.theme;
     let footer_y = SCREEN_HEIGHT as i32 - FOOTER_HEIGHT;
+    screen.fill(Rect::new(0, footer_y, SCREEN_WIDTH, FOOTER_HEIGHT as u32), theme.bg);
+    let mut x = 12;
+    for hint in detail_hints(ctx, id) {
+        let width = screen.draw_button_hint(hint.label, &hint.action, x, footer_y + 8, Some(theme.accent), 12);
+        x += width as i32 + 12;
+    }
+}
 
-    screen.draw_rect(
-        Rect::new(0, footer_y, SCREEN_WIDTH, FOOTER_HEIGHT as u32),
-        Some(Color::RGBA(14, 14, 20, 220)),
-        true,
-        0,
-        None,
-    );
-    screen.draw_glow_line(footer_y, 0, SCREEN_WIDTH as i32 - 1, Color::RGBA(100, 180, 255, 50), 2, -1);
-
-    let mut fx = 12;
-    let action_label = if is_installed { "Launch" } else { "Install" };
-    let w = screen.draw_button_hint("A", action_label, fx, footer_y + 8, Some(theme.btn_a), 12);
-    fx += w as i32 + 12;
-    let w = screen.draw_button_hint("B", "Back", fx, footer_y + 8, Some(theme.btn_b), 12);
-    fx += w as i32 + 12;
-    if is_installed {
-        let w = screen.draw_button_hint("X", "Remove", fx, footer_y + 8, Some(theme.btn_x), 12);
-        fx += w as i32 + 12;
-        if has_update {
-            screen.draw_button_hint("Y", "Update", fx, footer_y + 8, Some(theme.btn_y), 12);
-        }
+#[cfg(test)]
+mod release_details_tests {
+    use super::*;
+    #[test]
+    fn update_shows_new_release_permissions_not_old_installed_permissions() {
+        let mut ctx = super::super::test_context();
+        let old: crate::data::AppEntry = serde_json::from_value(serde_json::json!({"id":"dev.cartridge.test","name":"Test","version":"1.0.0","permissions":["storage"]})).unwrap();
+        let mut new = old.clone();
+        new.version = "1.1.0".into();
+        new.permissions.push("network".into());
+        ctx.local_apps.apps.push(old);
+        ctx.registry.apps.push(new);
+        let shown = detail_app(&ctx, "dev.cartridge.test").unwrap();
+        assert_eq!(shown.version, "1.1.0");
+        assert!(shown.permissions.iter().any(|p| p == "network"));
     }
 }

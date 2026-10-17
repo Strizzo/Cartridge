@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 
 use cartridge_core::screen::{Screen, WIDTH, HEIGHT};
@@ -275,6 +275,19 @@ fn num_u8(v: f64) -> u8 {
 /// Register all screen.* functions on the Lua VM.
 pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path) -> LuaResult<()> {
     let screen_table = lua.create_table()?;
+
+    // Display face shared with the launcher; cached by FontCache.
+    {
+        let h = handle.clone();
+        screen_table.set("draw_display_text", lua.create_function(move |_, (text, x, y, size, color): (String, i32, i32, u16, LuaTable)| {
+            let color = parse_color_table(&color)?;
+            h.borrow().with_screen(|s| s.draw_display_text(&text, x, y, color, size))
+        })?)?;
+        let h = handle.clone();
+        screen_table.set("get_display_text_width", lua.create_function(move |_, (text, size): (String, u16)| {
+            h.borrow().with_screen(|s| s.display_text_width(&text, size))
+        })?)?;
+    }
 
     // screen.clear(r, g, b)
     {
@@ -765,6 +778,7 @@ pub fn register_screen_api(lua: &Lua, handle: SharedScreenHandle, app_dir: &Path
 /// Register the theme table as a read-only global.
 pub fn register_theme_api(lua: &Lua, theme: &Theme) -> LuaResult<()> {
     let theme_table = lua.create_table()?;
+    theme_table.set("ui", if theme.ui == cartridge_core::theme::UiStyle::Neo { "neo" } else { "classic" })?;
 
     // Color fields
     let color_fields: Vec<(&str, Color)> = vec![
@@ -830,8 +844,7 @@ pub fn register_storage_api(lua: &Lua, storage: AppStorage) -> LuaResult<()> {
             "save",
             lua.create_function(move |_, (key, value): (String, LuaValue)| {
                 let json_value = lua_to_json(&value)?;
-                st.save(&key, &json_value);
-                Ok(())
+                st.try_save(&key, &json_value).map_err(LuaError::external)
             })?,
         )?;
     }
@@ -961,17 +974,18 @@ pub(crate) fn json_to_lua(lua: &Lua, value: &serde_json::Value) -> LuaResult<Lua
 /// Register the `http` global table with sync (`get`, `get_cached`, `post`)
 /// and async (`get_async`, `post_async`, `poll`) methods.
 ///
-/// The synchronous methods block the render thread — fine for one-off calls
-/// from on_init/on_update, but a one-time warning is logged if they are
-/// used from on_input/on_render.
+/// The synchronous methods block the render thread in every lifecycle phase.
+/// Use async requests for interactive apps. A one-time warning is logged
+/// when legacy sync calls are used from on_input/on_render.
 /// The async methods queue the request on a bounded worker pool
 /// (`HTTP_WORKERS` OS threads, spawned lazily on first use), return a
 /// request id immediately, and let Lua poll for the result. This keeps the
 /// UI responsive while HTTP is in flight and bounds thread count when a
 /// cartridge fans out dozens of requests at once.
 pub fn register_http_api(lua: &Lua, app_id: &str, control: SharedAppControl) -> LuaResult<()> {
-    use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
+    use std::sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender, TryRecvError};
     use std::sync::{Arc, Mutex};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
 
     /// Size of the async worker pool.
@@ -991,6 +1005,7 @@ pub fn register_http_api(lua: &Lua, app_id: &str, control: SharedAppControl) -> 
         status: u16,
         body: String,
         etag: Option<String>,
+        elapsed_ms: f64,
     }
     enum Job {
         Get { id: u64, url: String, etag: Option<String> },
@@ -1003,10 +1018,16 @@ pub fn register_http_api(lua: &Lua, app_id: &str, control: SharedAppControl) -> 
     struct Pool {
         job_tx: Sender<Job>,
         job_rx: Arc<Mutex<Receiver<Job>>>,
-        resp_tx: Sender<AsyncResp>,
+        resp_tx: SyncSender<AsyncResp>,
         client: Arc<HttpClient>,
         spawned: bool,
         next_id: u64,
+        outstanding: usize,
+        alive: Arc<AtomicBool>,
+    }
+
+    impl Drop for Pool {
+        fn drop(&mut self) { self.alive.store(false, Ordering::Relaxed); }
     }
 
     impl Pool {
@@ -1014,11 +1035,12 @@ pub fn register_http_api(lua: &Lua, app_id: &str, control: SharedAppControl) -> 
             if self.spawned {
                 return;
             }
-            self.spawned = true;
+            let mut count = 0;
             for i in 0..HTTP_WORKERS {
                 let rx = self.job_rx.clone();
                 let tx = self.resp_tx.clone();
                 let client = self.client.clone();
+                let alive = self.alive.clone();
                 let spawned = thread::Builder::new()
                     .name(format!("lua-http-{i}"))
                     .spawn(move || loop {
@@ -1034,41 +1056,46 @@ pub fn register_http_api(lua: &Lua, app_id: &str, control: SharedAppControl) -> 
                                 Err(_) => return,
                             }
                         };
-                        let resp = match job {
+                        if !alive.load(Ordering::Relaxed) { return; }
+                        let started = std::time::Instant::now();
+                        let mut resp = match job {
                             Job::Get { id, url, etag } => {
                                 match client.get_with_etag(&url, etag.as_deref()) {
-                                    Ok(r) => AsyncResp { id, ok: r.ok, status: r.status, body: r.body, etag: r.etag },
-                                    Err(e) => AsyncResp { id, ok: false, status: 0, body: e, etag: None },
+                                    Ok(r) => AsyncResp { id, ok: r.ok, status: r.status, body: r.body, etag: r.etag, elapsed_ms: 0.0 },
+                                    Err(e) => AsyncResp { id, ok: false, status: 0, body: e, etag: None, elapsed_ms: 0.0 },
                                 }
                             }
                             Job::Post { id, url, body } => match client.post(&url, &body) {
-                                Ok(r) => AsyncResp { id, ok: r.ok, status: r.status, body: r.body, etag: r.etag },
-                                Err(e) => AsyncResp { id, ok: false, status: 0, body: e, etag: None },
+                                Ok(r) => AsyncResp { id, ok: r.ok, status: r.status, body: r.body, etag: r.etag, elapsed_ms: 0.0 },
+                                Err(e) => AsyncResp { id, ok: false, status: 0, body: e, etag: None, elapsed_ms: 0.0 },
                             },
                         };
+                        resp.elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
                         if tx.send(resp).is_err() {
                             return;
                         }
                     });
                 if let Err(e) = spawned {
                     log::error!("failed to spawn http worker {i}: {e}");
-                }
+                } else { count += 1; }
             }
+            self.spawned = count > 0;
         }
 
-        fn submit(&mut self, make: impl FnOnce(u64) -> Job) -> u64 {
+        fn submit(&mut self, make: impl FnOnce(u64) -> Job) -> LuaResult<u64> {
+            if self.outstanding >= 64 { return Err(LuaError::external("HTTP queue full; wait for pending requests")); }
             self.spawn_workers();
+            if !self.spawned { return Err(LuaError::external("Cannot start HTTP workers")); }
             self.next_id += 1;
             let id = self.next_id;
-            if self.job_tx.send(make(id)).is_err() {
-                log::error!("http worker pool is gone; request {id} dropped");
-            }
-            id
+            self.job_tx.send(make(id)).map_err(|_| LuaError::external("HTTP workers stopped"))?;
+            self.outstanding += 1;
+            Ok(id)
         }
     }
 
     let (job_tx, job_rx) = channel::<Job>();
-    let (resp_tx, resp_rx) = channel::<AsyncResp>();
+    let (resp_tx, resp_rx) = sync_channel::<AsyncResp>(HTTP_WORKERS);
     let pool = Rc::new(RefCell::new(Pool {
         job_tx,
         job_rx: Arc::new(Mutex::new(job_rx)),
@@ -1076,6 +1103,8 @@ pub fn register_http_api(lua: &Lua, app_id: &str, control: SharedAppControl) -> 
         client: client.clone(),
         spawned: false,
         next_id: 0,
+        outstanding: 0,
+        alive: Arc::new(AtomicBool::new(true)),
     }));
     let async_rx = Rc::new(RefCell::new(resp_rx));
 
@@ -1151,8 +1180,7 @@ pub fn register_http_api(lua: &Lua, app_id: &str, control: SharedAppControl) -> 
                     .and_then(|v| v.as_str().map(|s| s.to_string()))
                     .ok_or_else(|| LuaError::RuntimeError("url required".to_string()))?;
                 let etag = args.get(1).and_then(|v| v.as_str().map(|s| s.to_string()));
-                let id = p.borrow_mut().submit(|id| Job::Get { id, url, etag });
-                Ok(id)
+                p.borrow_mut().submit(|id| Job::Get { id, url, etag })
             })?,
         )?;
     }
@@ -1163,8 +1191,7 @@ pub fn register_http_api(lua: &Lua, app_id: &str, control: SharedAppControl) -> 
         http_table.set(
             "post_async",
             lua.create_function(move |_, (url, body): (String, String)| {
-                let id = p.borrow_mut().submit(|id| Job::Post { id, url, body });
-                Ok(id)
+                p.borrow_mut().submit(|id| Job::Post { id, url, body })
             })?,
         )?;
     }
@@ -1174,6 +1201,7 @@ pub fn register_http_api(lua: &Lua, app_id: &str, control: SharedAppControl) -> 
     // a response marks the frame dirty so the app's new state gets drawn.
     {
         let rx = async_rx.clone();
+        let p = pool.clone();
         let ctl = control.clone();
         http_table.set(
             "poll",
@@ -1181,13 +1209,15 @@ pub fn register_http_api(lua: &Lua, app_id: &str, control: SharedAppControl) -> 
                 let table = lua.create_table()?;
                 let mut idx = 1;
                 let receiver = rx.borrow();
-                loop {
+                // Bound result tables/JSON work delivered in a single update.
+                while idx <= HTTP_WORKERS * 2 {
                     match receiver.try_recv() {
                         Ok(resp) => {
                             let entry = lua.create_table()?;
                             entry.set("id", resp.id)?;
                             entry.set("ok", resp.ok)?;
                             entry.set("status", resp.status)?;
+                            entry.set("elapsed_ms", resp.elapsed_ms)?;
                             entry.set("body", resp.body)?;
                             if let Some(etag) = resp.etag {
                                 entry.set("etag", etag)?;
@@ -1199,6 +1229,8 @@ pub fn register_http_api(lua: &Lua, app_id: &str, control: SharedAppControl) -> 
                     }
                 }
                 if idx > 1 {
+                    let mut pool = p.borrow_mut();
+                    pool.outstanding = pool.outstanding.saturating_sub(idx - 1);
                     ctl.request_redraw();
                 }
                 Ok(table)
@@ -1240,76 +1272,423 @@ pub fn register_json_api(lua: &Lua) -> LuaResult<()> {
     Ok(())
 }
 
-/// Register the `ssh` global table with tunnel, close, and is_alive methods.
+/// Register SSH APIs with the real opener, including in simulator mode.
+/// `ssh.tunnel(opts)` retains its synchronous `{ok, local_port?, error?}` API.
 pub fn register_ssh_api(lua: &Lua) -> LuaResult<()> {
-    let tunnel: Rc<RefCell<Option<SshTunnel>>> = Rc::new(RefCell::new(None));
-    let ssh_table = lua.create_table()?;
+    register_ssh_api_with_fixture(lua, false)
+}
 
-    // ssh.tunnel({host, user?, key_path?, key_dir?, remote_port?}) -> {ok, local_port, error?}
+/// Register SSH, optionally using an explicit simulator HTTP fixture.
+/// A fixture outside simulator mode is rejected rather than opening real SSH.
+///
+/// Lua contract (requires the existing `ssh` permission):
+/// - `ssh.tunnel_async({host, user?, key_path?, key_dir?, remote_port?}) -> id`.
+///   Default remote port is 8766. Only one request may be pending; another call
+///   raises an error until poll completes it or close cancels it.
+/// - `ssh.poll() -> {{id, ok, local_port?, error?}, ...}` drains results once.
+///   Call during on_update and request redraw when applying a result.
+/// - `ssh.close()` cancels pending work and closes the active tunnel. Its
+///   cancelled ID is returned as a failed result by the next poll.
+/// - `ssh.is_alive()` checks the active tunnel, not a pending connection.
+/// Successful opens replace the previous tunnel; failures leave it intact.
+/// Both sync and async calls reject host/user names beginning with `-`.
+/// Fixture opens never resolve keys or spawn SSH, and report the remote port
+/// as the local port through the same owned result/poll path.
+pub fn register_ssh_api_with_fixture(lua: &Lua, fixture: bool) -> LuaResult<()> {
+    use crate::ssh_async::{Connector, TunnelHandle};
+    use std::sync::Arc;
+
+    let fixture = ssh_fixture_enabled(fixture, cartridge_core::sim::is_sim())?;
+    let connector = if fixture {
+        Connector::immediate(Arc::new(|options| {
+            Ok(TunnelHandle::Fixture(options.remote_port))
+        }))
+    } else {
+        Connector::new(Arc::new(|options| {
+            SshTunnel::open(
+                &options.host,
+                &options.user,
+                options.key_path.as_deref(),
+                options.key_dir.as_deref(),
+                options.remote_port,
+            )
+            .map(TunnelHandle::Real)
+        }))
+    };
+    register_ssh_connector(lua, connector)
+}
+
+fn ssh_fixture_enabled(fixture: bool, simulated: bool) -> LuaResult<bool> {
+    if fixture && !simulated {
+        return Err(LuaError::external("SSH fixtures require simulator mode"));
+    }
+    Ok(fixture && simulated)
+}
+
+fn ssh_options(opts: LuaTable, strict: bool) -> LuaResult<crate::ssh_async::OpenOptions> {
+    let host: String = opts.get("host")?;
+    let user: String = opts.get::<Option<String>>("user")?.unwrap_or_default();
+    // SshTunnel passes the destination as an ssh argument. Apply this guard to
+    // legacy and async calls so user-controlled targets cannot become options.
+    if host.starts_with('-') || user.starts_with('-') {
+        return Err(LuaError::external(
+            "SSH host and user must not begin with '-'",
+        ));
+    }
+    let remote_port = opts.get::<Option<f64>>("remote_port")?.unwrap_or(8766.0);
+    if strict
+        && (host.trim().is_empty()
+            || !remote_port.is_finite()
+            || remote_port.fract() != 0.0
+            || !(1.0..=65535.0).contains(&remote_port))
     {
-        let t = tunnel.clone();
-        ssh_table.set(
-            "tunnel",
-            lua.create_function(move |lua, opts: LuaTable| {
-                let host: String = opts.get("host")?;
-                let user: String = opts.get::<Option<String>>("user")?.unwrap_or_default();
-                let key_path: Option<String> = opts.get("key_path")?;
-                let key_dir: Option<String> = opts.get("key_dir")?;
-                let remote_port: u16 = opts.get::<Option<f64>>("remote_port")?
-                    .map(|v| v as u16)
-                    .unwrap_or(8766);
+        return Err(LuaError::external(
+            "SSH needs a host and an integer remote_port from 1 to 65535",
+        ));
+    }
+    Ok(crate::ssh_async::OpenOptions {
+        host,
+        user,
+        key_path: opts.get("key_path")?,
+        key_dir: opts.get("key_dir")?,
+        // Keep legacy tunnel's numeric conversion for compatibility.
+        remote_port: remote_port as u16,
+    })
+}
 
-                let result = lua.create_table()?;
+fn ssh_result(
+    lua: &Lua,
+    result: Result<u16, crate::ssh_async::ConnectError>,
+) -> LuaResult<LuaTable> {
+    let table = lua.create_table()?;
+    match result {
+        Ok(port) => {
+            table.set("ok", true)?;
+            table.set("local_port", port)?;
+        }
+        Err(error) => {
+            table.set("ok", false)?;
+            table.set("error", error.to_string())?;
+        }
+    }
+    Ok(table)
+}
 
-                match SshTunnel::open(&host, &user, key_path.as_deref(), key_dir.as_deref(), remote_port) {
-                    Ok(tun) => {
-                        let port = tun.local_port();
-                        *t.borrow_mut() = Some(tun);
-                        result.set("ok", true)?;
-                        result.set("local_port", port)?;
-                    }
-                    Err(e) => {
-                        result.set("ok", false)?;
-                        result.set("error", e)?;
-                    }
-                }
-                Ok(result)
-            })?,
-        )?;
+fn register_ssh_connector<T: crate::ssh_async::Tunnel>(
+    lua: &Lua,
+    connector: crate::ssh_async::Connector<T>,
+) -> LuaResult<()> {
+    let connector = Rc::new(RefCell::new(connector));
+    let ssh = lua.create_table()?;
+    let c = connector.clone();
+    ssh.set(
+        "tunnel",
+        lua.create_function(move |lua, opts: LuaTable| {
+            let options = ssh_options(opts, false)?;
+            ssh_result(lua, c.borrow_mut().open_sync(options))
+        })?,
+    )?;
+    let c = connector.clone();
+    ssh.set(
+        "tunnel_async",
+        lua.create_function(move |_, opts: LuaTable| {
+            let options = ssh_options(opts, true)?;
+            c.borrow_mut().start(options).map_err(LuaError::external)
+        })?,
+    )?;
+    let c = connector.clone();
+    ssh.set(
+        "poll",
+        lua.create_function(move |lua, ()| {
+            let results = lua.create_table()?;
+            for (index, completion) in c.borrow_mut().poll().into_iter().enumerate() {
+                let result = ssh_result(lua, completion.result)?;
+                result.set("id", completion.id)?;
+                results.set(index + 1, result)?;
+            }
+            Ok(results)
+        })?,
+    )?;
+    let c = connector.clone();
+    ssh.set(
+        "close",
+        lua.create_function(move |_, ()| {
+            c.borrow_mut().close();
+            Ok(())
+        })?,
+    )?;
+    ssh.set(
+        "is_alive",
+        lua.create_function(move |_, ()| Ok(connector.borrow_mut().is_alive()))?,
+    )?;
+    lua.globals().set("ssh", ssh)
+}
+
+#[cfg(test)]
+mod ssh_api_tests {
+    use super::*;
+    use crate::ssh_async::{Connector, Tunnel};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex, mpsc};
+    use std::time::Duration;
+
+    struct MockTunnel {
+        port: u16,
+        drops: Arc<AtomicUsize>,
+        dropped: Option<mpsc::Sender<()>>,
+    }
+    impl Tunnel for MockTunnel {
+        fn local_port(&self) -> u16 {
+            self.port
+        }
+        fn is_alive(&mut self) -> bool {
+            true
+        }
+    }
+    impl Drop for MockTunnel {
+        fn drop(&mut self) {
+            self.drops.fetch_add(1, Ordering::AcqRel);
+            if let Some(sender) = &self.dropped {
+                let _ = sender.send(());
+            }
+        }
+    }
+    fn mock_fixture(lua: &Lua) {
+        register_ssh_connector(
+            lua,
+            Connector::immediate(Arc::new(|options| {
+                Ok(MockTunnel {
+                    port: options.remote_port,
+                    drops: Arc::new(AtomicUsize::new(0)),
+                    dropped: None,
+                })
+            })),
+        )
+        .unwrap();
     }
 
-    // ssh.close() -> nil
-    {
-        let t = tunnel.clone();
-        ssh_table.set(
-            "close",
-            lua.create_function(move |_, ()| {
-                if let Some(ref mut tun) = *t.borrow_mut() {
-                    tun.close();
-                }
-                *t.borrow_mut() = None;
-                Ok(())
-            })?,
-        )?;
+    #[test]
+    fn fixture_requires_both_explicit_opt_in_and_simulator() {
+        assert!(!ssh_fixture_enabled(false, false).unwrap());
+        assert!(!ssh_fixture_enabled(false, true).unwrap());
+        assert!(ssh_fixture_enabled(true, true).unwrap());
+        assert!(ssh_fixture_enabled(true, false).is_err());
+        let lua = Lua::new();
+        register_ssh_api(&lua).unwrap(); // Registration alone never opens SSH.
+        lua.load("assert(not ssh.is_alive() and #ssh.poll() == 0); ssh.close()")
+            .exec()
+            .unwrap();
     }
 
-    // ssh.is_alive() -> bool
-    {
-        let t = tunnel.clone();
-        ssh_table.set(
-            "is_alive",
-            lua.create_function(move |_, ()| {
-                let alive = match *t.borrow_mut() {
-                    Some(ref mut tun) => tun.is_alive(),
-                    None => false,
-                };
-                Ok(alive)
-            })?,
-        )?;
+    #[test]
+    fn fixture_lua_contract_preserves_legacy_and_queues_async_ports_and_cancellation() {
+        let lua = Lua::new();
+        mock_fixture(&lua);
+        lua.load(
+            r#"
+            assert(not ssh.is_alive() and #ssh.poll() == 0)
+            local opts = {host='mock.invalid', user='mock-user',
+                key_path='/never-read/private-key', key_dir='/never-read/private-directory'}
+            local id = ssh.tunnel_async(opts)
+            assert(math.type(id) == 'integer' and id > 0)
+            assert(not ssh.is_alive(), 'a pending result is not an active tunnel')
+            local ok, message = pcall(ssh.tunnel_async, opts)
+            assert(not ok and tostring(message):find('already pending',1,true))
+            local results = ssh.poll()
+            assert(#results == 1 and results[1].id == id and results[1].ok)
+            assert(results[1].local_port == 8766 and results[1].error == nil)
+            assert(ssh.is_alive() and #ssh.poll() == 0)
+            opts.remote_port = 54321
+            local next_id = ssh.tunnel_async(opts)
+            assert(next_id > id and ssh.is_alive())
+            ssh.close()
+            assert(not ssh.is_alive())
+            results = ssh.poll()
+            assert(#results == 1 and results[1].id == next_id and results[1].ok == false)
+            assert(results[1].local_port == nil and results[1].error:find('cancelled',1,true))
+            assert(#ssh.poll() == 0)
+            local legacy = ssh.tunnel(opts)
+            assert(legacy.ok and legacy.local_port == 54321 and legacy.id == nil)
+            assert(ssh.is_alive())
+            ssh.close()
+            assert(not ssh.is_alive())
+        "#,
+        )
+        .exec()
+        .unwrap();
     }
 
-    lua.globals().set("ssh", ssh_table)?;
-    Ok(())
+    #[test]
+    fn leading_option_hosts_and_users_are_rejected_by_both_ssh_paths() {
+        let lua = Lua::new();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let recorded = calls.clone();
+        register_ssh_connector(
+            &lua,
+            Connector::immediate(Arc::new(move |options| {
+                let port = options.remote_port;
+                recorded.lock().unwrap().push(options);
+                Ok(MockTunnel {
+                    port,
+                    drops: Arc::new(AtomicUsize::new(0)),
+                    dropped: None,
+                })
+            })),
+        )
+        .unwrap();
+        lua.load(
+            r#"
+            local invalid = {
+                {host='-'},
+                {host='--'},
+                {host='-oProxyCommand=mock-option'},
+                {host='-oProxyCommand=mock-option',user='normal-user'},
+                {host='mock.invalid',user='-'},
+                {host='mock.invalid',user='--'},
+                {host='mock.invalid',user='-oProxyCommand=mock-option'},
+                {host='-option',user='-option'},
+            }
+            for _,connect in ipairs({ssh.tunnel,ssh.tunnel_async}) do
+                for _,opts in ipairs(invalid) do
+                    local ok,message=pcall(connect,opts)
+                    assert(not ok and tostring(message):find("must not begin with '-'",1,true))
+                    assert(#ssh.poll()==0 and not ssh.is_alive())
+                end
+            end
+        "#,
+        )
+        .exec()
+        .unwrap();
+        assert!(
+            calls.lock().unwrap().is_empty(),
+            "invalid targets reached the opener"
+        );
+        lua.load(r#"
+            local legacy=ssh.tunnel({host='normal-host.invalid',user='normal-user',remote_port=8000})
+            assert(legacy.ok and legacy.local_port==8000)
+            assert(ssh.tunnel_async({host='normal-host.invalid',user='normal-user'})==1)
+            assert(ssh.poll()[1].local_port==8766)
+        "#).exec().unwrap();
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        for options in calls.iter() {
+            assert_eq!(options.host, "normal-host.invalid");
+            assert_eq!(options.user, "normal-user");
+        }
+    }
+
+    #[test]
+    fn invalid_async_options_never_call_opener_or_consume_ids() {
+        let lua = Lua::new();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counter = calls.clone();
+        register_ssh_connector(
+            &lua,
+            Connector::immediate(Arc::new(move |options| {
+                counter.fetch_add(1, Ordering::AcqRel);
+                Ok(MockTunnel {
+                    port: options.remote_port,
+                    drops: Arc::new(AtomicUsize::new(0)),
+                    dropped: None,
+                })
+            })),
+        )
+        .unwrap();
+        lua.load(
+            r#"
+            for _,port in ipairs({-1,0,1.5,65536,math.huge,0/0}) do
+                assert(not pcall(ssh.tunnel_async,{host='mock.invalid',remote_port=port}))
+            end
+            assert(not pcall(ssh.tunnel_async,{host=' '}))
+            assert(not pcall(ssh.tunnel_async,{}))
+            assert(#ssh.poll()==0 and not ssh.is_alive())
+            assert(ssh.tunnel_async({host='mock.invalid',remote_port=65535})==1)
+            assert(ssh.poll()[1].local_port==65535)
+        "#,
+        )
+        .exec()
+        .unwrap();
+        assert_eq!(calls.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn opener_errors_become_once_only_lua_results_without_active_tunnel() {
+        let lua = Lua::new();
+        register_ssh_connector(
+            &lua,
+            Connector::immediate(Arc::new(|_| {
+                Err::<MockTunnel, _>("mock connection refused".into())
+            })),
+        )
+        .unwrap();
+        lua.load(
+            r#"
+            local id=ssh.tunnel_async({host='mock.invalid'})
+            local results=ssh.poll()
+            assert(#results==1 and results[1].id==id and results[1].ok==false)
+            assert(results[1].local_port==nil and results[1].error=='mock connection refused')
+            assert(not ssh.is_alive() and #ssh.poll()==0)
+            local legacy=ssh.tunnel({host='mock.invalid'})
+            assert(legacy.ok==false and legacy.error=='mock connection refused' and legacy.id==nil)
+        "#,
+        )
+        .exec()
+        .unwrap();
+    }
+
+    #[test]
+    fn dropping_lua_closes_active_and_late_created_mock_tunnels() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let counter = drops.clone();
+        let lua = Lua::new();
+        register_ssh_connector(
+            &lua,
+            Connector::immediate(Arc::new(move |_| {
+                Ok(MockTunnel {
+                    port: 8766,
+                    drops: counter.clone(),
+                    dropped: None,
+                })
+            })),
+        )
+        .unwrap();
+        lua.load("ssh.tunnel_async({host='mock.invalid'}); ssh.poll(); assert(ssh.is_alive())")
+            .exec()
+            .unwrap();
+        drop(lua);
+        assert_eq!(drops.load(Ordering::Acquire), 1);
+
+        let (entered, started) = mpsc::channel();
+        let (release, gate) = mpsc::channel();
+        let (dropped, closed) = mpsc::channel();
+        let gate = Mutex::new(gate);
+        let counter = drops.clone();
+        let lua = Lua::new();
+        register_ssh_connector(
+            &lua,
+            Connector::new(Arc::new(move |_| {
+                entered.send(()).unwrap();
+                gate.lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(3))
+                    .unwrap();
+                Ok(MockTunnel {
+                    port: 8766,
+                    drops: counter.clone(),
+                    dropped: Some(dropped.clone()),
+                })
+            })),
+        )
+        .unwrap();
+        lua.load("ssh.tunnel_async({host='mock.invalid'}); assert(#ssh.poll()==0)")
+            .exec()
+            .unwrap();
+        started.recv_timeout(Duration::from_secs(3)).unwrap();
+        drop(lua);
+        release.send(()).unwrap();
+        closed.recv_timeout(Duration::from_secs(3)).unwrap();
+        assert_eq!(drops.load(Ordering::Acquire), 2);
+    }
 }
 
 /// Register the `system` global table for cartridges with the "system" permission.
@@ -1339,6 +1718,7 @@ pub fn register_system_api(lua: &Lua) -> LuaResult<()> {
     let sysinfo: Rc<Mutex<AsyncSystemInfo>> = Rc::new(Mutex::new(AsyncSystemInfo::new(Duration::from_secs(2))));
 
     let system = lua.create_table()?;
+    system.set("is_simulated", cartridge_core::sim::is_sim() || !cfg!(target_os = "linux"))?;
 
     macro_rules! getter {
         ($name:expr, $sysinfo:expr, $body:expr) => {{
@@ -1604,7 +1984,7 @@ pub fn new_text_input() -> SharedTextInput {
 /// on-screen keyboard without building their own.
 ///
 /// Lua API:
-///   text_input.show(label, default?, masked?)  -- show the keyboard
+///   text_input.show(label, default?, masked?, max_length?)  -- show the keyboard
 ///   text_input.is_active()                     -- true while visible
 ///   text_input.poll()                          -- nil pending, false cancel,
 ///                                                 string on submit
@@ -1627,10 +2007,10 @@ pub fn register_text_input_api(lua: &Lua, ti: SharedTextInput) -> LuaResult<()> 
                 let mut t = ti.borrow_mut();
                 t.show(&label);
                 t.masked = masked;
-                if let Some(default) = default {
-                    t.text = default;
-                    t.cursor_pos = t.text.len();
+                if let Some(LuaValue::Integer(limit)) = args.get(3) {
+                    t.max_len = (*limit).clamp(1, 2048) as usize;
                 }
+                if let Some(default) = default { t.set_text(&default); }
                 Ok(())
             })?,
         )?;

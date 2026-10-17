@@ -50,18 +50,7 @@ pub fn app_short_name(app_id: &str) -> &str {
 
 /// Build a list of name variants to try (original, hyphen, underscore).
 pub fn name_variants(app_id: &str) -> Vec<String> {
-    let short = app_short_name(app_id);
-    let mut names: Vec<String> = vec![app_id.to_string(), short.to_string()];
-    // Also try with hyphens/underscores swapped
-    let with_underscore = short.replace('-', "_");
-    let with_hyphen = short.replace('_', "-");
-    if with_underscore != short {
-        names.push(with_underscore);
-    }
-    if with_hyphen != short {
-        names.push(with_hyphen);
-    }
-    names
+    cartridge_core::paths::cartridge_name_variants(app_id)
 }
 
 use std::sync::OnceLock;
@@ -69,14 +58,14 @@ use std::sync::Mutex;
 use std::collections::HashMap;
 
 /// Process-wide cache for resolved icon paths. Resolution involves multiple
-/// stat() syscalls; the result is stable for the process lifetime.
+/// stat() syscalls; invalidated when a Store job changes local apps.
 fn icon_path_cache() -> &'static Mutex<HashMap<String, Option<String>>> {
     static CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// Resolve the icon.png path for an app, checking bundled and install locations.
-/// Cached for the process lifetime — icons don't move at runtime.
+/// Invalidated after install, update, rollback or removal.
 pub fn resolve_icon_path(app_id: &str) -> Option<String> {
     resolve_icon_file(app_id, "icon.png")
 }
@@ -107,24 +96,41 @@ pub fn invalidate_icon_path(app_id: &str) {
 }
 
 fn resolve_icon_path_uncached(app_id: &str, file: &str) -> Option<String> {
-    let bundled_dir = cartridge_core::paths::bundled_cartridges_dir();
-    let installed_dir = cartridge_core::paths::installed_apps_dir();
+    let path = cartridge_core::paths::resolve_cartridge_dir(app_id)?.join(file);
+    path.is_file().then(|| path.to_string_lossy().into_owned())
+}
 
-    let variants = name_variants(app_id);
+/// Paths previously cached for an app, including variants, for GPU eviction.
+pub fn cached_icon_paths(app_id: &str) -> Vec<String> {
+    icon_path_cache().lock().map(|cache| cache.iter()
+        .filter(|(key, _)| key.starts_with(&format!("{app_id}\u{0}")))
+        .filter_map(|(_, path)| path.clone()).collect()).unwrap_or_default()
+}
 
-    for name in &variants {
-        let bundled_icon = bundled_dir.join(name).join(file);
-        if bundled_icon.exists() {
-            return Some(bundled_icon.to_string_lossy().to_string());
+#[cfg(test)]
+mod icon_completion_tests {
+    use super::*;
+    use crate::store_jobs::{Completion, LocalApps};
+
+    #[test]
+    fn completion_invalidates_both_icon_variants_and_evicts_old_gpu_paths() {
+        let id = "dev.cartridge.icon-completion-test";
+        let entry: crate::data::AppEntry = serde_json::from_value(serde_json::json!({"id":id,"name":"Test"})).unwrap();
+        let mut ctx = crate::screens::test_context();
+        ctx.local_apps.apps.push(entry.clone());
+        {
+            let mut cache = icon_path_cache().lock().unwrap();
+            cache.insert(format!("{id}\u{0}icon.png"), Some("/old/icon.png".into()));
+            cache.insert(format!("{id}\u{0}icon_focused.png"), Some("/old/icon_focused.png".into()));
+            cache.insert(format!("{id}\u{0}missing.png"), None);
         }
+        ctx.apply_store_completion(Completion {
+            local: LocalApps { apps:vec![entry], ..Default::default() }, installer:None,
+            registry:None, outcome:Ok(None),
+        });
+        assert!(ctx.invalidated_textures.contains(&"/old/icon.png".into()));
+        assert!(ctx.invalidated_textures.contains(&"/old/icon_focused.png".into()));
+        assert!(!icon_path_cache().lock().unwrap().keys().any(|key| key.starts_with(&format!("{id}\u{0}"))));
+        std::fs::remove_dir_all(ctx.storage.data_dir.parent().unwrap().parent().unwrap()).unwrap();
     }
-
-    for name in &variants {
-        let installed_icon = installed_dir.join(name).join(file);
-        if installed_icon.exists() {
-            return Some(installed_icon.to_string_lossy().to_string());
-        }
-    }
-
-    None
 }

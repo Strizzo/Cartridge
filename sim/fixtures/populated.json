@@ -1,0 +1,536 @@
+[
+  {
+    "url_prefix": "https://huggingface.co/api/daily_papers",
+    "body": [
+      {
+        "paper": {
+          "id": "2609.00001",
+          "title": "Small models, useful computers: on-device intelligence",
+          "authors": [
+            {
+              "name": "A. Researcher"
+            }
+          ],
+          "summary": "A synthetic paper for simulator testing. We explore responsive interfaces, bounded memory and efficient local computation.",
+          "upvotes": 142,
+          "publishedAt": "2026-09-22",
+          "ai_keywords": [
+            "On-device",
+            "Efficiency"
+          ]
+        }
+      },
+      {
+        "paper": {
+          "id": "2609.00002",
+          "title": "Learning to spend less energy",
+          "authors": [
+            {
+              "name": "B. Researcher"
+            }
+          ],
+          "summary": "Synthetic research fixture: doing work only when the screen changes.",
+          "upvotes": 87
+        }
+      },
+      {
+        "paper": {
+          "id": "2609.00003",
+          "title": "Interfaces that respond before a request completes",
+          "authors": [],
+          "upvotes": 54
+        }
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://ar5iv.labs.arxiv.org/html/",
+    "delay_polls": 12,
+    "body": "<h1>Responsive local computing</h1><p>This original fixture tests delayed requests and reading on a small screen. A useful interface responds immediately while data loads in the background.</p><h2>Results</h2><p>Static screens do not need continuous animation. Cached text and simple shapes preserve a clear visual hierarchy.</p>"
+  },
+  {
+    "url_prefix": "https://ipinfo.io/json",
+    "body": {
+      "ip": "192.0.2.42",
+      "city": "Test City",
+      "region": "Simulator",
+      "country": "XX",
+      "org": "LOCAL FIXTURE",
+      "timezone": "Europe/Luxembourg",
+      "loc": "0.00,0.00"
+    }
+  },
+  {
+    "url_prefix": "https://httpbin.org/headers",
+    "body": {
+      "headers": {
+        "Accept": "application/json",
+        "User-Agent": "Cartridge simulator"
+      }
+    }
+  },
+  {
+    "url_prefix": "https://dns.google/resolve",
+    "delay_polls": 12,
+    "body": {
+      "Status": 0,
+      "Answer": [
+        {
+          "type": 1,
+          "data": "192.0.2.7"
+        }
+      ]
+    }
+  },
+  {
+    "url_prefix": "https://www.google.com",
+    "delay_polls": 8,
+    "elapsed_ms": 42,
+    "body": ""
+  },
+  {
+    "url_prefix": "https://github.com",
+    "delay_polls": 18,
+    "elapsed_ms": 121,
+    "body": ""
+  },
+  {
+    "url_prefix": "https://hacker-news.firebaseio.com/v0/topstories.json",
+    "body": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ]
+  },
+  {
+    "url_prefix": "https://hacker-news.firebaseio.com/v0/item/1.json",
+    "body": {
+      "id": 1,
+      "title": "Simulator article 1: useful small computers and responsive interfaces",
+      "url": "https://example.invalid/story",
+      "score": 227,
+      "by": "fixture_author",
+      "time": 1790107200,
+      "descendants": 4,
+      "kids": [],
+      "text": "A synthetic story used to review the handheld reader and controls."
+    }
+  },
+  {
+    "url_prefix": "https://hacker-news.firebaseio.com/v0/item/2.json",
+    "body": {
+      "id": 2,
+      "title": "Simulator article 2: useful small computers and responsive interfaces",
+      "url": "https://example.invalid/story",
+      "score": 214,
+      "by": "fixture_author",
+      "time": 1790107200,
+      "descendants": 8,
+      "kids": [],
+      "text": "A synthetic story used to review the handheld reader and controls."
+    }
+  },
+  {
+    "url_prefix": "https://hacker-news.firebaseio.com/v0/item/3.json",
+    "body": {
+      "id": 3,
+      "title": "Simulator article 3: useful small computers and responsive interfaces",
+      "url": "https://example.invalid/story",
+      "score": 201,
+      "by": "fixture_author",
+      "time": 1790107200,
+      "descendants": 12,
+      "kids": [],
+      "text": "A synthetic story used to review the handheld reader and controls."
+    }
+  },
+  {
+    "url_prefix": "https://hacker-news.firebaseio.com/v0/item/4.json",
+    "body": {
+      "id": 4,
+      "title": "Simulator article 4: useful small computers and responsive interfaces",
+      "url": "https://example.invalid/story",
+      "score": 188,
+      "by": "fixture_author",
+      "time": 1790107200,
+      "descendants": 16,
+      "kids": [],
+      "text": "A synthetic story used to review the handheld reader and controls."
+    }
+  },
+  {
+    "url_prefix": "https://hacker-news.firebaseio.com/v0/item/5.json",
+    "body": {
+      "id": 5,
+      "title": "Simulator article 5: useful small computers and responsive interfaces",
+      "url": "https://example.invalid/story",
+      "score": 175,
+      "by": "fixture_author",
+      "time": 1790107200,
+      "descendants": 20,
+      "kids": [],
+      "text": "A synthetic story used to review the handheld reader and controls."
+    }
+  },
+  {
+    "url_prefix": "https://hacker-news.firebaseio.com/v0/item/6.json",
+    "body": {
+      "id": 6,
+      "title": "Simulator article 6: useful small computers and responsive interfaces",
+      "url": "https://example.invalid/story",
+      "score": 162,
+      "by": "fixture_author",
+      "time": 1790107200,
+      "descendants": 24,
+      "kids": [],
+      "text": "A synthetic story used to review the handheld reader and controls."
+    }
+  },
+  {
+    "url_prefix": "https://hacker-news.firebaseio.com/v0/item/7.json",
+    "body": {
+      "id": 7,
+      "title": "Simulator article 7: useful small computers and responsive interfaces",
+      "url": "https://example.invalid/story",
+      "score": 149,
+      "by": "fixture_author",
+      "time": 1790107200,
+      "descendants": 28,
+      "kids": [],
+      "text": "A synthetic story used to review the handheld reader and controls."
+    }
+  },
+  {
+    "url_prefix": "https://hacker-news.firebaseio.com/v0/item/8.json",
+    "body": {
+      "id": 8,
+      "title": "Simulator article 8: useful small computers and responsive interfaces",
+      "url": "https://example.invalid/story",
+      "score": 136,
+      "by": "fixture_author",
+      "time": 1790107200,
+      "descendants": 32,
+      "kids": [],
+      "text": "A synthetic story used to review the handheld reader and controls."
+    }
+  },
+  {
+    "url_prefix": "https://hacker-news.firebaseio.com/v0/item/9.json",
+    "body": {
+      "id": 9,
+      "title": "Simulator article 9: useful small computers and responsive interfaces",
+      "url": "https://example.invalid/story",
+      "score": 123,
+      "by": "fixture_author",
+      "time": 1790107200,
+      "descendants": 36,
+      "kids": [],
+      "text": "A synthetic story used to review the handheld reader and controls."
+    }
+  },
+  {
+    "url_prefix": "https://hacker-news.firebaseio.com/v0/item/10.json",
+    "body": {
+      "id": 10,
+      "title": "Simulator article 10: useful small computers and responsive interfaces",
+      "url": "https://example.invalid/story",
+      "score": 110,
+      "by": "fixture_author",
+      "time": 1790107200,
+      "descendants": 40,
+      "kids": [],
+      "text": "A synthetic story used to review the handheld reader and controls."
+    }
+  },
+  {
+    "url_prefix": "https://hacker-news.firebaseio.com/v0/item/11.json",
+    "body": {
+      "id": 11,
+      "title": "Simulator article 11: useful small computers and responsive interfaces",
+      "url": "https://example.invalid/story",
+      "score": 97,
+      "by": "fixture_author",
+      "time": 1790107200,
+      "descendants": 44,
+      "kids": [],
+      "text": "A synthetic story used to review the handheld reader and controls."
+    }
+  },
+  {
+    "url_prefix": "https://hacker-news.firebaseio.com/v0/item/12.json",
+    "body": {
+      "id": 12,
+      "title": "Simulator article 12: useful small computers and responsive interfaces",
+      "url": "https://example.invalid/story",
+      "score": 84,
+      "by": "fixture_author",
+      "time": 1790107200,
+      "descendants": 48,
+      "kids": [],
+      "text": "A synthetic story used to review the handheld reader and controls."
+    }
+  },
+  {
+    "url_prefix": "https://query1.finance.yahoo.com/v8/finance/chart/",
+    "body": {
+      "chart": {
+        "result": [
+          {
+            "meta": {
+              "regularMarketPrice": 123.45,
+              "chartPreviousClose": 120.0,
+              "fiftyTwoWeekHigh": 140.0,
+              "fiftyTwoWeekLow": 90.0
+            },
+            "indicators": {
+              "quote": [
+                {
+                  "close": [
+                    118.0,
+                    118.31807679291786,
+                    118.63035237091108,
+                    118.9311437099861,
+                    119.21500176005101,
+                    119.47682246102372,
+                    119.71195073029347,
+                    119.91627530294913,
+                    120.08631249254891,
+                    120.21927716593336,
+                    120.31313948607757,
+                    120.3666662669334,
+                    120.37944609771965,
+                    120.35189772479102,
+                    120.28526152031803,
+                    120.1815742115905,
+                    120.04362738579665,
+                    119.87491061567985,
+                    119.67954036480128,
+                    119.46217612085553,
+                    119.22792546569538,
+                    118.98224001611973,
+                    118.73080435547259,
+                    118.47942021890303,
+                    118.23388829183548,
+                    117.99989002982633,
+                    117.78287190754784,
+                    117.58793445515032,
+                    117.41972834271748,
+                    117.28235962993686,
+                    117.17930611137844,
+                    117.11334646171967,
+                    117.08650362447499,
+                    117.1000035975984,
+                    117.15425045563978,
+                    117.24881811734039,
+                    117.38245902639066,
+                    117.55312956849245,
+                    117.75803170689234,
+                    117.99366998812494,
+                    118.25592275656102,
+                    118.54012612687238,
+                    118.84116900360215,
+                    119.15359721196124,
+                    119.47172461834451,
+                    119.78974897665495,
+                    120.1018701402433,
+                    120.40240823107465,
+                    120.68591935860486,
+                    120.94730653077092,
+                    121.18192349745212,
+                    121.38566941074991,
+                    121.55507237352687,
+                    121.68736017403046,
+                    121.78051676549127,
+                    121.83332334000973,
+                    121.84538315991342,
+                    121.81712964068375,
+                    121.74981752077461,
+                    121.64549729822487,
+                    121.50697345487927,
+                    121.33774731933623,
+                    121.1419457327028,
+                    120.9242369704835,
+                    120.68973563356707,
+                    120.44389844601184,
+                    120.1924130825924,
+                    119.94108229107624,
+                    119.69570567006343,
+                    119.46196151098572,
+                    119.2452911115546,
+                    119.05078791759615,
+                    118.88309375183897,
+                    118.74630424383561,
+                    118.64388538773964,
+                    118.57860292794611,
+                    118.55246601125586,
+                    118.56668625356525,
+                    118.62165305503491,
+                    118.71692566665378,
+                    118.85124216982977,
+                    119.022545186062,
+                    119.22802379289854,
+                    119.46417079220635,
+                    119.72685416399912,
+                    120.01140125006019,
+                    120.312693952247,
+                    120.62527300595677,
+                    120.94344920433973,
+                    121.26141930723611,
+                    121.57338427336816,
+                    121.87366740698661,
+                    122.15683001191277,
+                    122.41778219670161,
+                    122.65188657343867,
+                    122.85505273746591,
+                    123.02382060315557,
+                    123.15543089789234,
+                    123.2478813780564,
+                    123.29996762169193,
+                    123.31130756677271,
+                    123.28234929513478,
+                    123.21436190349057,
+                    123.10940964751346,
+                    122.97030988576805,
+                    122.80057568031424,
+                    122.60434422341076,
+                    122.38629254851519,
+                    122.15154224284039,
+                    121.90555510280461,
+                    121.65402185823608,
+                    121.40274623240792,
+                    121.1575267000032,
+                    120.92403835201218,
+                    120.70771727438455,
+                    120.51364979604591,
+                    120.34646886268176,
+                    120.21025964751527,
+                    120.10847632211598,
+                    120.04387168290755,
+                    120.01844106712736,
+                    120.03338170086488,
+                    120.08906830740104,
+                    120.18504547279127,
+                    120.32003692423204,
+                    120.49197153217798,
+                    120.69802550645664,
+                    120.93467992669842,
+                    121.1977924349872,
+                    121.48268163010287
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "url_prefix": "https://api.open-meteo.com/v1/forecast",
+    "body": {
+      "current": {
+        "temperature_2m": 18.5,
+        "relative_humidity_2m": 64,
+        "apparent_temperature": 17.8,
+        "weather_code": 2,
+        "wind_speed_10m": 12.1,
+        "surface_pressure": 1013
+      },
+      "hourly": {
+        "temperature_2m": [
+          15.0,
+          16.237019796272616,
+          17.397127693021016,
+          18.40819380011667,
+          19.207354924039482,
+          19.74492309677793,
+          19.987474933020273,
+          19.919929734369685,
+          19.54648713412841,
+          18.890365984439605,
+          17.992360720519784,
+          16.90830496026166,
+          15.705600040299336,
+          14.459024327349457,
+          13.2460838615519,
+          12.142193406288282,
+          11.215987523460358,
+          10.525053208857083,
+          10.112349411674515,
+          10.00353605512311,
+          10.205378626684308,
+          10.70532753286704,
+          11.47229837214804,
+          12.458604612503708
+        ]
+      },
+      "daily": {
+        "time": [
+          "2026-09-22",
+          "2026-09-23",
+          "2026-09-24",
+          "2026-09-25",
+          "2026-09-26"
+        ],
+        "sunrise": [
+          "2026-09-22T07:00",
+          "2026-09-22T07:00",
+          "2026-09-22T07:00",
+          "2026-09-22T07:00",
+          "2026-09-22T07:00"
+        ],
+        "sunset": [
+          "2026-09-22T19:00",
+          "2026-09-22T19:00",
+          "2026-09-22T19:00",
+          "2026-09-22T19:00",
+          "2026-09-22T19:00"
+        ],
+        "weather_code": [
+          2,
+          61,
+          73,
+          95,
+          0
+        ],
+        "temperature_2m_max": [
+          20,
+          18,
+          16,
+          21,
+          22
+        ],
+        "temperature_2m_min": [
+          10,
+          12,
+          9,
+          11,
+          10
+        ],
+        "precipitation_sum": [
+          0,
+          0,
+          4,
+          0,
+          0
+        ],
+        "wind_speed_10m_max": [
+          10,
+          15,
+          12,
+          8,
+          10
+        ]
+      }
+    }
+  }
+]

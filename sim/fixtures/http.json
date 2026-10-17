@@ -1,0 +1,97 @@
+[
+  {
+    "url_prefix": "https://huggingface.co/api/daily_papers",
+    "body": [
+      {
+        "paper": {
+          "id": "2609.00001",
+          "title": "Small models, useful computers: on-device intelligence",
+          "authors": [
+            {
+              "name": "A. Researcher"
+            }
+          ],
+          "summary": "A synthetic paper for simulator testing. We explore responsive interfaces, bounded memory and efficient local computation.",
+          "upvotes": 142,
+          "publishedAt": "2026-09-22",
+          "ai_keywords": [
+            "On-device",
+            "Efficiency"
+          ]
+        }
+      },
+      {
+        "paper": {
+          "id": "2609.00002",
+          "title": "Learning to spend less energy",
+          "authors": [
+            {
+              "name": "B. Researcher"
+            }
+          ],
+          "summary": "Synthetic research fixture: doing work only when the screen changes.",
+          "upvotes": 87
+        }
+      },
+      {
+        "paper": {
+          "id": "2609.00003",
+          "title": "Interfaces that respond before a request completes",
+          "authors": [],
+          "upvotes": 54
+        }
+      }
+    ]
+  },
+  {
+    "url_prefix": "https://ar5iv.labs.arxiv.org/html/",
+    "delay_polls": 12,
+    "body": "<h1>Responsive local computing</h1><p>This original fixture tests delayed requests and reading on a small screen. A useful interface responds immediately while data loads in the background.</p><h2>Results</h2><p>Static screens do not need continuous animation. Cached text and simple shapes preserve a clear visual hierarchy.</p>"
+  },
+  {
+    "url_prefix": "https://ipinfo.io/json",
+    "body": {
+      "ip": "192.0.2.42",
+      "city": "Test City",
+      "region": "Simulator",
+      "country": "XX",
+      "org": "LOCAL FIXTURE",
+      "timezone": "Europe/Luxembourg",
+      "loc": "0.00,0.00"
+    }
+  },
+  {
+    "url_prefix": "https://httpbin.org/headers",
+    "body": {
+      "headers": {
+        "Accept": "application/json",
+        "User-Agent": "Cartridge simulator"
+      }
+    }
+  },
+  {
+    "url_prefix": "https://dns.google/resolve",
+    "delay_polls": 12,
+    "body": {
+      "Status": 0,
+      "Answer": [
+        {
+          "type": 1,
+          "data": "192.0.2.7"
+        }
+      ]
+    }
+  },
+  {
+    "url_prefix": "https://www.google.com",
+    "delay_polls": 8,
+    "elapsed_ms": 42,
+    "body": ""
+  },
+  {
+    "url_prefix": "https://github.com",
+    "delay_polls": 18,
+    "elapsed_ms": 121,
+    "body": ""
+  }
+]
