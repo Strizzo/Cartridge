@@ -4,6 +4,14 @@ An open app platform for Linux handhelds (R36S Plus, Anbernic, PowKiddy). Turn a
 
 Built in Rust with SDL2. Apps are scripted in Lua.
 
+## See it running
+
+[![CartridgeOS running on a green R36S Plus](docs/media/overview-poster.jpg)](docs/media/overview.mp4)
+
+**[Watch the 43-second hardware overview](docs/media/overview.mp4)** · [Photos, focused demos and simulator gallery](docs/media/README.md)
+
+Real R36S Plus footage: launcher navigation, news, markets, focus timer, radio and weather. The overview is edited and muted; the gallery clearly labels simulator screenshots that use sample data.
+
 ## Install on R36S Plus
 
 No build tools needed. Works from Windows, macOS, or Linux.
