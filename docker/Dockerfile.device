@@ -1,0 +1,56 @@
+# Cross-compile the device binaries on Ubuntu 20.04 (focal).
+#
+# The toolchain's glibc and SDL2 versions decide whether the result runs on the
+# handheld, so they are pinned here rather than inherited:
+#
+#   focal -> glibc 2.31, SDL2 2.0.10   matches the binaries known to run on ArkOS
+#   xenial (cross 0.2.5's base) -> glibc 2.18, SDL2 2.0.4   too old
+#   noble (cross ':main' today) -> glibc 2.39               too new for the device
+#
+# Build:  docker build -f docker/Dockerfile.device -t cartridge-device .
+# Use:    docker run --rm -v "$PWD":/src -w /src cartridge-device \
+#             cargo build --workspace --release --target aarch64-unknown-linux-gnu
+FROM ubuntu:20.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Restrict the stock repos to amd64 before enabling arm64, so apt never looks
+# for arm64 packages on archive.ubuntu.com (which does not carry them).
+RUN dpkg --add-architecture arm64 && \
+    sed -i 's|^deb \(http\)|deb [arch=amd64] \1|' /etc/apt/sources.list && \
+    printf 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports focal main universe\ndeb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports focal-updates main universe\n' \
+        > /etc/apt/sources.list.d/arm64.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        pkg-config \
+        gcc-aarch64-linux-gnu \
+        g++-aarch64-linux-gnu \
+        libsdl2-dev:arm64 \
+        libsdl2-ttf-dev:arm64 \
+        libsdl2-image-dev:arm64 \
+        libsdl2-gfx-dev:arm64 \
+        libasound2-dev:arm64 && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV RUSTUP_HOME=/opt/rustup \
+    CARGO_HOME=/opt/cargo \
+    PATH=/opt/cargo/bin:$PATH
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+        sh -s -- -y --profile minimal --default-toolchain stable \
+            --target aarch64-unknown-linux-gnu
+
+# The cc crate (mlua's vendored Lua, sdl2-sys) needs the cross compiler named
+# explicitly; cargo needs the matching linker.
+ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+    CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc \
+    CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++ \
+    AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar \
+    PKG_CONFIG_ALLOW_CROSS=1 \
+    PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
+    PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig
+
+WORKDIR /src
