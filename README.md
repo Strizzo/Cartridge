@@ -1,8 +1,15 @@
 # CartridgeOS
 
-An open app platform for Linux handhelds (R36S Plus, Anbernic, PowKiddy). Turn a $40 retro gaming device into a general-purpose pocket computer with WiFi, apps, and a d-pad.
+An experimental app platform developed and tested on an R36S Plus. Turn a retro gaming handheld into a general-purpose pocket computer with WiFi, apps, and a d-pad. Other devices and firmware variants have not been validated.
 
 Built in Rust with SDL2. Apps are scripted in Lua.
+
+> **Experimental software — back up your card before installing.** CartridgeOS is
+> provided as-is, without warranty. Installation and boot changes can cause data
+> loss or leave the card unbootable. Keep an independent backup of your working
+> system, games and saves, and preferably experiment on a spare card. A similar
+> product name does not guarantee compatible hardware or firmware. See
+> [installation, SD-card guidance and recovery](INSTALL.md) before proceeding.
 
 ## See it running
 
@@ -14,18 +21,34 @@ New R36S Plus footage: launcher navigation, radio-map zooming, illustrated weath
 
 ## Install on R36S Plus
 
-No build tools needed. Works from Windows, macOS, or Linux.
+The [v0.7.0 release](https://github.com/Strizzo/Cartridge/releases/tag/v0.7.0)
+contains an application bundle for an **existing, working R36S Plus system**.
+It is not a complete SD-card image. The macOS image installer remains a
+prototype; it is not a general-purpose public installer.
 
-1. Download `cartridge-r36s-plus.zip` from the [latest release](https://github.com/Strizzo/Cartridge/releases/latest)
-2. Turn off the device and remove the SD card
-3. Insert SD card into your computer, open it, find the `roms/` folder
-4. Extract the zip into `roms/` so you get `roms/Cartridge/` and new files in `roms/tools/`
-5. Eject, put the SD card back, boot the device
-6. In EmulationStation, go to **Tools > Cartridge** to launch
+1. Back up your working card, games and saves. Download
+   `cartridge-r36s-plus.zip` from that release.
+2. Power off the handheld, insert its card into your computer, and open the
+   existing ROMS volume (often labelled `EASYROMS`).
+3. Extract the `Cartridge/` folder into the root of that volume. Copy the three
+   scripts from `Cartridge/tools/` into its existing `tools/` folder, keeping
+   other tools and games in place. See [INSTALL.md](INSTALL.md) for the layout
+   and archive checksum.
+4. Safely eject, boot normally into EmulationStation, then open
+   **Options → Tools → Cartridge** and confirm the launcher works.
+5. Only after that check, optionally run **Tools → Setup Cartridge Boot**.
+   In v0.7.0 this enables direct Cartridge startup at the next normal boot,
+   with EmulationStation retained as fallback. Setup does not reboot for you.
 
-To make Cartridge the default at boot, run **Tools > Setup Cartridge Boot** from EmulationStation. You'll get a boot selector to choose between Cartridge and EmulationStation on every startup.
+[INSTALL.md](INSTALL.md) explains returning to EmulationStation, the recovery
+file, and the limits of this tested setup. Do not follow legacy boot-selector
+instructions for this release.
 
-See [INSTALL.md](INSTALL.md) for troubleshooting and build-from-source instructions.
+**Source and documentation:** the default `main` branch still contains the older
+runtime. To work with the version shown in the current demos, check out
+[`v0.7.0`](https://github.com/Strizzo/Cartridge/tree/v0.7.0) and use its
+[simulator guide](https://github.com/Strizzo/Cartridge/blob/v0.7.0/docs/simulator.md)
+and [app development guide](https://github.com/Strizzo/Cartridge/blob/v0.7.0/docs/app-development.md).
 
 ## Architecture
 
@@ -239,4 +262,4 @@ Cross-compile for aarch64, then copy the binary, `assets/`, and `cartridges/` to
 
 ## License
 
-MIT
+See [LICENSE](LICENSE) for the project's license terms.
