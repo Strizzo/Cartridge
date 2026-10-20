@@ -141,12 +141,9 @@ impl SshTunnel {
             }
         }
 
-        // 3. Fallback: scan ~/.ssh/
-        if let Ok(home) = std::env::var("HOME") {
-            let ssh_dir = Path::new(&home).join(".ssh");
-            if let Some(found) = Self::find_key_in_dir(&ssh_dir) {
-                return Some(found);
-            }
+        // 3. Fallback: scan ~/.ssh/ (honors CARTRIDGE_HOME)
+        if let Some(found) = Self::find_key_in_dir(&cartridge_core::paths::ssh_dir()) {
+            return Some(found);
         }
 
         None

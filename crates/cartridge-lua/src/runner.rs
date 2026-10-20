@@ -2,14 +2,16 @@ use std::path::Path;
 
 use cartridge_core::input::{Button, InputAction, InputEvent};
 use cartridge_core::screen::Screen;
+use cartridge_core::sticks::StickEvent;
 use cartridge_core::storage::AppStorage;
 use cartridge_core::theme::Theme;
 use mlua::prelude::*;
 
 use crate::api::{
-    new_screen_handle, new_text_input, register_audio_api, register_http_api,
-    register_json_api, register_screen_api, register_ssh_api, register_storage_api,
-    register_system_api, register_text_input_api, register_theme_api,
+    new_app_control, new_screen_handle, new_text_input, register_app_api,
+    register_audio_api, register_http_api, register_json_api, register_screen_api,
+    register_ssh_api_with_fixture, register_storage_api, register_system_api,
+    register_text_input_api, register_theme_api, Phase, SharedAppControl,
     SharedScreenHandle, SharedTextInput,
 };
 
@@ -18,6 +20,7 @@ pub struct LuaAppRunner {
     lua: Lua,
     screen_handle: SharedScreenHandle,
     pub text_input: SharedTextInput,
+    control: SharedAppControl,
     has_error: Option<String>,
 }
 
@@ -33,10 +36,21 @@ impl LuaAppRunner {
         theme: &Theme,
         permissions: &[String],
     ) -> Result<Self, String> {
+        Self::new_with_http_fixture(app_dir, entry_file, app_id, theme, permissions, None)
+    }
+
+    pub fn new_with_http_fixture(app_dir: &Path, entry_file: &str, app_id: &str,
+        theme: &Theme, permissions: &[String], fixture: Option<&Path>) -> Result<Self, String> {
+        Self::new_with_options(app_dir, entry_file, app_id, theme, permissions, fixture, None)
+    }
+
+    pub fn new_with_options(app_dir: &Path, entry_file: &str, app_id: &str,
+        theme: &Theme, permissions: &[String], fixture: Option<&Path>, storage_root: Option<&Path>) -> Result<Self, String> {
         let has = |p: &str| permissions.iter().any(|x| x == p);
         let lua = Lua::new();
         let screen_handle = new_screen_handle();
         let text_input = new_text_input();
+        let control = new_app_control();
 
         // Sandbox: remove dangerous functions
         Self::sandbox(&lua).map_err(|e| format!("Failed to sandbox Lua: {e}"))?;
@@ -53,19 +67,33 @@ impl LuaAppRunner {
             .map_err(|e| format!("Failed to register text_input API: {e}"))?;
         register_json_api(&lua)
             .map_err(|e| format!("Failed to register JSON API: {e}"))?;
+        register_app_api(&lua, control.clone())
+            .map_err(|e| format!("Failed to register app API: {e}"))?;
+
+        let ui: LuaTable = lua.load(include_str!("app_ui.lua")).eval()
+            .map_err(|e| format!("Failed to load app UI helpers: {e}"))?;
+        lua.globals().set("ui", ui).map_err(|e| e.to_string())?;
 
         // Permission-gated APIs.
         if has("storage") {
-            let storage = AppStorage::new(app_id);
+            let storage = match storage_root {
+                Some(root) => AppStorage::at_root(app_id, root.to_path_buf()),
+                None => AppStorage::new(app_id),
+            };
             register_storage_api(&lua, storage)
                 .map_err(|e| format!("Failed to register storage API: {e}"))?;
         }
         if has("network") {
-            register_http_api(&lua, app_id)
-                .map_err(|e| format!("Failed to register HTTP API: {e}"))?;
+            if let Some(path) = fixture {
+                crate::http_fixture::register(&lua, path, control.clone())
+                    .map_err(|e| format!("HTTP fixture failed: {e}"))?;
+            } else {
+                register_http_api(&lua, app_id, control.clone())
+                    .map_err(|e| format!("Failed to register HTTP API: {e}"))?;
+            }
         }
         if has("ssh") {
-            register_ssh_api(&lua)
+            register_ssh_api_with_fixture(&lua, fixture.is_some())
                 .map_err(|e| format!("Failed to register SSH API: {e}"))?;
         }
         if has("system") {
@@ -75,6 +103,10 @@ impl LuaAppRunner {
         if has("audio") {
             register_audio_api(&lua, app_dir)
                 .map_err(|e| format!("Failed to register audio API: {e}"))?;
+            if has("network") {
+                crate::stream_audio::register_with_fixture(&lua, fixture.is_some())
+                    .map_err(|e| format!("Failed to register streaming audio: {e}"))?;
+            }
         }
 
         log::info!(
@@ -114,8 +146,14 @@ impl LuaAppRunner {
             lua,
             screen_handle,
             text_input,
+            control,
             has_error: None,
         })
+    }
+
+    /// Shared redraw / idle-fps / phase state used by the frame loop.
+    pub fn control(&self) -> &SharedAppControl {
+        &self.control
     }
 
     /// True if the text input widget is currently visible. Callers should
@@ -233,17 +271,25 @@ impl LuaAppRunner {
         Ok(())
     }
 
+    /// Look up a lifecycle callback. `Option` so a missing callback is a
+    /// plain `None` rather than an error value built every frame.
+    fn callback(&self, name: &str) -> LuaResult<Option<LuaFunction>> {
+        self.lua.globals().raw_get::<Option<LuaFunction>>(name)
+    }
+
     /// Call on_init() if defined.
     pub fn call_init(&mut self) {
-        if let Err(e) = self.try_call_init() {
+        self.control.set_phase(Phase::Init);
+        let r = self.try_call_init();
+        self.control.set_phase(Phase::Idle);
+        if let Err(e) = r {
             log::error!("Lua on_init error: {e}");
             self.has_error = Some(format!("on_init error: {e}"));
         }
     }
 
     fn try_call_init(&self) -> LuaResult<()> {
-        let globals = self.lua.globals();
-        if let Ok(func) = globals.get::<LuaFunction>("on_init") {
+        if let Some(func) = self.callback("on_init")? {
             func.call::<()>(())?;
         }
         Ok(())
@@ -251,17 +297,21 @@ impl LuaAppRunner {
 
     /// Call on_input(button, action) for each input event.
     pub fn call_input(&mut self, events: &[InputEvent]) {
+        if events.is_empty() {
+            return;
+        }
+        self.control.set_phase(Phase::Input);
         for event in events {
             if let Err(e) = self.try_call_input(event) {
                 log::error!("Lua on_input error: {e}");
                 self.has_error = Some(format!("on_input error: {e}"));
             }
         }
+        self.control.set_phase(Phase::Idle);
     }
 
     fn try_call_input(&self, event: &InputEvent) -> LuaResult<()> {
-        let globals = self.lua.globals();
-        if let Ok(func) = globals.get::<LuaFunction>("on_input") {
+        if let Some(func) = self.callback("on_input")? {
             let button_str = button_to_str(event.button);
             let action_str = action_to_str(event.action);
             func.call::<()>((button_str, action_str))?;
@@ -269,39 +319,69 @@ impl LuaAppRunner {
         Ok(())
     }
 
-    /// Call on_update(dt) with delta time in seconds.
-    pub fn call_update(&mut self, dt: f32) {
-        if let Err(e) = self.try_call_update(dt) {
-            log::error!("Lua on_update error: {e}");
-            self.has_error = Some(format!("on_update error: {e}"));
+    /// Presence opts into independent sticks instead of legacy left-stick D-pad conversion.
+    pub fn handles_sticks(&self) -> bool {
+        self.callback("on_stick").ok().flatten().is_some()
+    }
+
+    pub fn call_sticks(&mut self, events: &[StickEvent]) {
+        if events.is_empty() { return; }
+        self.control.set_phase(Phase::Input);
+        for event in events {
+            let result=(|| -> LuaResult<()> {
+                if let Some(func)=self.callback("on_stick")? {
+                    func.call::<()>((event.stick.name(),event.x,event.y))?;
+                }
+                Ok(())
+            })();
+            if let Err(error)=result { self.has_error=Some(format!("on_stick error: {error}")); }
+        }
+        self.control.set_phase(Phase::Idle);
+    }
+
+    /// Call on_update(dt) with delta time in seconds. Returns true if the
+    /// app asked for a redraw by returning a truthy value.
+    pub fn call_update(&mut self, dt: f32) -> bool {
+        self.control.set_phase(Phase::Update);
+        let r = self.try_call_update(dt);
+        self.control.set_phase(Phase::Idle);
+        match r {
+            Ok(dirty) => dirty,
+            Err(e) => {
+                log::error!("Lua on_update error: {e}");
+                self.has_error = Some(format!("on_update error: {e}"));
+                true
+            }
         }
     }
 
-    fn try_call_update(&self, dt: f32) -> LuaResult<()> {
-        let globals = self.lua.globals();
-        if let Ok(func) = globals.get::<LuaFunction>("on_update") {
-            func.call::<()>(dt)?;
+    fn try_call_update(&self, dt: f32) -> LuaResult<bool> {
+        if let Some(func) = self.callback("on_update")? {
+            let v: LuaValue = func.call(dt)?;
+            // Lua truthiness: anything but nil/false means "dirty".
+            return Ok(!matches!(v, LuaValue::Nil | LuaValue::Boolean(false)));
         }
-        Ok(())
+        Ok(false)
     }
 
     /// Call on_render() with the screen handle active.
     pub fn call_render(&mut self, screen: &mut Screen<'_>) {
         // Set the screen pointer so Lua screen.* calls work
         self.screen_handle.borrow_mut().set_screen(screen);
+        self.control.set_phase(Phase::Render);
 
         if let Err(e) = self.try_call_render() {
             log::error!("Lua on_render error: {e}");
             self.has_error = Some(format!("on_render error: {e}"));
         }
 
+        self.control.set_phase(Phase::Idle);
         // Clear the screen pointer — it's no longer valid after this frame
         self.screen_handle.borrow_mut().clear_screen();
     }
 
     fn try_call_render(&self) -> LuaResult<()> {
-        let globals = self.lua.globals();
-        if let Ok(func) = globals.get::<LuaFunction>("on_render") {
+        if let Some(func) = self.callback("on_render")? {
             func.call::<()>(())?;
         }
         Ok(())
@@ -309,14 +389,15 @@ impl LuaAppRunner {
 
     /// Call on_destroy() if defined.
     pub fn call_destroy(&mut self) {
+        self.control.set_phase(Phase::Destroy);
         if let Err(e) = self.try_call_destroy() {
             log::error!("Lua on_destroy error: {e}");
         }
+        self.control.set_phase(Phase::Idle);
     }
 
     fn try_call_destroy(&self) -> LuaResult<()> {
-        let globals = self.lua.globals();
-        if let Ok(func) = globals.get::<LuaFunction>("on_destroy") {
+        if let Some(func) = self.callback("on_destroy")? {
             func.call::<()>(())?;
         }
         Ok(())
@@ -416,5 +497,41 @@ fn action_to_str(action: InputAction) -> &'static str {
         InputAction::Press => "press",
         InputAction::Release => "release",
         InputAction::Repeat => "repeat",
+    }
+}
+
+#[cfg(test)]
+mod stick_tests {
+    use super::*;
+    use cartridge_core::sticks::{Stick,StickEvent};
+    fn app(source:&str)->LuaAppRunner {
+        let nonce=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        static COUNTER:std::sync::atomic::AtomicU64=std::sync::atomic::AtomicU64::new(0);
+        let id=COUNTER.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+        let path=std::env::temp_dir().join(format!("cartridge-stick-test-{}-{nonce}-{id}",std::process::id()));
+        std::fs::create_dir(&path).unwrap();std::fs::write(path.join("main.lua"),source).unwrap();
+        let app=LuaAppRunner::new(&path,"main.lua","dev.test.sticks",&Theme::default(),&[]).unwrap();
+        std::fs::remove_dir_all(path).unwrap();app
+    }
+    #[test]
+    fn optional_sticks_deliver_both_axes_and_release_without_synthetic_buttons() {
+        let mut app=app("events={};buttons=0;function on_stick(s,x,y)table.insert(events,{s,x,y})end;function on_input()buttons=buttons+1 end");
+        assert!(app.handles_sticks());
+        app.call_sticks(&[StickEvent{stick:Stick::Left,x:0.5,y:-0.25},StickEvent{stick:Stick::Right,x:0.0,y:-1.0},StickEvent{stick:Stick::Left,x:0.0,y:0.0}]);
+        app.lua.load("assert(#events==3 and events[1][1]=='left' and events[2][1]=='right' and events[3][2]==0 and buttons==0)").exec().unwrap();
+        assert!(app.error().is_none());
+    }
+    #[test]
+    fn legacy_apps_do_not_require_a_stick_callback() {
+        let mut app=app("count=0;function on_input(button,action) if button=='dpad_right' and action=='press' then count=count+1 end end");
+        assert!(!app.handles_sticks());app.call_sticks(&[StickEvent{stick:Stick::Right,x:1.0,y:0.0}]);
+        app.call_input(&[InputEvent{button:Button::DpadRight,action:InputAction::Press}]);
+        app.lua.load("assert(count==1)").exec().unwrap();assert!(app.error().is_none());
+    }
+    #[test]
+    fn stick_errors_use_the_existing_app_error_path() {
+        let mut app=app("function on_stick() error('stick failure') end");
+        app.call_sticks(&[StickEvent{stick:Stick::Right,x:0.0,y:1.0}]);
+        assert!(app.error().unwrap().contains("on_stick error"));
     }
 }

@@ -1,107 +1,55 @@
 -- Pomodoro Timer for Cartridge OS (Lua)
--- Work/break cycles with statistics and settings
+-- Quiet work/break instrument with compatible daily statistics.
 
--- ── Constants ────────────────────────────────────────────────────────────────
-
+local U = ui.public
+local C = U.C
 local PHASE_WORK = "work"
 local PHASE_SHORT_BREAK = "short_break"
 local PHASE_LONG_BREAK = "long_break"
-
-local PHASE_LABELS = {
-    [PHASE_WORK] = "Work",
-    [PHASE_SHORT_BREAK] = "Short Break",
-    [PHASE_LONG_BREAK] = "Long Break",
-}
-
-local PHASE_COLORS = {
-    [PHASE_WORK] = {220, 80, 80},
-    [PHASE_SHORT_BREAK] = {80, 200, 120},
-    [PHASE_LONG_BREAK] = {80, 140, 240},
-}
-
-local PHASE_COLORS_DIM = {
-    [PHASE_WORK] = {110, 40, 40},
-    [PHASE_SHORT_BREAK] = {40, 100, 60},
-    [PHASE_LONG_BREAK] = {40, 70, 120},
-}
-
-local WORK_PRESETS = {15, 20, 25, 30, 45}
-local SHORT_BREAK_PRESETS = {3, 5, 10}
-local LONG_BREAK_PRESETS = {10, 15, 20, 30}
-
+local PHASE_LABELS = {[PHASE_WORK] = "Focus", [PHASE_SHORT_BREAK] = "Short rest", [PHASE_LONG_BREAK] = "Long rest"}
+local PHASE_COLORS = {[PHASE_WORK] = C.red, [PHASE_SHORT_BREAK] = C.teal, [PHASE_LONG_BREAK] = C.gold}
 local SETTINGS = {
-    {label="Work Duration", phase=PHASE_WORK, presets=WORK_PRESETS},
-    {label="Short Break", phase=PHASE_SHORT_BREAK, presets=SHORT_BREAK_PRESETS},
-    {label="Long Break", phase=PHASE_LONG_BREAK, presets=LONG_BREAK_PRESETS},
+    {label = "Focus duration", phase = PHASE_WORK, presets = {15, 20, 25, 30, 45}},
+    {label = "Short rest", phase = PHASE_SHORT_BREAK, presets = {3, 5, 10}},
+    {label = "Long rest", phase = PHASE_LONG_BREAK, presets = {10, 15, 20, 30}},
 }
-
--- ── State ────────────────────────────────────────────────────────────────────
-
+local VISIBLE_SESSIONS = 5
 local state = {
     screen_stack = {"timer"},
-    -- Timer engine
     phase = PHASE_WORK,
     running = false,
-    work_count = 0,       -- 0-3 toward long break
+    work_count = 0,
     total_completed = 0,
-    durations = {
-        [PHASE_WORK] = 25 * 60,
-        [PHASE_SHORT_BREAK] = 5 * 60,
-        [PHASE_LONG_BREAK] = 15 * 60,
-    },
+    durations = {[PHASE_WORK] = 25 * 60, [PHASE_SHORT_BREAK] = 5 * 60, [PHASE_LONG_BREAK] = 15 * 60},
+    phase_duration = 25 * 60, -- A running phase retains the duration it started with.
     remaining = 25 * 60,
     total_focus_seconds = 0,
     sessions = {},
     session_start = nil,
     session_elapsed = 0,
-    -- Animation
-    pulse_t = 0,
-    -- Stats screen
-    stats_scroll = 0,
-    stats_max_scroll = 0,
-    -- Settings screen
+    stats_scroll = 0, -- Rows, newest first.
     settings_row = 1,
-    settings_indices = {3, 2, 1},  -- default: 25min work, 5min short, 10min long
+    settings_indices = {3, 2, 2},
 }
 
--- ── Drawing Helpers ──────────────────────────────────────────────────────────
-
-local function draw_header(title)
-    screen.draw_gradient_rect(0, 0, 720, 40,
-        theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
-        theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
-    screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
+local function current_screen()
+    return state.screen_stack[#state.screen_stack]
 end
-
-local function draw_footer(hints)
-    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 684, 720, 684, {color=theme.border})
-    local x = 10
-    for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
-        x = x + w + 14
-    end
-end
-
--- ── Timer Engine ─────────────────────────────────────────────────────────────
 
 local function format_time()
-    local total = math.max(0, math.floor(state.remaining))
-    local minutes = math.floor(total / 60)
-    local seconds = total % 60
-    return string.format("%02d:%02d", minutes, seconds)
+    local total = math.max(0, math.ceil(state.remaining))
+    return string.format("%02d:%02d", math.floor(total / 60), total % 60)
 end
 
-local function get_duration()
-    return state.durations[state.phase]
+local function focus_time()
+    local minutes = math.floor(state.total_focus_seconds / 60)
+    if minutes >= 60 then return math.floor(minutes / 60) .. "h " .. (minutes % 60) .. "m" end
+    return minutes .. "m"
 end
 
-local function get_progress()
-    local d = get_duration()
-    if d <= 0 then return 1.0 end
-    local elapsed = d - state.remaining
-    return math.max(0, math.min(1, elapsed / d))
+local function timer_status()
+    if state.running then return "RUNNING" end
+    return state.remaining < state.phase_duration and "PAUSED" or "READY"
 end
 
 local function save_stats()
@@ -114,513 +62,262 @@ local function save_stats()
     })
 end
 
-local function advance_phase()
+local function advance_phase(completed)
     if state.phase == PHASE_WORK then
-        state.work_count = state.work_count + 1
-        state.total_completed = state.total_completed + 1
-        state.total_focus_seconds = state.total_focus_seconds + math.floor(state.session_elapsed)
-
+        if completed then
+            state.work_count = state.work_count + 1
+            state.total_completed = state.total_completed + 1
+            state.total_focus_seconds = state.total_focus_seconds + math.floor(state.session_elapsed)
+        end
         if state.session_start then
             state.sessions[#state.sessions + 1] = {
                 start = state.session_start,
-                duration_min = math.floor(state.durations[PHASE_WORK] / 60 * 10) / 10,
-                completed = true,
+                duration_min = math.floor(state.session_elapsed / 60 * 10) / 10,
+                completed = completed,
             }
         end
-        state.session_start = nil
-        state.session_elapsed = 0
-
+        state.session_start, state.session_elapsed = nil, 0
         if state.work_count >= 4 then
-            state.phase = PHASE_LONG_BREAK
-            state.work_count = 0
+            state.phase, state.work_count = PHASE_LONG_BREAK, 0
         else
             state.phase = PHASE_SHORT_BREAK
         end
     else
         state.phase = PHASE_WORK
     end
-
-    state.remaining = state.durations[state.phase]
-    state.running = false
+    state.phase_duration = state.durations[state.phase]
+    state.remaining, state.running = state.phase_duration, false
     save_stats()
-
-    -- Audio alarm: 3 short beeps when a phase ends
     if audio then
-        local freq = (state.phase == PHASE_WORK) and 880 or 660
-        audio.beep(freq, 200)
-        audio.beep(freq, 200)
-        audio.beep(freq, 400)
+        local frequency = state.phase == PHASE_WORK and 880 or 660
+        audio.beep(frequency, 200)
+        audio.beep(frequency, 200)
+        audio.beep(frequency, 400)
     end
 end
 
 local function timer_toggle()
-    if not state.running then
-        if state.phase == PHASE_WORK and not state.session_start then
-            state.session_start = os.date("%H:%M")
-            state.session_elapsed = 0
-        end
-        state.running = true
-    else
-        state.running = false
+    if not state.running and state.phase == PHASE_WORK and not state.session_start then
+        state.session_start, state.session_elapsed = os.date("%H:%M"), 0
     end
+    state.running = not state.running
 end
 
 local function timer_reset()
-    state.remaining = state.durations[state.phase]
-    state.running = false
-    if state.phase == PHASE_WORK then
-        state.session_start = nil
-        state.session_elapsed = 0
-    end
-end
-
-local function timer_skip()
-    if state.phase == PHASE_WORK and state.session_start then
-        state.sessions[#state.sessions + 1] = {
-            start = state.session_start,
-            duration_min = math.floor(state.session_elapsed / 60 * 10) / 10,
-            completed = false,
-        }
-        state.session_start = nil
-        state.session_elapsed = 0
-    end
-    advance_phase()
+    state.phase_duration = state.durations[state.phase]
+    state.remaining, state.running = state.phase_duration, false
+    if state.phase == PHASE_WORK then state.session_start, state.session_elapsed = nil, 0 end
 end
 
 local function set_duration(phase, minutes)
-    state.durations[phase] = minutes * 60
-    if state.phase == phase and not state.running then
-        state.remaining = state.durations[phase]
-    end
+    local duration = minutes * 60
+    if state.durations[phase] == duration then return end
+    state.durations[phase] = duration
+    if state.phase == phase and not state.running then timer_reset() end
 end
-
--- ── Timer Screen ─────────────────────────────────────────────────────────────
-
-local function draw_timer_screen()
-    draw_header("Pomodoro")
-
-    local content_top = 40
-    local content_bottom = 684
-    local cx = 360
-    local cy = (content_top + content_bottom) / 2 - 35
-
-    local phase_color = PHASE_COLORS[state.phase]
-    local phase_color_dim = PHASE_COLORS_DIM[state.phase]
-    local track_color = {50, 50, 65}
-    local progress = get_progress()
-
-    -- Draw circular ring
-    local radius = 155
-    local ring_width = 14
-
-    -- Track circle
-    screen.draw_circle(cx, cy, radius, track_color[1], track_color[2], track_color[3])
-
-    -- Inner circle to create ring effect
-    screen.draw_circle(cx, cy, radius - ring_width, theme.bg.r, theme.bg.g, theme.bg.b)
-
-    -- Progress arc (approximate with filled segments)
-    if progress > 0 then
-        local segments = math.floor(progress * 60)
-        for s = 0, segments do
-            local angle = -math.pi / 2 + (s / 60) * 2 * math.pi
-            local px = cx + math.floor(radius * math.cos(angle))
-            local py = cy + math.floor(radius * math.sin(angle))
-            screen.draw_circle(px, py, ring_width / 2, phase_color[1], phase_color[2], phase_color[3])
-        end
-    end
-
-    -- Inner glow
-    screen.draw_circle(cx, cy, radius - ring_width - 2, phase_color_dim[1] / 2, phase_color_dim[2] / 2, phase_color_dim[3] / 2)
-    screen.draw_circle(cx, cy, radius - ring_width - 3, theme.bg.r, theme.bg.g, theme.bg.b)
-
-    -- Time display inside ring
-    local time_str = format_time()
-    local tw = screen.get_text_width(time_str, 58, true)
-    screen.draw_text(time_str, cx - tw / 2, cy - 20, {color=theme.text, size=58, bold=true})
-
-    -- Phase label
-    local label = PHASE_LABELS[state.phase]
-    local lw = screen.get_text_width(label, 20, false)
-    screen.draw_text(label, cx - lw / 2, cy + 36, {color=phase_color, size=20})
-
-    -- Running indicator
-    if state.running then
-        local pulse = (math.sin(state.pulse_t * 4) + 1) / 2
-        local dot_radius = math.floor(4 + 2 * pulse)
-        screen.draw_circle(cx, cy + 62, dot_radius, phase_color[1], phase_color[2], phase_color[3])
-    else
-        if state.remaining < get_duration() then
-            local pw = screen.get_text_width("PAUSED", 14, false)
-            screen.draw_text("PAUSED", cx - pw / 2, cy + 56, {color=theme.text_dim, size=14})
-        end
-    end
-
-    -- Session dots (4 circles)
-    local dot_y = cy + radius + 45
-    local dot_radius_s = 9
-    local spacing = 34
-    local total_width = 3 * spacing
-    local start_x = cx - total_width / 2
-    for i = 0, 3 do
-        local dx = start_x + i * spacing
-        if i < state.work_count then
-            screen.draw_circle(dx, dot_y, dot_radius_s, phase_color[1], phase_color[2], phase_color[3])
-        else
-            screen.draw_circle(dx, dot_y, dot_radius_s, theme.border.r, theme.border.g, theme.border.b)
-            screen.draw_circle(dx, dot_y, dot_radius_s - 2, theme.bg.r, theme.bg.g, theme.bg.b)
-        end
-    end
-
-    -- Completed count
-    local count_text = state.total_completed .. " pomodoro" .. (state.total_completed ~= 1 and "s" or "") .. " today"
-    local cw = screen.get_text_width(count_text, 15, false)
-    screen.draw_text(count_text, cx - cw / 2, dot_y + 26, {color=theme.text_dim, size=15})
-
-    -- Footer
-    local hints = {}
-    if state.running then
-        hints[#hints + 1] = {"A", "Pause", theme.btn_a}
-    else
-        hints[#hints + 1] = {"A", "Start", theme.btn_a}
-    end
-    hints[#hints + 1] = {"X", "Reset", theme.btn_x}
-    hints[#hints + 1] = {"Y", "Skip", theme.btn_y}
-    draw_footer(hints)
-
-    -- Right-side nav hints
-    screen.draw_text("R1:Stats", 640, 694, {color=theme.text_dim, size=11})
-    screen.draw_text("L1:Set", 580, 694, {color=theme.text_dim, size=11})
-end
-
--- ── Stats Screen ─────────────────────────────────────────────────────────────
-
-local function draw_stats_screen()
-    draw_header("Statistics")
-
-    local y = 52 - state.stats_scroll
-
-    -- Summary cards
-    local card_h = 80
-    local card_gap = 12
-    local card_w = 194
-    local cards_x = 57
-
-    -- Card 1: Completed
-    screen.draw_card(cards_x, y, card_w, card_h, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
-    screen.draw_rect(cards_x + 10, y + 6, card_w - 20, 3, {color={220, 80, 80}, filled=true, radius=2})
-    local val_str = tostring(state.total_completed)
-    local vw = screen.get_text_width(val_str, 28, true)
-    screen.draw_text(val_str, cards_x + card_w / 2 - vw / 2, y + 26, {color=theme.text, size=28, bold=true})
-    local lbl = "Completed"
-    local lw = screen.get_text_width(lbl, 13, false)
-    screen.draw_text(lbl, cards_x + card_w / 2 - lw / 2, y + 58, {color=theme.text_dim, size=13})
-
-    -- Card 2: Focus Time
-    local focus_min = math.floor(state.total_focus_seconds / 60)
-    local focus_str
-    if focus_min >= 60 then
-        focus_str = math.floor(focus_min / 60) .. "h " .. (focus_min % 60) .. "m"
-    else
-        focus_str = focus_min .. "m"
-    end
-    screen.draw_card(cards_x + card_w + card_gap, y, card_w, card_h, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
-    screen.draw_rect(cards_x + card_w + card_gap + 10, y + 6, card_w - 20, 3, {color={80, 200, 120}, filled=true, radius=2})
-    vw = screen.get_text_width(focus_str, 28, true)
-    screen.draw_text(focus_str, cards_x + card_w + card_gap + card_w / 2 - vw / 2, y + 26, {color=theme.text, size=28, bold=true})
-    lbl = "Focus Time"
-    lw = screen.get_text_width(lbl, 13, false)
-    screen.draw_text(lbl, cards_x + card_w + card_gap + card_w / 2 - lw / 2, y + 58, {color=theme.text_dim, size=13})
-
-    -- Card 3: Streak
-    local streak_str = state.work_count .. "/4"
-    screen.draw_card(cards_x + 2 * (card_w + card_gap), y, card_w, card_h, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
-    screen.draw_rect(cards_x + 2 * (card_w + card_gap) + 10, y + 6, card_w - 20, 3, {color={80, 140, 240}, filled=true, radius=2})
-    vw = screen.get_text_width(streak_str, 28, true)
-    screen.draw_text(streak_str, cards_x + 2 * (card_w + card_gap) + card_w / 2 - vw / 2, y + 26, {color=theme.text, size=28, bold=true})
-    lbl = "Streak"
-    lw = screen.get_text_width(lbl, 13, false)
-    screen.draw_text(lbl, cards_x + 2 * (card_w + card_gap) + card_w / 2 - lw / 2, y + 58, {color=theme.text_dim, size=13})
-
-    y = y + card_h + 20
-
-    -- Session history header
-    screen.draw_text("Session History", 20, y, {color=theme.text, size=16, bold=true})
-    y = y + 28
-
-    if #state.sessions == 0 then
-        screen.draw_text("No sessions yet. Start a pomodoro!", 20, y, {color=theme.text_dim, size=14})
-        y = y + 30
-    else
-        for i = #state.sessions, 1, -1 do
-            if y > 680 then break end
-            if y + 44 > 40 then
-                local session = state.sessions[i]
-                local idx = #state.sessions - i
-                local h = 42
-
-                -- Row background
-                local bg = idx % 2 == 0 and theme.card_bg or theme.bg_lighter
-                screen.draw_rounded_rect(16, y, 688, h, bg.r, bg.g, bg.b, 6, false)
-
-                -- Status dot
-                local completed = session.completed
-                local dot_color = completed and {80, 200, 120} or {240, 80, 90}
-                screen.draw_circle(16 + 18, y + h / 2, 5, dot_color[1], dot_color[2], dot_color[3])
-
-                -- Start time
-                screen.draw_text(session.start or "--:--", 50, y + 12, {color=theme.text, size=15, bold=true})
-
-                -- Duration
-                local dur = session.duration_min or 0
-                local dur_str = dur == math.floor(dur) and string.format("%.0f min", dur) or string.format("%.1f min", dur)
-                screen.draw_text(dur_str, 136, y + 13, {color=theme.text_dim, size=14})
-
-                -- Status text
-                local status = completed and "Completed" or "Skipped"
-                local status_color = completed and {80, 200, 120} or theme.text_dim
-                local sw = screen.get_text_width(status, 13, false)
-                screen.draw_text(status, 688 - sw, y + 14, {color=status_color, size=13})
-            end
-            y = y + 50
-        end
-    end
-
-    -- Calculate max scroll
-    local total_content_height = (y + state.stats_scroll) - 52
-    local visible_height = 684 - 52
-    state.stats_max_scroll = math.max(0, total_content_height - visible_height)
-
-    draw_footer({
-        {"B", "Back", theme.btn_b},
-        {"Y", "Reset", theme.btn_y},
-    })
-
-    if state.stats_max_scroll > 0 then
-        screen.draw_text("D-Pad: Scroll", 600, 694, {color=theme.text_dim, size=12})
-    end
-end
-
--- ── Settings Screen ──────────────────────────────────────────────────────────
 
 local function sync_settings_from_engine()
-    for row_idx, setting in ipairs(SETTINGS) do
-        local current_min = math.floor(state.durations[setting.phase] / 60)
-        local closest = 1
-        local closest_diff = math.abs(setting.presets[1] - current_min)
+    for row, setting in ipairs(SETTINGS) do
+        local minutes = math.floor(state.durations[setting.phase] / 60)
+        local closest, difference = 1, math.huge
         for i, preset in ipairs(setting.presets) do
-            local diff = math.abs(preset - current_min)
-            if diff < closest_diff then
-                closest = i
-                closest_diff = diff
-            end
+            if math.abs(preset - minutes) < difference then closest, difference = i, math.abs(preset - minutes) end
         end
-        state.settings_indices[row_idx] = closest
+        state.settings_indices[row] = closest
     end
+end
+
+local function draw_timer_screen()
+    U.header("Pomodoro", "TIME / FOCUS INSTRUMENT", timer_status(), state.running and C.red or C.muted)
+    U.tabs({"Timer", "Statistics", "Settings"}, 1)
+    local color = PHASE_COLORS[state.phase]
+    U.panel(24, 164, 672, 300, C.paper, color)
+    U.display(PHASE_LABELS[state.phase]:upper(), 44, 178, 32, C.black, 420)
+    U.text(math.floor(state.phase_duration / 60) .. " MINUTE PHASE", 44, 216, 14, C.black, 420, true)
+    U.text(timer_status(), 552, 190, 14, C.black, 124, true)
+    U.display(format_time(), 44, 236, 132, C.black, 632)
+    local action = state.running and "A pauses the timer. Stay with the task."
+        or (timer_status() == "PAUSED" and "A resumes this phase. X starts it over."
+        or "A starts this phase. Each phase waits for you.")
+    U.text(action, 44, 418, 18, C.black, 632)
+    U.rect(44, 449, 632, 6, C.quiet)
+    local progress = math.max(0, math.min(1, (state.phase_duration - state.remaining) / state.phase_duration))
+    U.rect(44, 449, math.floor(632 * progress), 6, color)
+
+    U.text("ROUND / FOUR FOCUS SESSIONS", 24, 482, 14, C.muted, 444, true)
+    U.text("LONG REST AFTER 4", 504, 482, 14, C.muted, 192)
+    for i = 1, 4 do
+        local completed = state.phase == PHASE_LONG_BREAK or i <= state.work_count
+        local current = state.phase == PHASE_WORK and i == state.work_count + 1
+        local x = 24 + (i - 1) * 172
+        local fg, secondary = U.row(x, 508, 156, 68, current)
+        U.display(string.format("%02d", i), x + 14, 515, 28, fg, 60)
+        U.text(completed and "DONE" or (current and "FOCUS" or "NEXT"), x + 14, 550, 14,
+            completed and C.teal or secondary, 128, true)
+        if completed then U.rect(x, 572, 156, 4, C.teal) end
+    end
+    U.panel(24, 594, 328, 56, C.panel)
+    U.text("COMPLETED TODAY", 40, 613, 14, C.muted, 188, true)
+    U.display(tostring(state.total_completed), 244, 601, 32, C.paper, 92)
+    U.panel(368, 594, 328, 56, C.panel)
+    U.text("COMPLETED FOCUS", 384, 613, 14, C.muted, 160, true)
+    U.display(focus_time(), 554, 601, 32, C.paper, 126)
+    U.footer({{"A", state.running and "Pause" or "Start"}, {"X", "Reset"}, {"Y", "Skip"}, {"R1", "Stats"}, {"L1", "Settings"}})
+end
+
+local function draw_stats_screen()
+    U.header("Pomodoro", "TIME / DAILY RECORD", "TODAY", C.muted)
+    U.tabs({"Timer", "Statistics", "Settings"}, 2)
+    local values = {tostring(state.total_completed), focus_time(), state.work_count .. " / 4"}
+    local labels = {"COMPLETED", "COMPLETED FOCUS", "CURRENT ROUND"}
+    local colors = {C.red, C.teal, C.gold}
+    for i = 1, 3 do
+        local x = 24 + (i - 1) * 228
+        U.panel(x, 164, 216, 104, C.panel, colors[i])
+        U.text(labels[i], x + 16, 180, 14, C.muted, 184, true)
+        U.display(values[i], x + 16, 204, 40, C.paper, 184)
+    end
+    U.text("SESSION REGISTER / NEWEST FIRST", 24, 286, 14, C.muted, 460, true)
+    U.text(#state.sessions .. " RECORDED", 528, 286, 14, C.muted, 168)
+    if #state.sessions == 0 then
+        U.empty("No focus sessions yet", "B returns to the timer. Press A to begin. Completed and skipped sessions appear here.", 326)
+    else
+        state.stats_scroll = math.min(state.stats_scroll, math.max(0, #state.sessions - VISIBLE_SESSIONS))
+        for row = 0, math.min(VISIBLE_SESSIONS, #state.sessions - state.stats_scroll) - 1 do
+            local session = state.sessions[#state.sessions - state.stats_scroll - row]
+            local y = 310 + row * 64
+            U.panel(24, y, 672, 58, C.panel, session.completed and C.teal or C.quiet)
+            U.text(session.start or "--:--", 44, y + 18, 18, C.paper, 94, true)
+            local duration = session.duration_min or 0
+            local minutes = duration == math.floor(duration) and string.format("%.0f min", duration) or string.format("%.1f min", duration)
+            U.text(minutes, 176, y + 18, 18, C.paper, 320)
+            U.text(session.completed and "COMPLETED" or "SKIPPED", 544, y + 21, 14,
+                session.completed and C.teal or C.muted, 132, true)
+        end
+        U.text((state.stats_scroll + 1) .. "-" .. math.min(#state.sessions, state.stats_scroll + VISIBLE_SESSIONS)
+            .. " / " .. #state.sessions .. " sessions", 24, 634, 14, C.muted, 672)
+    end
+    U.footer({{"B", "Back"}, {"Y", "Clear stats"}, {"D-PAD", "Scroll"}})
 end
 
 local function draw_settings_screen()
-    draw_header("Settings")
-
-    local y = 60
-
-    screen.draw_text("Timer Durations", 20, y, {color=theme.text, size=18, bold=true})
-    y = y + 36
-
-    screen.draw_text("Use LEFT/RIGHT to change, A to confirm", 20, y, {color=theme.text_dim, size=13})
-    y = y + 32
-
-    for row_idx, setting in ipairs(SETTINGS) do
-        local selected = (row_idx == state.settings_row)
-        local preset_idx = state.settings_indices[row_idx]
-        local h = 64
-
-        -- Row card
-        local border_color = selected and theme.accent or theme.border
-        local bg = selected and theme.card_highlight or theme.card_bg
-        screen.draw_card(20, y, 680, h, {bg=bg, border=border_color, radius=10, shadow=true})
-
-        -- Selection indicator
-        if selected then
-            screen.draw_rect(24, y + 14, 3, h - 28, {color=theme.accent, filled=true, radius=2})
-        end
-
-        -- Label
-        screen.draw_text(setting.label, 38, y + 10, {color=theme.text, size=16, bold=true})
-
-        -- Preset pills
-        local pill_y = y + 36
-        local pill_x = 38
-        local phase_color = PHASE_COLORS[setting.phase]
-
+    U.header("Pomodoro", "TIME / CONFIGURE THE ROUND", state.running and "TIMER RUNNING" or "DURATIONS", C.muted)
+    U.tabs({"Timer", "Statistics", "Settings"}, 3)
+    U.text("Set a pace you can keep.", 24, 160, 18, C.paper, 672, true)
+    U.text("Changes reset a paused phase; a running phase keeps its current duration.", 24, 190, 14, C.muted, 672)
+    for row, setting in ipairs(SETTINGS) do
+        local y = 216 + (row - 1) * 112
+        local selected = row == state.settings_row
+        local fg, secondary = U.row(24, y, 672, 96, selected)
+        local color = PHASE_COLORS[setting.phase]
+        U.text(setting.label, 44, y + 12, 18, fg, 420, true)
+        U.text(math.floor(state.durations[setting.phase] / 60) .. " MIN", 552, y + 14, 16, secondary, 124, true)
+        local count = #setting.presets
+        local width = (632 - (count - 1) * 8) / count
         for i, preset in ipairs(setting.presets) do
-            local is_active = (i == preset_idx)
-            local text = preset .. " min"
-
-            local pill_bg, pill_text_color
-            if is_active then
-                pill_bg = phase_color
-                pill_text_color = {18, 18, 24}
-            else
-                pill_bg = theme.bg_lighter
-                pill_text_color = theme.text_dim
-            end
-
-            local pw = screen.draw_pill(text, pill_x, pill_y,
-                pill_bg[1] or pill_bg.r, pill_bg[2] or pill_bg.g, pill_bg[3] or pill_bg.b,
-                {text_color=pill_text_color, size=13})
-            pill_x = pill_x + pw + 8
+            local x = 44 + (i - 1) * (width + 8)
+            local active = i == state.settings_indices[row]
+            U.rect(x, y + 48, width, 32, active and color or C.panel2)
+            U.text(preset .. " min", x + 12, y + 55, 14, active and C.black or C.paper, width - 24, true)
         end
-
-        -- Left/right arrows for selected row
-        if selected then
-            screen.draw_text("<", 650, y + 20, {color=theme.accent, size=20, bold=true})
-            screen.draw_text(">", 678, y + 20, {color=theme.accent, size=20, bold=true})
-        end
-
-        y = y + 80
     end
-
-    -- Cycle preview
-    y = y + 20
-    screen.draw_text("Cycle preview:", 20, y, {color=theme.text_dim, size=13})
-    y = y + 22
-
-    local work_min = math.floor(state.durations[PHASE_WORK] / 60)
-    local short_min = math.floor(state.durations[PHASE_SHORT_BREAK] / 60)
-    local long_min = math.floor(state.durations[PHASE_LONG_BREAK] / 60)
-
-    local cycle = {
-        {"W " .. work_min .. "m", PHASE_COLORS[PHASE_WORK]},
-        {"S " .. short_min .. "m", PHASE_COLORS[PHASE_SHORT_BREAK]},
-        {"W " .. work_min .. "m", PHASE_COLORS[PHASE_WORK]},
-        {"S " .. short_min .. "m", PHASE_COLORS[PHASE_SHORT_BREAK]},
-        {"W " .. work_min .. "m", PHASE_COLORS[PHASE_WORK]},
-        {"S " .. short_min .. "m", PHASE_COLORS[PHASE_SHORT_BREAK]},
-        {"W " .. work_min .. "m", PHASE_COLORS[PHASE_WORK]},
-        {"L " .. long_min .. "m", PHASE_COLORS[PHASE_LONG_BREAK]},
-    }
-
-    local px = 20
-    for _, item in ipairs(cycle) do
-        local pw = screen.draw_pill(item[1], px, y,
-            item[2][1], item[2][2], item[2][3], {text_color={18, 18, 24}, size=12})
-        px = px + pw + 4
-        if px > 680 then break end
+    local work = math.floor(state.durations[PHASE_WORK] / 60)
+    local short = math.floor(state.durations[PHASE_SHORT_BREAK] / 60)
+    local long = math.floor(state.durations[PHASE_LONG_BREAK] / 60)
+    U.text("FULL ROUND / FOUR FOCUS PHASES", 24, 556, 14, C.muted, 444, true)
+    U.text((4 * work + 3 * short + long) .. " MIN TOTAL", 520, 556, 14, C.muted, 176)
+    for i = 1, 8 do
+        local phase = i % 2 == 1 and PHASE_WORK or (i == 8 and PHASE_LONG_BREAK or PHASE_SHORT_BREAK)
+        local x = 24 + (i - 1) * 85
+        local minutes = phase == PHASE_WORK and work or (phase == PHASE_LONG_BREAK and long or short)
+        U.panel(x, 582, 77, 68, C.panel)
+        U.text(phase == PHASE_WORK and "FOCUS" or (phase == PHASE_LONG_BREAK and "LONG" or "REST"), x + 8, 593, 14, C.paper, 61, true)
+        U.text(minutes .. "m", x + 8, 623, 14, C.muted, 61)
+        U.rect(x, 647, 77, 3, PHASE_COLORS[phase])
     end
-
-    draw_footer({
-        {"B", "Back", theme.btn_b},
-        {"A", "Select", theme.btn_a},
-    })
-    screen.draw_text("L1/R1 or LEFT/RIGHT: Change", 490, 694, {color=theme.text_dim, size=12})
+    U.footer({{"B", "Back"}, {"A", "Apply"}, {"D-PAD", "Adjust"}, {"L1/R1", "Preset"}})
 end
-
--- ── Lifecycle ────────────────────────────────────────────────────────────────
 
 function on_init()
-    -- Load saved stats
     local data = storage.load("stats")
-    if data then
-        local today = os.date("%Y-%m-%d")
-        if data.today == today then
-            state.total_completed = data.completed or 0
-            state.total_focus_seconds = data.total_focus_seconds or 0
-            state.sessions = data.sessions or {}
-            state.work_count = data.work_count or 0
-        end
+    if data and data.today == os.date("%Y-%m-%d") then
+        state.total_completed = data.completed or 0
+        state.total_focus_seconds = data.total_focus_seconds or 0
+        state.sessions = data.sessions or {}
+        state.work_count = data.work_count or 0
     end
 end
 
-function on_input(button, action)
+local function handle_input(button, action)
     if action ~= "press" then return end
-
-    local current = state.screen_stack[#state.screen_stack]
-
+    local current = current_screen()
     if current == "timer" then
-        if button == "a" then
-            timer_toggle()
-        elseif button == "x" then
-            timer_reset()
-        elseif button == "y" then
-            timer_skip()
-        elseif button == "r1" then
-            state.screen_stack[#state.screen_stack + 1] = "stats"
+        if button == "a" then timer_toggle()
+        elseif button == "x" then timer_reset()
+        elseif button == "y" then advance_phase(false)
+        elseif button == "r1" then state.screen_stack[#state.screen_stack + 1] = "stats"
         elseif button == "l1" then
             state.screen_stack[#state.screen_stack + 1] = "settings"
             sync_settings_from_engine()
         end
-
     elseif current == "stats" then
-        if button == "b" then
-            state.screen_stack[#state.screen_stack] = nil
+        if button == "b" then state.screen_stack[#state.screen_stack] = nil
         elseif button == "y" then
-            -- Reset stats
-            state.total_completed = 0
-            state.total_focus_seconds = 0
-            state.sessions = {}
-            state.work_count = 0
-            state.stats_scroll = 0
+            state.total_completed, state.total_focus_seconds, state.work_count = 0, 0, 0
+            state.sessions, state.stats_scroll = {}, 0
             save_stats()
-        elseif button == "dpad_down" then
-            state.stats_scroll = math.min(state.stats_scroll + 40, state.stats_max_scroll)
-        elseif button == "dpad_up" then
-            state.stats_scroll = math.max(state.stats_scroll - 40, 0)
-        end
-
+        elseif button == "dpad_down" then state.stats_scroll = math.min(state.stats_scroll + 1, math.max(0, #state.sessions - VISIBLE_SESSIONS))
+        elseif button == "dpad_up" then state.stats_scroll = math.max(state.stats_scroll - 1, 0) end
     elseif current == "settings" then
-        if button == "b" then
-            state.screen_stack[#state.screen_stack] = nil
-        elseif button == "dpad_down" then
-            state.settings_row = math.min(state.settings_row + 1, #SETTINGS)
-        elseif button == "dpad_up" then
-            state.settings_row = math.max(state.settings_row - 1, 1)
-        elseif button == "dpad_right" or button == "r1" then
+        if button == "b" then state.screen_stack[#state.screen_stack] = nil
+        elseif button == "dpad_down" then state.settings_row = math.min(state.settings_row + 1, #SETTINGS)
+        elseif button == "dpad_up" then state.settings_row = math.max(state.settings_row - 1, 1)
+        elseif button == "dpad_right" or button == "r1" or button == "dpad_left" or button == "l1" then
             local setting = SETTINGS[state.settings_row]
-            local idx = state.settings_indices[state.settings_row]
-            idx = idx % #setting.presets + 1
-            state.settings_indices[state.settings_row] = idx
-            set_duration(setting.phase, setting.presets[idx])
-        elseif button == "dpad_left" or button == "l1" then
-            local setting = SETTINGS[state.settings_row]
-            local idx = state.settings_indices[state.settings_row]
-            idx = (idx - 2) % #setting.presets + 1
-            state.settings_indices[state.settings_row] = idx
-            set_duration(setting.phase, setting.presets[idx])
+            local delta = (button == "dpad_right" or button == "r1") and 1 or -1
+            local index = (state.settings_indices[state.settings_row] - 1 + delta) % #setting.presets + 1
+            state.settings_indices[state.settings_row] = index
+            set_duration(setting.phase, setting.presets[index])
         elseif button == "a" then
             local setting = SETTINGS[state.settings_row]
-            local idx = state.settings_indices[state.settings_row]
-            set_duration(setting.phase, setting.presets[idx])
+            set_duration(setting.phase, setting.presets[state.settings_indices[state.settings_row]])
         end
     end
+end
+
+local function input_snapshot()
+    return table.concat({current_screen(), state.phase, tostring(state.running), state.remaining,
+        state.total_completed, state.total_focus_seconds, state.work_count, #state.sessions,
+        state.stats_scroll, state.settings_row, state.durations[PHASE_WORK],
+        state.durations[PHASE_SHORT_BREAK], state.durations[PHASE_LONG_BREAK]}, "\0")
+end
+
+function on_input(button, action)
+    local before = input_snapshot()
+    handle_input(button, action)
+    if before ~= input_snapshot() then app.request_redraw() end
 end
 
 function on_update(dt)
-    -- Timer ticks every frame
-    if state.running then
-        state.remaining = state.remaining - dt
-        if state.phase == PHASE_WORK then
-            state.session_elapsed = state.session_elapsed + dt
-        end
-        if state.remaining <= 0 then
-            state.remaining = 0
-            advance_phase()
-        end
+    if not state.running then return false end
+    local before = math.ceil(state.remaining)
+    local elapsed = math.min(state.remaining, math.max(0, dt))
+    state.remaining = math.max(0, state.remaining - elapsed)
+    if state.phase == PHASE_WORK then state.session_elapsed = state.session_elapsed + elapsed end
+    if state.remaining <= 0 then
+        -- Accumulating fractional deltas can finish a few floating-point bits
+        -- below the full duration. Completed work always accounts for the phase.
+        if state.phase == PHASE_WORK then state.session_elapsed = state.phase_duration end
+        advance_phase(true)
+        return true
     end
-
-    -- Pulse animation
-    state.pulse_t = state.pulse_t + dt
+    -- Static statistics/settings do not redraw for hidden timer ticks.
+    return current_screen() == "timer" and math.ceil(state.remaining) ~= before
 end
 
 function on_render()
-    screen.clear(theme.bg.r, theme.bg.g, theme.bg.b)
-
-    local current = state.screen_stack[#state.screen_stack]
-    if current == "timer" then
-        draw_timer_screen()
-    elseif current == "stats" then
-        draw_stats_screen()
-    elseif current == "settings" then
-        draw_settings_screen()
-    end
+    local current = current_screen()
+    if current == "timer" then draw_timer_screen()
+    elseif current == "stats" then draw_stats_screen()
+    elseif current == "settings" then draw_settings_screen() end
 end

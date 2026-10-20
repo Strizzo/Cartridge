@@ -1,52 +1,23 @@
--- Hacker News Client for Cartridge OS (Lua)
--- Browse top stories, new stories, best stories, and comments
-
+-- Hacker News / public reading desk. Network requests remain asynchronous.
+local U = ui.public
+local C = U.C
 local BASE_URL = "https://hacker-news.firebaseio.com/v0"
-
--- ── State ────────────────────────────────────────────────────────────────────
+local MAX_COMMENTS, MAX_STORIES = 20, 30
+local ROW_HEIGHT, LIST_VISIBLE = 92, 5
+local DOC_Y, DOC_BOTTOM = 164, 630
 
 local state = {
-    screen_stack = {"list"},  -- "list", "detail", "reader"
-    -- Story list state
-    tabs = {"Top", "New", "Best"},
-    tab_ids = {"top", "new", "best"},
-    active_tab = 1,
-    stories = {},       -- tab_id -> list of stories
-    cursor = 1,
-    loading = false,
-    error_msg = "",
-    -- Story detail state
-    detail_story = nil,
-    detail_comments = {},
-    detail_lines = {},  -- pre-laid-out lines for scrolling
-    detail_scroll = 0,
-    detail_loading = false,
-    detail_needs_layout = false,
-    -- Reader state
-    reader_lines = {},
-    reader_scroll = 0,
-    reader_loading = false,
-    reader_domain = "",
-    reader_raw_body = nil,
+    screen_stack = {"list"},
+    tabs = {"Top", "New", "Best"}, tab_ids = {"top", "new", "best"}, active_tab = 1,
+    stories = {}, cursor = 1, loading = false, loading_tab = nil, error_msg = "",
+    list_errors = {},
+    detail_story = nil, detail_comments = {}, detail_lines = {}, detail_scroll = 0,
+    detail_max_scroll = 0, detail_loading = false, detail_needs_layout = false, detail_error = "",
+    reader_lines = {}, reader_scroll = 0, reader_max_scroll = 0, reader_loading = false,
+    reader_domain = "", reader_url = "", reader_error = "", reader_raw_body = nil,
     reader_needs_layout = false,
-    reader_url_to_load = nil,  -- deferred article loading
-    -- Deferred initial load (render sets ready_to_load after first frame)
-    needs_initial_load = true,
-    ready_to_load = false,
+    pending = {}, list_gen = 0, detail_gen = 0, reader_gen = 0,
 }
-
-local ROW_HEIGHT = 64
-local CARD_RADIUS = 6
-local DEPTH_COLORS = {
-    {100, 180, 255},
-    {180, 100, 255},
-    {100, 220, 140},
-    {255, 180, 60},
-    {255, 100, 140},
-    {100, 220, 220},
-}
-
--- ── Utility Functions ────────────────────────────────────────────────────────
 
 local function time_ago(timestamp)
     local now = os.time()
@@ -77,509 +48,270 @@ local function strip_html(text)
     return text:match("^%s*(.-)%s*$") or ""
 end
 
-local function word_wrap(text, max_width, font_size, bold)
-    if not text or text == "" then return {""} end
-    local words = {}
-    for w in text:gmatch("%S+") do
-        words[#words + 1] = w
+-- All font measurement and prepared layouts run only from on_render.
+local function add_text(lines, value, size, color, bold, indent)
+    indent = indent or 0
+    for _, text in ipairs(U.wrap(value, 620 - indent, size, 1024, bold)) do
+        lines[#lines + 1] = {text=text, size=size, color=color, bold=bold,
+            indent=indent, height=size >= 20 and 31 or (size >= 18 and 27 or 23)}
     end
-    if #words == 0 then return {""} end
+end
 
-    local lines = {}
-    local current = ""
-    for _, word in ipairs(words) do
-        local test = current == "" and word or (current .. " " .. word)
-        local tw = screen.get_text_width(test, font_size, bold or false)
-        if tw <= max_width then
-            current = test
-        else
-            if current ~= "" then
-                lines[#lines + 1] = current
-            end
-            -- Check if single word is too wide
-            if screen.get_text_width(word, font_size, bold or false) > max_width then
-                local chunk = ""
-                for i = 1, #word do
-                    local c = word:sub(i, i)
-                    if screen.get_text_width(chunk .. c, font_size, bold or false) > max_width then
-                        lines[#lines + 1] = chunk
-                        chunk = c
-                    else
-                        chunk = chunk .. c
-                    end
-                end
-                current = chunk
-            else
-                current = word
-            end
+local function gap(lines, height)
+    lines[#lines + 1] = {text="", height=height or 14}
+end
+
+local function section(lines, label)
+    gap(lines, 12)
+    lines[#lines + 1] = {text=label, size=14, color=C.red, bold=true, height=34, rule=true}
+end
+
+local function draw_document(lines, scroll, label)
+    U.panel(U.X, U.TOP, U.W, U.BOTTOM - U.TOP, C.panel)
+    U.text(label, 44, 124, 14, C.muted, 456, true)
+    U.rule(44, 152, 628, C.line)
+    local used, first = 0, #lines + 1
+    for i = #lines, 1, -1 do
+        if used + lines[i].height > DOC_BOTTOM - DOC_Y then break end
+        used, first = used + lines[i].height, i
+    end
+    local max_scroll = math.max(0, first - 1)
+    scroll = math.max(0, math.min(scroll, max_scroll))
+    local y = DOC_Y
+    for i = scroll + 1, #lines do
+        local line = lines[i]
+        if y + line.height > DOC_BOTTOM then break end
+        if line.rule then U.rule(44, y + 27, 620, C.line) end
+        if line.text ~= "" then
+            local indent = line.indent or 0
+            if indent > 0 then U.rect(44 + indent - 10, y, 2, line.height, C.line) end
+            U.text(line.text, 44 + indent, y, line.size or 18, line.color or C.paper, 620 - indent, line.bold)
         end
+        y = y + line.height
     end
-    if current ~= "" then
-        lines[#lines + 1] = current
+    if max_scroll > 0 then
+        U.text(string.format("%d%%", math.floor(scroll / max_scroll * 100)), 610, 124, 14, C.muted, 60)
+        U.rect(684, DOC_Y, 3, DOC_BOTTOM - DOC_Y, C.line)
+        local thumb = math.max(24, (DOC_BOTTOM - DOC_Y) / math.max(1, #lines) * (first > 1 and (#lines - first + 1) or #lines))
+        U.rect(684, DOC_Y + (DOC_BOTTOM - DOC_Y - thumb) * scroll / max_scroll, 3, thumb, C.red)
     end
-    if #lines == 0 then return {""} end
-    return lines
+    return scroll, max_scroll
 end
 
--- ── Drawing Helpers ──────────────────────────────────────────────────────────
-
-local function draw_header(title, right_text, right_color)
-    screen.draw_gradient_rect(0, 0, 720, 40,
-        theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
-        theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
-    screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
-    if right_text then
-        local rc = right_color or theme.text_dim
-        local rw = screen.get_text_width(right_text, 12, false)
-        screen.draw_text(right_text, 704 - rw, 14, {color=rc, size=12})
+local function request(url, handler)
+    local ok, id = pcall(http.get_async, url)
+    if ok and id then
+        state.pending[id] = handler
+        return id
     end
-end
-
-local function draw_footer(hints)
-    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 684, 720, 684, {color=theme.border})
-    local x = 10
-    for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
-        x = x + w + 14
-    end
-end
-
-local function draw_tab_bar(tabs, active_idx, y)
-    screen.draw_rect(0, y, 720, 30, {color=theme.bg_header, filled=true})
-    local tx = 10
-    for i, label in ipairs(tabs) do
-        local is_active = (i == active_idx)
-        local tw = screen.get_text_width(label, 12, is_active)
-        local tab_w = tw + 16
-        if is_active then
-            screen.draw_rect(tx, y + 4, tab_w, 22, {color=theme.accent, filled=true, radius=4})
-            screen.draw_text(label, tx + 8, y + 7, {color={20, 20, 30}, size=12, bold=true})
-        else
-            screen.draw_rect(tx, y + 4, tab_w, 22, {color=theme.card_bg, filled=true, radius=4})
-            screen.draw_text(label, tx + 8, y + 7, {color=theme.text_dim, size=12})
-        end
-        tx = tx + tab_w + 6
-    end
-    screen.draw_line(0, y + 30, 720, y + 30, {color=theme.border})
-end
-
-local function draw_loading(msg, y, h)
-    local text = msg or "Loading..."
-    local tw = screen.get_text_width(text, 16, false)
-    screen.draw_text(text, (720 - tw) / 2, y + h / 2 - 8, {color=theme.text_dim, size=16})
-end
-
-local function draw_scroll_indicator(y_start, height, cursor, total, visible)
-    if total <= visible then return end
-    local ind_x = 715
-    local bar_top = y_start + 4
-    local bar_h = height - 8
-    screen.draw_line(ind_x, bar_top, ind_x, bar_top + bar_h, {color=theme.border})
-    local thumb_h = math.max(8, math.floor(bar_h * visible / total))
-    local progress = (cursor - 1) / math.max(1, total - 1)
-    local thumb_y = bar_top + math.floor((bar_h - thumb_h) * progress)
-    screen.draw_rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
-end
-
--- ── API Functions ────────────────────────────────────────────────────────────
-
-local function fetch_story_ids(tab_id, callback)
-    local url_map = {
-        top = BASE_URL .. "/topstories.json",
-        new = BASE_URL .. "/newstories.json",
-        best = BASE_URL .. "/beststories.json",
-    }
-    local ok, resp = pcall(http.get_cached, url_map[tab_id], 120)
-    if ok and resp.ok then
-        local dok, ids = pcall(json.decode, resp.body)
-        if dok and ids then
-            local result = {}
-            for i = 1, math.min(30, #ids) do
-                result[#result + 1] = ids[i]
-            end
-            return result
-        end
-    end
-    return {}
-end
-
-local function fetch_item(item_id)
-    local ok, resp = pcall(http.get_cached, BASE_URL .. "/item/" .. item_id .. ".json", 300)
-    if ok and resp.ok then
-        local dok, item = pcall(json.decode, resp.body)
-        if dok then return item end
-    end
+    handler(nil)
     return nil
 end
 
-local function fetch_stories(ids)
-    local stories = {}
-    for _, id in ipairs(ids) do
-        local item = fetch_item(id)
-        if item then
-            stories[#stories + 1] = {
-                id = item.id or 0,
-                title = item.title or "",
-                url = item.url or "",
-                score = item.score or 0,
-                by = item.by or "",
-                time = item.time or 0,
-                descendants = item.descendants or 0,
-                kids = item.kids or {},
-                text = item.text or "",
-            }
-        end
-    end
-    return stories
+local function decode(resp)
+    if not resp or not resp.ok then return nil end
+    local ok, data = pcall(json.decode, resp.body)
+    if ok then return data end
+    return nil
 end
 
-local function fetch_comments(comment_ids, depth, max_depth)
-    depth = depth or 0
-    max_depth = max_depth or 2
-    if depth > max_depth or not comment_ids or #comment_ids == 0 then
-        return {}
-    end
-
-    local comments = {}
-    local batch_size = math.min(20, #comment_ids)
-    for i = 1, batch_size do
-        local item = fetch_item(comment_ids[i])
-        if item and not item.deleted and not item.dead then
-            local comment = {
-                id = item.id or 0,
-                by = item.by or "[deleted]",
-                text = strip_html(item.text or ""),
-                time = item.time or 0,
-                kids = item.kids or {},
-                parent = item.parent or 0,
-                depth = depth,
-            }
-            comments[#comments + 1] = comment
-
-            if #comment.kids > 0 and depth < max_depth then
-                local children = fetch_comments(comment.kids, depth + 1, max_depth)
-                for _, child in ipairs(children) do
-                    comments[#comments + 1] = child
-                end
-            end
-        end
-    end
-    return comments
+local function item_url(item_id)
+    return BASE_URL .. "/item/" .. item_id .. ".json"
 end
 
--- ── Story List Screen ────────────────────────────────────────────────────────
+local function story_from_item(item)
+    return {
+        id = item.id or 0,
+        title = item.title or "",
+        url = item.url or "",
+        score = item.score or 0,
+        by = item.by or "",
+        time = item.time or 0,
+        descendants = item.descendants or 0,
+        kids = item.kids or {},
+        text = item.text or "",
+    }
+end
+
+-- Fetch a list of item ids in one batch; calls done(items) with a table
+-- indexed like `ids` (missing/failed entries are nil) once all responded.
+-- `is_live()` lets a superseded load drop its late responses.
+local function fetch_items(ids, is_live, done)
+    local n = #ids
+    if n == 0 then done({}) return end
+    local items, completed = {}, 0
+    for i = 1, n do
+        request(item_url(ids[i]), function(resp)
+            if not is_live() then return end
+            items[i] = decode(resp)
+            completed = completed + 1
+            if completed >= n then done(items) end
+        end)
+    end
+end
 
 local function load_stories()
+    local tab_id = state.tab_ids[state.active_tab]
+    if state.loading and state.loading_tab == tab_id then return end
     state.loading = true
     state.error_msg = ""
-    local tab_id = state.tab_ids[state.active_tab]
-
-    local ids = fetch_story_ids(tab_id)
-    if #ids > 0 then
-        local stories = fetch_stories(ids)
-        state.stories[tab_id] = stories
-    else
-        state.error_msg = "Failed to load stories"
-    end
-    state.loading = false
+    state.loading_tab = tab_id
+    state.list_errors[tab_id] = ""
+    state.list_gen = state.list_gen + 1
+    local gen = state.list_gen
+    local function live() return gen == state.list_gen end
+    request(BASE_URL .. "/" .. tab_id .. "stories.json", function(resp)
+        if not live() then return end
+        local all_ids = decode(resp)
+        if type(all_ids) ~= "table" or #all_ids == 0 then
+            state.error_msg = "Hacker News did not return a story list."
+            state.list_errors[tab_id] = state.error_msg
+            state.loading = false
+            return
+        end
+        local ids = {}
+        for i = 1, math.min(MAX_STORIES, #all_ids) do ids[i] = all_ids[i] end
+        fetch_items(ids, live, function(items)
+            local stories = {}
+            for i = 1, #ids do
+                if type(items[i]) == "table" and not items[i].deleted and not items[i].dead then
+                    local story = story_from_item(items[i])
+                    story.rank = i
+                    stories[#stories + 1] = story
+                end
+            end
+            if #stories > 0 then
+                state.stories[tab_id] = stories
+                if #stories < #ids then state.list_errors[tab_id] = "Some stories could not be loaded." end
+            else
+                state.list_errors[tab_id] = "Story requests failed. Press X to retry."
+            end
+            state.loading = false
+        end)
+    end)
 end
 
-local function draw_story_card(story, y, is_selected)
-    local card_x = 6
-    local card_w = 708
-    local card_h = ROW_HEIGHT - 4
-
-    -- Card background
-    if is_selected then
-        screen.draw_card(card_x, y, card_w, card_h, {bg=theme.card_highlight, border=theme.accent, radius=CARD_RADIUS})
-    else
-        screen.draw_card(card_x, y, card_w, card_h, {bg=theme.card_bg, radius=CARD_RADIUS})
+local function draw_story_card(story, y, selected, index)
+    local fg, secondary = U.row(U.X, y, U.W, ROW_HEIGHT - 6, selected)
+    U.display(string.format("%02d", story.rank or index), 40, y + 8, 30, fg, 54)
+    U.text(tostring(story.score) .. " pts", 40, y + 53, 14, selected and fg or C.muted, 66, true)
+    U.rect(104, y + 12, 1, 62, selected and C.quiet or C.line)
+    if not story.title_layout then story.title_layout = U.wrap(story.title, 558, 18, 2, true) end
+    for i, line in ipairs(story.title_layout) do
+        U.text(line, 120, y + 9 + (i - 1) * 24, 18, fg, 558, true)
     end
-
-    -- Score area
-    local score_x = card_x + 8
-    local score_w = 46
-    local score_intensity = math.min(1.0, story.score / 500)
-    local score_color = {
-        math.floor(140 + 115 * score_intensity),
-        math.floor(140 - 60 * score_intensity),
-        math.floor(140 - 100 * score_intensity),
-    }
-
-    local score_str = story.score < 10000 and tostring(story.score) or (math.floor(story.score / 1000) .. "k")
-    local sw = screen.get_text_width(score_str, 16, true)
-    screen.draw_text(score_str, score_x + (score_w - sw) / 2, y + 4, {color=score_color, size=16, bold=true})
-
-    -- Arrow
-    local aw = screen.get_text_width("\226\150\178", 10, false)
-    screen.draw_text("\226\150\178", score_x + (score_w - aw) / 2, y + 22, {color=score_color, size=10})
-
-    -- Title
-    local title_x = card_x + score_w + 14
-    local title_max_w = card_w - score_w - 80
-
-    local title = story.title
-    local tw = screen.get_text_width(title, 14, is_selected)
-    if tw > title_max_w then
-        while #title > 1 and screen.get_text_width(title .. "..", 14, is_selected) > title_max_w do
-            title = title:sub(1, -2)
-        end
-        title = title .. ".."
-    end
-    screen.draw_text(title, title_x, y + 4, {color=theme.text, size=14, bold=is_selected})
-
-    -- Story type badges
-    local badge_x = title_x
-    local badge_y = y + 22
-    if story.title:sub(1, 7) == "Ask HN:" then
-        local pw = screen.draw_pill("Ask", badge_x, badge_y, 180, 100, 255, {text_color={255,255,255}, size=9})
-        badge_x = badge_x + pw + 4
-    elseif story.title:sub(1, 8) == "Show HN:" then
-        local pw = screen.draw_pill("Show", badge_x, badge_y, 80, 200, 120, {text_color={255,255,255}, size=9})
-        badge_x = badge_x + pw + 4
-    elseif story.url == "" then
-        local pw = screen.draw_pill("Jobs", badge_x, badge_y, 255, 180, 60, {text_color={30,30,30}, size=9})
-        badge_x = badge_x + pw + 4
-    end
-
-    -- Meta line
     local domain = get_domain(story.url)
-    local meta = story.by .. " \194\183 " .. time_ago(story.time)
-    if domain ~= "" then
-        meta = meta .. " \194\183 " .. domain
-    end
-    screen.draw_text(meta, badge_x, badge_y, {color=theme.text_dim, size=11})
-
-    -- Comment count badge
-    if story.descendants > 0 then
-        local comment_str = story.descendants < 1000 and tostring(story.descendants) or (math.floor(story.descendants / 1000) .. "k")
-        local badge_bg = is_selected and {70, 70, 100} or {60, 60, 80}
-        screen.draw_pill(comment_str, card_x + card_w - 55, y + (card_h - 18) / 2,
-            badge_bg[1], badge_bg[2], badge_bg[3], {text_color=theme.text_dim, size=11})
-    end
+    local meta = story.by .. " / " .. time_ago(story.time) .. " / " .. story.descendants .. " comments"
+    if domain ~= "" then meta = meta .. " / " .. domain end
+    U.text(meta, 120, y + 62, 14, secondary, 558)
 end
 
 local function draw_story_list()
     local tab_id = state.tab_ids[state.active_tab]
     local stories = state.stories[tab_id] or {}
     local n = #stories
-
-    draw_header("Hacker News",
-        n > 0 and (n .. " stories") or nil,
-        n > 0 and {100, 220, 100} or nil)
-
-    draw_tab_bar(state.tabs, state.active_tab, 40)
-
-    local content_y = 72
-    local footer_y = 684
-    local content_h = footer_y - content_y
-
-    if state.loading then
-        draw_loading("Loading stories...", content_y, content_h)
-    elseif n > 0 then
-        local visible = math.max(1, math.floor(content_h / ROW_HEIGHT))
+    local loading = state.loading and state.loading_tab == tab_id
+    local error_msg = state.list_errors[tab_id] or ""
+    local status = loading and "Refreshing" or (error_msg ~= "" and "Load issue" or (n > 0 and (n .. " stories") or "No stories"))
+    U.header("Hacker News", "NEWS / TECHNOLOGY / DISCUSSION", status, error_msg ~= "" and C.gold or C.muted)
+    U.tabs(state.tabs, state.active_tab)
+    U.text(error_msg ~= "" and (n > 0 and "INCOMPLETE OR CACHED / X TO RETRY" or "STORY FEED") or "RANK / SCORE     /     FRONT PAGE", 24, 156, 14, C.muted, 550, true)
+    if n > 0 then
         state.cursor = math.max(1, math.min(state.cursor, n))
-
-        local start_idx
-        if n <= visible then
-            start_idx = 1
-        else
-            start_idx = math.max(1, math.min(state.cursor - 1, n - visible + 1))
+        U.text(state.cursor .. " / " .. n, 612, 156, 14, C.muted, 84)
+        local start = math.max(1, math.min(state.cursor - 1, math.max(1, n - LIST_VISIBLE + 1)))
+        for idx = start, math.min(n, start + LIST_VISIBLE - 1) do
+            draw_story_card(stories[idx], 176 + (idx - start) * ROW_HEIGHT, idx == state.cursor, idx)
         end
-        local end_idx = math.min(start_idx + visible - 1, n)
-
-        local y = content_y + 2
-        for idx = start_idx, end_idx do
-            draw_story_card(stories[idx], y, idx == state.cursor)
-            y = y + ROW_HEIGHT
-        end
-
-        draw_scroll_indicator(content_y, content_h, state.cursor, n, visible)
-    elseif state.error_msg ~= "" then
-        local ew = screen.get_text_width(state.error_msg, 14, false)
-        screen.draw_text(state.error_msg, (720 - ew) / 2, content_y + content_h / 2 - 8, {color=theme.negative, size=14})
+    elseif loading then
+        U.empty("Fetching stories", "Loading stories from Hacker News. Press L1 / R1 to choose another feed.")
+    elseif error_msg ~= "" then
+        U.empty("Stories unavailable", error_msg .. " Press X to retry the feed.")
+    else
+        U.empty("No stories returned", "Press X to refresh this feed, or L1 / R1 to try another feed.")
     end
-
-    draw_footer({
-        {"L1/R1", "Tab", theme.btn_l},
-        {"A", "Open", theme.btn_a},
-        {"X", "Refresh", theme.btn_x},
-    })
+    U.footer({{"L1/R1", "Feed"}, {"A", "Open"}, {"X", error_msg ~= "" and "Retry" or "Refresh"}, {"D-pad", "Move"}, {"L2/R2", "Page"}})
 end
 
--- ── Story Detail Screen ──────────────────────────────────────────────────────
-
 local function layout_detail()
-    state.detail_lines = {}
-    local lines = state.detail_lines
-    local story = state.detail_story
+    local lines, story = {}, state.detail_story
+    state.detail_lines = lines
     if not story then return end
-
-    local max_w = 680
-
-    -- Story title
-    local title_lines = word_wrap(story.title, max_w, 15, true)
-    for _, line in ipairs(title_lines) do
-        lines[#lines + 1] = {text=line, color=theme.text, indent=0, is_header=false, depth=0}
-    end
-
-    -- Meta info
-    local meta = story.score .. " pts \194\183 " .. story.by .. " \194\183 " .. time_ago(story.time) .. " \194\183 " .. story.descendants .. " comments"
-    lines[#lines + 1] = {text=meta, color=theme.text_dim, indent=0, is_header=false, depth=0}
-
-    -- URL domain
+    add_text(lines, story.title, 22, C.paper, true)
+    gap(lines)
+    add_text(lines, story.score .. " points / " .. story.by .. " / " .. time_ago(story.time), 14, C.muted)
     local domain = get_domain(story.url)
-    if domain ~= "" then
-        lines[#lines + 1] = {text=domain, color=theme.text_accent, indent=0, is_header=false, depth=0}
-    end
-
-    -- Story text
+    if domain ~= "" then add_text(lines, domain, 14, C.teal) end
     if story.text and story.text ~= "" then
-        lines[#lines + 1] = {text="", color=theme.text, indent=0, is_header=false, depth=0}
-        local clean_text = strip_html(story.text)
-        for paragraph in clean_text:gmatch("[^\n]+") do
-            local wrapped = word_wrap(paragraph, max_w, 14, false)
-            for _, wl in ipairs(wrapped) do
-                lines[#lines + 1] = {text=wl, color=theme.text, indent=0, is_header=false, depth=0}
-            end
-            lines[#lines + 1] = {text="", color=theme.text, indent=0, is_header=false, depth=0}
+        section(lines, "STORY")
+        for paragraph in strip_html(story.text):gmatch("[^\n]+") do
+            add_text(lines, paragraph, 18, C.paper)
+            gap(lines)
         end
     end
-
-    -- Separator
-    lines[#lines + 1] = {text="", color=theme.text, indent=0, is_header=false, depth=0}
-    local sep = string.rep("\226\148\128", 40) .. " Comments " .. string.rep("\226\148\128", 10)
-    lines[#lines + 1] = {text=sep, color=theme.text_dim, indent=0, is_header=false, depth=0}
-    lines[#lines + 1] = {text="", color=theme.text, indent=0, is_header=false, depth=0}
-
-    -- Comments
-    if #state.detail_comments == 0 then
-        lines[#lines + 1] = {text="No comments loaded", color=theme.text_dim, indent=0, is_header=false, depth=0}
-        return
+    section(lines, "COMMENTS / " .. story.descendants .. " TOTAL / FIRST " .. MAX_COMMENTS .. " TOP-LEVEL ONLY")
+    if state.detail_loading then
+        add_text(lines, "Fetching comments. The story is ready to read.", 16, C.muted)
+    elseif state.detail_error ~= "" then
+        add_text(lines, state.detail_error .. " Press A to retry comments.", 16, C.gold)
+        gap(lines)
+    elseif #state.detail_comments == 0 then
+        add_text(lines, story.descendants > 0 and "No readable comments in this sample." or "No comments yet.", 16, C.muted)
     end
-
-    for _, c in ipairs(state.detail_comments) do
-        local indent = c.depth * 16
-
-        -- Author header
-        local header = c.by .. " \194\183 " .. time_ago(c.time)
-        local depth_color = DEPTH_COLORS[(c.depth % #DEPTH_COLORS) + 1]
-        lines[#lines + 1] = {text=header, color=depth_color, indent=indent, is_header=true, depth=c.depth}
-
-        -- Comment body
-        local comment_w = math.max(100, max_w - indent)
-        for paragraph in c.text:gmatch("[^\n]+") do
-            local wrapped = word_wrap(paragraph, comment_w, 14, false)
-            for _, wl in ipairs(wrapped) do
-                lines[#lines + 1] = {text=wl, color=theme.text, indent=indent, is_header=false, depth=c.depth}
-            end
+    for _, comment in ipairs(state.detail_comments) do
+        gap(lines, 8)
+        add_text(lines, comment.by .. " / " .. time_ago(comment.time), 14, C.red, true, 12)
+        for paragraph in comment.text:gmatch("[^\n]+") do
+            add_text(lines, paragraph, 18, C.paper, false, 12)
+            gap(lines, 10)
         end
-        if c.text == "" then
-            lines[#lines + 1] = {text="", color=theme.text, indent=indent, is_header=false, depth=c.depth}
-        end
-        lines[#lines + 1] = {text="", color=theme.text, indent=indent, is_header=false, depth=c.depth}
+        if comment.text == "" then add_text(lines, "No comment text.", 16, C.muted, false, 12) end
+        gap(lines, 14)
     end
 end
 
 local function load_story_detail(story)
     state.detail_story = story
     state.detail_comments = {}
-    state.detail_scroll = 0
-    state.detail_loading = true
+    state.detail_scroll, state.detail_max_scroll = 0, 0
     state.detail_lines = {}
+    state.detail_error = ""
     state.detail_needs_layout = true
-
-    if story.kids and #story.kids > 0 then
-        state.detail_comments = fetch_comments(story.kids, 0, 2)
-    end
-
-    state.detail_loading = false
+    state.detail_gen = state.detail_gen + 1
+    local gen = state.detail_gen
+    local function live() return gen == state.detail_gen end
+    local ids = {}
+    for i = 1, math.min(MAX_COMMENTS, #(story.kids or {})) do ids[i] = story.kids[i] end
+    state.detail_loading = #ids > 0
+    if #ids == 0 then return end
+    fetch_items(ids, live, function(items)
+        local comments, failed = {}, 0
+        for i = 1, #ids do
+            local item = items[i]
+            if type(item) ~= "table" then failed = failed + 1 end
+            if type(item) == "table" and not item.deleted and not item.dead then
+                comments[#comments + 1] = {
+                    id=item.id or 0, by=item.by or "[deleted]", text=strip_html(item.text or ""),
+                    time=item.time or 0, kids=item.kids or {}, parent=item.parent or 0, depth=0,
+                }
+            end
+        end
+        state.detail_comments = comments
+        state.detail_error = failed > 0 and (failed .. " comment requests failed; this sample is incomplete.") or ""
+        state.detail_loading = false
+        state.detail_needs_layout = true
+    end)
 end
 
 local function draw_story_detail()
-    -- Layout must happen during render (screen.get_text_width needs active screen)
-    if state.detail_needs_layout then
-        layout_detail()
-        state.detail_needs_layout = false
-    end
-    draw_header("Story", #state.detail_comments .. " comments", {100, 220, 100})
-
-    local content_y = 42
-    local content_h = 642
-    local lh = screen.get_line_height(14, false)
-
-    if state.detail_loading then
-        draw_loading("Loading comments...", content_y, content_h)
-        draw_footer({
-            {"B", "Back", theme.btn_b},
-        })
-        return
-    end
-
-    local lines = state.detail_lines
-    local total = #lines
-    local visible_lines = math.max(1, math.floor(content_h / lh))
-    local max_scroll = math.max(0, total - visible_lines)
-    state.detail_scroll = math.min(state.detail_scroll, max_scroll)
-
-    local y = content_y + 6
-    for i = state.detail_scroll + 1, math.min(state.detail_scroll + visible_lines, total) do
-        local line = lines[i]
-        local x = 10 + line.indent
-
-        -- Draw depth indicator lines
-        if line.depth > 0 then
-            for d = 0, line.depth - 1 do
-                local line_x = 10 + d * 16 + 4
-                local dc = DEPTH_COLORS[(d % #DEPTH_COLORS) + 1]
-                screen.draw_line(line_x, y, line_x, y + lh, {color=dc})
-            end
-        end
-
-        -- Text
-        local max_w = 700 - line.indent
-        local display = line.text
-        if display ~= "" and screen.get_text_width(display, 14, line.is_header) > max_w then
-            while #display > 1 and screen.get_text_width(display .. "..", 14, line.is_header) > max_w do
-                display = display:sub(1, -2)
-            end
-            display = display .. ".."
-        end
-
-        if line.is_header then
-            screen.draw_text(display, x, y, {color=line.color, size=13, bold=true})
-        else
-            screen.draw_text(display, x, y, {color=line.color, size=14})
-        end
-        y = y + lh
-    end
-
-    -- Scroll indicator
-    if total > visible_lines then
-        local ind_x = 715
-        local bar_top = content_y + 6
-        local bar_h = content_h - 12
-        screen.draw_line(ind_x, bar_top, ind_x, bar_top + bar_h, {color=theme.border})
-        local thumb_h = math.max(8, math.floor(bar_h * visible_lines / total))
-        local progress = max_scroll > 0 and (state.detail_scroll / max_scroll) or 0
-        local thumb_y = bar_top + math.floor((bar_h - thumb_h) * progress)
-        screen.draw_rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
-    end
-
-    local hints = {
-        {"B", "Back", theme.btn_b},
-    }
-    if state.detail_story and state.detail_story.url ~= "" then
-        hints[#hints + 1] = {"X", "Read Article", theme.btn_x}
-    end
-    hints[#hints + 1] = {"\226\134\145\226\134\147", "Scroll", theme.btn_l}
-    hints[#hints + 1] = {"L2/R2", "Page", theme.btn_l}
-    draw_footer(hints)
+    U.header("Discussion", "HACKER NEWS / STORY & COMMENTS", state.detail_loading and "Loading comments" or (#state.detail_comments .. " loaded"), state.detail_error ~= "" and C.gold or C.muted)
+    if state.detail_needs_layout then layout_detail(); state.detail_needs_layout = false end
+    state.detail_scroll, state.detail_max_scroll = draw_document(state.detail_lines, state.detail_scroll, "STORY / TOP-LEVEL DISCUSSION")
+    local hints = {{"B", "Back"}, {"D-pad", "Scroll"}, {"L2/R2", "Page"}}
+    if state.detail_story and state.detail_story.url ~= "" then hints[#hints + 1] = {"X", "Article"} end
+    if state.detail_error ~= "" and not state.detail_loading then hints[#hints + 1] = {"A", "Retry"} end
+    U.footer(hints)
 end
-
--- ── Reader Screen ────────────────────────────────────────────────────────────
 
 local function strip_html_body(body)
     -- Remove script and style blocks
@@ -609,107 +341,81 @@ local function layout_reader()
     state.reader_lines = {}
     local body = state.reader_raw_body or ""
     state.reader_raw_body = nil
-    local max_w = 680
     for paragraph in body:gmatch("[^\n]+") do
         local trimmed = paragraph:match("^%s*(.-)%s*$") or ""
         if trimmed ~= "" then
-            local wrapped = word_wrap(trimmed, max_w, 14, false)
-            for _, wl in ipairs(wrapped) do
-                state.reader_lines[#state.reader_lines + 1] = wl
-            end
+            add_text(state.reader_lines, trimmed, 18, C.paper)
+            gap(state.reader_lines)
         end
-        state.reader_lines[#state.reader_lines + 1] = ""
     end
 end
 
 local function load_reader(url)
     state.reader_lines = {}
-    state.reader_scroll = 0
+    state.reader_scroll, state.reader_max_scroll = 0, 0
     state.reader_loading = true
-    state.reader_domain = get_domain(url)
-
-    local ok, resp = pcall(http.get, url)
-    if ok and resp.ok then
-        state.reader_raw_body = strip_html_body(resp.body or "")
-        state.reader_needs_layout = true
-    else
-        state.reader_lines = {"Failed to load article."}
-    end
-    state.reader_loading = false
+    state.reader_url, state.reader_domain = url, get_domain(url)
+    state.reader_error = ""
+    state.reader_raw_body = nil
+    state.reader_needs_layout = false
+    state.reader_gen = state.reader_gen + 1
+    local gen = state.reader_gen
+    request(url, function(resp)
+        if gen ~= state.reader_gen then return end
+        if resp and resp.ok then
+            state.reader_raw_body = strip_html_body(resp.body or "")
+            state.reader_needs_layout = true
+        else
+            state.reader_error = "The article request failed. Press A to retry, or B for the discussion."
+        end
+        state.reader_loading = false
+    end)
 end
 
 local function draw_reader()
-    -- Layout must happen during render (word_wrap needs screen.get_text_width)
-    if state.reader_needs_layout then
-        layout_reader()
-        state.reader_needs_layout = false
-    end
-
-    draw_header(state.reader_domain ~= "" and state.reader_domain or "Article")
-
-    local content_y = 42
-    local content_h = 642
-    local lh = screen.get_line_height(14, false)
-
+    U.header("Article", "HACKER NEWS / " .. state.reader_domain, state.reader_loading and "Loading" or (state.reader_error ~= "" and "Unavailable" or "Text view"), state.reader_error ~= "" and C.gold or C.muted)
+    if state.reader_needs_layout then layout_reader(); state.reader_needs_layout = false end
     if state.reader_loading then
-        draw_loading("Loading article...", content_y, content_h)
-        draw_footer({{"B", "Back", theme.btn_b}})
-        return
+        U.empty("Fetching article", "Retrieving the linked page. Press B to return to the discussion.")
+    elseif state.reader_error ~= "" then
+        U.empty("Article unavailable", state.reader_error)
+    elseif #state.reader_lines == 0 then
+        U.empty("No readable text", "This page returned no plain text. Press A to retry, or B to return to the discussion.")
+    else
+        state.reader_scroll, state.reader_max_scroll = draw_document(state.reader_lines, state.reader_scroll, "PLAIN TEXT / " .. state.reader_domain)
     end
-
-    local lines = state.reader_lines
-    local total = #lines
-    local visible_lines = math.max(1, math.floor(content_h / lh))
-    local max_scroll = math.max(0, total - visible_lines)
-    state.reader_scroll = math.min(state.reader_scroll, max_scroll)
-
-    local y = content_y + 6
-    for i = state.reader_scroll + 1, math.min(state.reader_scroll + visible_lines, total) do
-        screen.draw_text(lines[i], 20, y, {color=theme.text, size=14})
-        y = y + lh
-    end
-
-    -- Scroll indicator
-    if total > visible_lines then
-        local ind_x = 715
-        local bar_top = content_y + 6
-        local bar_h = content_h - 12
-        screen.draw_line(ind_x, bar_top, ind_x, bar_top + bar_h, {color=theme.border})
-        local thumb_h = math.max(8, math.floor(bar_h * visible_lines / total))
-        local progress = max_scroll > 0 and (state.reader_scroll / max_scroll) or 0
-        local thumb_y = bar_top + math.floor((bar_h - thumb_h) * progress)
-        screen.draw_rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
-    end
-
-    draw_footer({
-        {"B", "Back", theme.btn_b},
-        {"\226\134\145\226\134\147", "Scroll", theme.btn_l},
-        {"L2/R2", "Page", theme.btn_l},
-    })
+    local hints = {{"B", "Back"}, {"D-pad", "Scroll"}, {"L2/R2", "Page"}}
+    if not state.reader_loading and (state.reader_error ~= "" or #state.reader_lines == 0) then hints[#hints + 1] = {"A", "Retry"} end
+    U.footer(hints)
 end
 
--- ── Lifecycle Callbacks ──────────────────────────────────────────────────────
+local function visual_key()
+    local tab = state.tab_ids[state.active_tab]
+    return table.concat({state.screen_stack[#state.screen_stack], state.active_tab, state.cursor,
+        tostring(state.stories[tab]), tostring(state.loading and state.loading_tab == tab), state.list_errors[tab] or "",
+        tostring(state.detail_story), tostring(state.detail_comments), state.detail_scroll,
+        tostring(state.detail_loading), state.detail_error, tostring(state.detail_needs_layout),
+        tostring(state.reader_lines), state.reader_scroll, tostring(state.reader_loading), state.reader_error,
+        tostring(state.reader_needs_layout)}, "\0")
+end
 
 function on_init()
-    state.loading = true
+    load_stories()
+    app.request_redraw()
 end
 
 function on_update(dt)
-    -- Wait until at least one frame has rendered before blocking on HTTP
-    if state.ready_to_load then
-        state.ready_to_load = false
-        load_stories()
+    local before = visual_key()
+    for _, resp in ipairs(http.poll()) do
+        local handler = state.pending[resp.id]
+        if handler then state.pending[resp.id] = nil; handler(resp) end
     end
-
-    -- Deferred article loading (triggered from on_input)
-    if state.reader_url_to_load then
-        local url = state.reader_url_to_load
-        state.reader_url_to_load = nil
-        load_reader(url)
-    end
+    local dirty = before ~= visual_key()
+    if dirty then app.request_redraw() end
+    return dirty
 end
 
-function on_input(button, action)
+local function handle_input(button, action)
     if action ~= "press" and action ~= "repeat" then return end
 
     local current = state.screen_stack[#state.screen_stack]
@@ -748,65 +454,63 @@ function on_input(button, action)
         elseif button == "x" then
             load_stories()
         elseif button == "l2" then
-            local visible = math.max(1, math.floor(610 / ROW_HEIGHT))
+            local visible = math.max(1, LIST_VISIBLE)
             state.cursor = math.max(1, state.cursor - visible)
         elseif button == "r2" then
-            local visible = math.max(1, math.floor(610 / ROW_HEIGHT))
+            local visible = math.max(1, LIST_VISIBLE)
             state.cursor = math.min(math.max(1, n), state.cursor + visible)
         end
 
     elseif current == "detail" then
         if button == "b" then
             state.screen_stack[#state.screen_stack] = nil
+            state.detail_gen = state.detail_gen + 1  -- drop in-flight comment fetches
+            state.detail_loading = false
+        elseif button == "a" and state.detail_error ~= "" and not state.detail_loading then
+            load_story_detail(state.detail_story)
         elseif button == "x" then
             if state.detail_story and state.detail_story.url ~= "" then
                 state.screen_stack[#state.screen_stack + 1] = "reader"
-                state.reader_lines = {}
-                state.reader_scroll = 0
-                state.reader_loading = true
-                state.reader_domain = get_domain(state.detail_story.url)
-                state.reader_url_to_load = state.detail_story.url
+                load_reader(state.detail_story.url)
             end
         elseif button == "dpad_up" then
             state.detail_scroll = math.max(0, state.detail_scroll - 1)
         elseif button == "dpad_down" then
-            state.detail_scroll = state.detail_scroll + 1
+            state.detail_scroll = math.min(state.detail_max_scroll, state.detail_scroll + 1)
         elseif button == "l2" then
             state.detail_scroll = math.max(0, state.detail_scroll - 10)
         elseif button == "r2" then
-            state.detail_scroll = state.detail_scroll + 10
+            state.detail_scroll = math.min(state.detail_max_scroll, state.detail_scroll + 10)
         end
 
     elseif current == "reader" then
-        if button == "b" then
+        if button == "a" and not state.reader_loading and (state.reader_error ~= "" or #state.reader_lines == 0) then
+            load_reader(state.reader_url)
+        elseif button == "b" then
             state.screen_stack[#state.screen_stack] = nil
+            state.reader_gen = state.reader_gen + 1  -- drop an in-flight article fetch
+            state.reader_loading = false
         elseif button == "dpad_up" then
             state.reader_scroll = math.max(0, state.reader_scroll - 1)
         elseif button == "dpad_down" then
-            state.reader_scroll = state.reader_scroll + 1
+            state.reader_scroll = math.min(state.reader_max_scroll, state.reader_scroll + 1)
         elseif button == "l2" then
             state.reader_scroll = math.max(0, state.reader_scroll - 10)
         elseif button == "r2" then
-            state.reader_scroll = state.reader_scroll + 10
+            state.reader_scroll = math.min(state.reader_max_scroll, state.reader_scroll + 10)
         end
     end
 end
 
+function on_input(button, action)
+    local before = visual_key()
+    handle_input(button, action)
+    if before ~= visual_key() then app.request_redraw() end
+end
+
 function on_render()
-    screen.clear(theme.bg.r, theme.bg.g, theme.bg.b)
-
-    -- After first frame renders "Loading...", allow on_update to fetch data
-    if state.needs_initial_load then
-        state.needs_initial_load = false
-        state.ready_to_load = true
-    end
-
     local current = state.screen_stack[#state.screen_stack]
-    if current == "list" then
-        draw_story_list()
-    elseif current == "detail" then
-        draw_story_detail()
-    elseif current == "reader" then
-        draw_reader()
-    end
+    if current == "list" then draw_story_list()
+    elseif current == "detail" then draw_story_detail()
+    elseif current == "reader" then draw_reader() end
 end

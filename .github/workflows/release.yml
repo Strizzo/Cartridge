@@ -17,6 +17,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Test system update packager
+        run: python3 -m unittest discover -s tests -p 'test_system_update_package.py'
+
       - name: Build the device toolchain image
         run: docker build -f docker/Dockerfile.device -t cartridge-device .
 
@@ -33,6 +36,7 @@ jobs:
         run: |
           mkdir -p release/Cartridge/assets/fonts
           mkdir -p release/Cartridge/assets/overlays
+          mkdir -p release/Cartridge/assets/brand
           # Binaries
           cp target/aarch64-unknown-linux-gnu/release/cartridge release/Cartridge/
           cp target/aarch64-unknown-linux-gnu/release/cartridge-boot release/Cartridge/
@@ -42,6 +46,7 @@ jobs:
           # Boot scripts
           cp deploy/cartridge-boot.sh release/Cartridge/
           cp deploy/cartridge-boot.service release/Cartridge/
+          cp deploy/game-library.py deploy/setup-primary.py deploy/cartridge-session.py release/Cartridge/
           cp deploy/autosetup.sh release/Cartridge/
           chmod +x release/Cartridge/cartridge-boot.sh
           chmod +x release/Cartridge/autosetup.sh
@@ -52,6 +57,9 @@ jobs:
           # Assets
           cp -r assets/fonts/* release/Cartridge/assets/fonts/
           cp -r assets/overlays/* release/Cartridge/assets/overlays/
+          cp -r assets/brand/* release/Cartridge/assets/brand/
+          cp -r assets/icons release/Cartridge/assets/icons
+          cp assets/gamecontrollerdb.txt release/Cartridge/assets/
           cp assets/boot_logo.png release/Cartridge/assets/
           cp assets/logo.bmp release/Cartridge/assets/
 
@@ -71,6 +79,34 @@ jobs:
           # Install instructions
           cp INSTALL.md release/INSTALL.txt 2>/dev/null || true
 
+      - name: Package unsigned system update (no signing or publishing)
+        run: |
+          VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          test "$GITHUB_REF_NAME" = "v$VERSION"
+          python3 scripts/package_system_update.py \
+            --bundle release/Cartridge --output system-update \
+            --version "$VERSION" --revision "$(git rev-parse HEAD)"
+          python3 scripts/package_system_update.py --verify system-update/system-update.unsigned.json
+
+      - name: Upload unsigned system update for local review
+        uses: actions/upload-artifact@v4
+        with:
+          name: cartridge-system-update-aarch64-unsigned
+          if-no-files-found: error
+          path: |
+            system-update/*.tar.gz
+            system-update/system-update.unsigned.json
+
+      - name: Upload exact tagged ARM checks for isolated VM rehearsal
+        uses: actions/upload-artifact@v4
+        with:
+          name: cartridge-device-checks-aarch64
+          if-no-files-found: error
+          path: |
+            target/aarch64-unknown-linux-gnu/release/app-check
+            target/aarch64-unknown-linux-gnu/release/sim-check
+            target/aarch64-unknown-linux-gnu/release/store-check
+
       - name: Create zip
         working-directory: release
         run: zip -r ../cartridge-r36s-plus.zip .
@@ -80,6 +116,7 @@ jobs:
         with:
           files: cartridge-r36s-plus.zip
           generate_release_notes: true
+          draft: true
           body: |
             ## Installation
 
@@ -87,8 +124,10 @@ jobs:
             2. Extract the zip to your SD card's `roms/` folder (creates `roms/Cartridge/`)
             3. Copy the 3 `.sh` files from `roms/Cartridge/tools/` into `roms/tools/`
             4. Boot your device into EmulationStation
-            5. Go to **Tools > Cartridge** to launch (auto-sets up boot selector on first run)
-            6. On next reboot, you'll see the CartridgeOS/EmulationStation boot chooser
+            5. Go to **Tools > Cartridge** and confirm it runs on your handheld
+            6. Run **Tools > Setup Cartridge Boot** once, then reboot to start directly in Cartridge
+
+            This archive is an application bundle for existing systems. The planned one-step SD image installer is not included.
 
             ## Custom Boot Logo (optional)
 

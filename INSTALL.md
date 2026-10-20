@@ -32,10 +32,11 @@ layouts. Do not bypass that check.
   system or its drivers.
 - The macOS image installer is a prototype for verified local images and empty
   cards. A general-purpose public image installer is not included in this release.
-- The default `main` branch still contains the older runtime. Use the
-  [v0.7.0 source](https://github.com/Strizzo/Cartridge/tree/v0.7.0) and its guides
-  when working with this release. Older boot-selector scripts have different
-  behavior and must not be mixed with this procedure.
+- The default `main` branch now contains the released v0.7.0 runtime and the
+  current installation guidance. The immutable
+  [v0.7.0 tag](https://github.com/Strizzo/Cartridge/tree/v0.7.0) identifies the
+  release source. Older boot-selector scripts have different behavior and must
+  not be mixed with this procedure.
 
 ## Add Cartridge while retaining normal startup
 

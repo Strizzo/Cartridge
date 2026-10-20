@@ -1,7 +1,6 @@
--- Stock Market Viewer for Cartridge OS (Lua)
--- Track stocks, crypto, indices, and your watchlist
-
--- ── Data ─────────────────────────────────────────────────────────────────────
+-- Stock Market / quote snapshots, price history and watchlist catalog.
+local U = ui.public
+local C = U.C
 
 local DEFAULT_WATCHLIST = {
     {symbol="AAPL", name="Apple"},
@@ -82,99 +81,20 @@ local SECTOR_LABELS = {
     Technology="Tech", Finance="Finance", Healthcare="Health", Energy="Energy",
     Consumer="Consumer", Industrial="Industry", Communication="Comm", Crypto="Crypto",
 }
-local TIER_COLORS = {
-    mega={255, 200, 60}, large={100, 180, 255}, mid={140, 140, 160},
-}
 local PERIODS = {{"1D","1d"}, {"1W","5d"}, {"1M","1mo"}, {"3M","3mo"}, {"1Y","1y"}}
 local PERIOD_INTERVALS = {["1d"]="5m", ["5d"]="15m", ["1mo"]="1d", ["3mo"]="1d", ["1y"]="1wk"}
 
--- ── State ────────────────────────────────────────────────────────────────────
-
 local state = {
     screen_stack = {"watchlist"},
-    -- Watchlist screen
-    tabs = {"Watchlist", "Indices", "Crypto"},
-    tab_ids = {"watchlist", "indices", "crypto"},
-    active_tab = 1,
-    watchlist = {},
-    quotes = {},         -- tab_id -> list of quotes
-    sparklines = {},     -- symbol -> list of prices
-    cursor = 1,
-    list_period_idx = 2, -- default to 1W
-    loading = false,
-    refresh_timer = 0,
-    refresh_interval = 120.0,
-    -- Detail screen
-    detail_quote = nil,
-    detail_history = nil,
-    detail_period_idx = 2,
-    detail_loading = false,
-    -- Browse screen
-    browse_sector_idx = 1,
-    browse_cursor = 1,
-    browse_stocks = {},
-    needs_initial_load = false,
-    ready_to_load = false,
+    tabs = {"Watchlist", "Indices", "Crypto"}, tab_ids = {"watchlist", "indices", "crypto"}, active_tab = 1,
+    watchlist = {}, watchlist_revision = 0, quotes = {}, quote_errors = {}, quote_periods = {},
+    cursor = 1, list_period_idx = 2, loading = false, loading_tab = nil, loading_period = nil, loading_revision = nil,
+    refresh_timer = 0, refresh_interval = 120.0,
+    detail_quote = nil, detail_history = nil, detail_period_idx = 2, detail_loading = false, detail_error = "",
+    browse_sector_idx = 1, browse_cursor = 1, browse_stocks = {},
+    pending = {}, quotes_gen = 0, detail_gen = 0,
 }
-
-local CARD_RADIUS = 6
-local ROW_HEIGHT = 56
-
--- ── Helpers ──────────────────────────────────────────────────────────────────
-
-local function draw_header(title, right_text, right_color)
-    screen.draw_gradient_rect(0, 0, 720, 40,
-        theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
-        theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
-    screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
-    if right_text then
-        local rc = right_color or theme.text_dim
-        local rw = screen.get_text_width(right_text, 12, false)
-        screen.draw_text(right_text, 704 - rw, 14, {color=rc, size=12})
-    end
-end
-
-local function draw_footer(hints)
-    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 684, 720, 684, {color=theme.border})
-    local x = 10
-    for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
-        x = x + w + 14
-    end
-end
-
-local function draw_tab_bar(tabs, active_idx, y)
-    screen.draw_rect(0, y, 720, 30, {color=theme.bg_header, filled=true})
-    local tx = 10
-    for i, label in ipairs(tabs) do
-        local is_active = (i == active_idx)
-        local tw = screen.get_text_width(label, 12, is_active)
-        local tab_w = tw + 16
-        if is_active then
-            screen.draw_rect(tx, y + 4, tab_w, 22, {color=theme.accent, filled=true, radius=4})
-            screen.draw_text(label, tx + 8, y + 7, {color={20, 20, 30}, size=12, bold=true})
-        else
-            screen.draw_rect(tx, y + 4, tab_w, 22, {color=theme.card_bg, filled=true, radius=4})
-            screen.draw_text(label, tx + 8, y + 7, {color=theme.text_dim, size=12})
-        end
-        tx = tx + tab_w + 6
-    end
-    screen.draw_line(0, y + 30, 720, y + 30, {color=theme.border})
-end
-
-local function draw_scroll_indicator(y_start, height, cursor, total, visible)
-    if total <= visible then return end
-    local ind_x = 715
-    local bar_top = y_start + 4
-    local bar_h = height - 8
-    screen.draw_line(ind_x, bar_top, ind_x, bar_top + bar_h, {color=theme.border})
-    local thumb_h = math.max(8, math.floor(bar_h * visible / total))
-    local progress = (cursor - 1) / math.max(1, total - 1)
-    local thumb_y = bar_top + math.floor((bar_h - thumb_h) * progress)
-    screen.draw_rect(ind_x - 1, thumb_y, 3, thumb_h, {color=theme.text_dim, filled=true, radius=1})
-end
+local ROW_HEIGHT, LIST_VISIBLE = 84, 5
 
 local function is_in_watchlist(symbol)
     for _, w in ipairs(state.watchlist) do
@@ -212,6 +132,15 @@ local function save_watchlist()
         items[#items + 1] = {symbol=w.symbol, name=w.name}
     end
     storage.save("watchlist", {items=items})
+    state.watchlist_revision = state.watchlist_revision + 1
+    -- Retained snapshots must also respect removals while a refresh is pending.
+    if state.quotes.watchlist then
+        local retained = {}
+        for _, quote in ipairs(state.quotes.watchlist) do
+            if is_in_watchlist(quote.symbol) then retained[#retained + 1] = quote end
+        end
+        state.quotes.watchlist = retained
+    end
 end
 
 local function load_watchlist()
@@ -235,22 +164,33 @@ end
 
 local YAHOO_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/"
 
-local function fetch_chart(symbol, range)
+local function chart_url(symbol, range)
     local interval = PERIOD_INTERVALS[range] or "1d"
-    local url = YAHOO_BASE .. symbol .. "?range=" .. range .. "&interval=" .. interval .. "&events="
-    local ok, resp = pcall(http.get_cached, url, 120)
-    if not ok or not resp.ok then return nil end
+    return YAHOO_BASE .. symbol .. "?range=" .. range .. "&interval=" .. interval .. "&events="
+end
+
+-- Async plumbing: every call goes through http.get_async; on_update drains
+-- http.poll() and dispatches to the handler registered here.
+local function request(url, handler)
+    local ok, id = pcall(http.get_async, url)
+    if ok and id then
+        state.pending[id] = handler
+        return id
+    end
+    handler(nil)
+    return nil
+end
+
+local function chart_from_resp(resp)
+    if not resp or not resp.ok then return nil end
     local dok, data = pcall(json.decode, resp.body)
-    if not dok or not data then return nil end
-    local result = data.chart and data.chart.result
-    if not result or #result == 0 then return nil end
+    if not dok or type(data) ~= "table" or type(data.chart) ~= "table" then return nil end
+    local result = data.chart.result
+    if type(result) ~= "table" or type(result[1]) ~= "table" then return nil end
     return result[1]
 end
 
-local function fetch_quote_from_chart(symbol, range)
-    local chart = fetch_chart(symbol, range)
-    if not chart then return nil, {} end
-
+local function quote_from_chart(symbol, chart)
     local meta = chart.meta or {}
     local price = meta.regularMarketPrice or 0
     local prev_close = meta.chartPreviousClose or meta.previousClose or price
@@ -282,281 +222,217 @@ local function fetch_quote_from_chart(symbol, range)
         low = math.floor(low * 100) / 100,
         week52_high = math.floor((meta.fiftyTwoWeekHigh or high) * 100) / 100,
         week52_low = math.floor((meta.fiftyTwoWeekLow or low) * 100) / 100,
+        has_week52 = meta.fiftyTwoWeekHigh ~= nil and meta.fiftyTwoWeekLow ~= nil,
+        quote_time = meta.regularMarketTime,
+        received_at = os.time(),
+        currency = meta.currency or "USD",
     }
     return quote, closes
 end
 
--- ── Load Data ────────────────────────────────────────────────────────────────
-
 local function load_quotes()
-    state.loading = true
     local tab_id = state.tab_ids[state.active_tab]
+    local revision = tab_id == "watchlist" and state.watchlist_revision or nil
+    if state.loading and state.loading_tab == tab_id and state.loading_period == state.list_period_idx
+        and state.loading_revision == revision then return end
+    state.loading = true
+    state.refresh_timer = 0
+    state.loading_period = state.list_period_idx
+    state.loading_tab = tab_id
+    state.loading_revision = revision
+    state.quote_errors[tab_id] = ""
     local symbols = {}
-
-    if tab_id == "watchlist" then
-        for _, w in ipairs(state.watchlist) do
-            symbols[#symbols + 1] = w.symbol
-        end
-    elseif tab_id == "crypto" then
-        for _, w in ipairs(DEFAULT_CRYPTO) do
-            symbols[#symbols + 1] = w.symbol
-        end
-    else
-        for _, w in ipairs(DEFAULT_INDICES) do
-            symbols[#symbols + 1] = w.symbol
-        end
-    end
-
+    local source = tab_id == "watchlist" and state.watchlist or (tab_id == "crypto" and DEFAULT_CRYPTO or DEFAULT_INDICES)
+    for _, item in ipairs(source) do symbols[#symbols + 1] = item.symbol end
     local range = PERIODS[state.list_period_idx][2]
-    local quotes = {}
-    for _, sym in ipairs(symbols) do
-        local q, closes = fetch_quote_from_chart(sym, range)
-        if q then
-            quotes[#quotes + 1] = q
-            state.sparklines[sym] = closes
-        end
+    state.quotes_gen = state.quotes_gen + 1
+    local gen, n = state.quotes_gen, #symbols
+    if n == 0 then
+        state.quotes[tab_id] = {}
+        state.quote_periods[tab_id] = PERIODS[state.list_period_idx][2]
+        state.loading = false
+        return
     end
-    state.quotes[tab_id] = quotes
-    state.loading = false
+    local previous = {}
+    for _, quote in ipairs(state.quotes[tab_id] or {}) do previous[quote.symbol] = quote end
+    local results, completed, failed = {}, 0, 0
+    for i, sym in ipairs(symbols) do
+        request(chart_url(sym, range), function(resp)
+            if gen ~= state.quotes_gen or (tab_id == "watchlist" and revision ~= state.watchlist_revision) then return end
+            local chart = chart_from_resp(resp)
+            if chart then
+                local quote, closes = quote_from_chart(sym, chart)
+                quote.history_range = range
+                quote.history = closes
+                results[i] = quote
+            else
+                failed = failed + 1
+                if previous[sym] then
+                    local cached = {}
+                    for key, value in pairs(previous[sym]) do cached[key] = value end
+                    cached.stale = true
+                    results[i] = cached
+                end
+            end
+            completed = completed + 1
+            if completed >= n then
+                local quotes = {}
+                for k = 1, n do if results[k] then quotes[#quotes + 1] = results[k] end end
+                -- Publish quotes and their matching histories as one snapshot batch.
+                -- Failed rows retain the original range and series together.
+                state.quotes[tab_id] = quotes
+                state.quote_periods[tab_id] = range
+                state.quote_errors[tab_id] = failed > 0 and (failed .. " quote requests failed") or ""
+                state.loading = false
+            end
+        end)
+    end
 end
 
--- ── Watchlist Screen Drawing ─────────────────────────────────────────────────
+local function load_detail_chart(symbol, range)
+    state.detail_loading = true
+    state.detail_history = nil
+    state.detail_error = ""
+    state.detail_gen = state.detail_gen + 1
+    local gen = state.detail_gen
+    request(chart_url(symbol, range), function(resp)
+        if gen ~= state.detail_gen then return end
+        local chart = chart_from_resp(resp)
+        if chart then
+            local quote, closes = quote_from_chart(symbol, chart)
+            quote.history_range = range
+            quote.history = closes
+            state.detail_quote, state.detail_history = quote, closes
+            if #closes < 2 then state.detail_error = "Yahoo returned too few price samples." end
+        else
+            state.detail_error = "The Yahoo price-history request failed."
+        end
+        state.detail_loading = false
+    end)
+end
 
-local function draw_quote_row(q, y, is_selected)
-    local card_x = 6
-    local card_w = 708
-    local card_h = ROW_HEIGHT - 4
+local function period_label(range)
+    for _, period in ipairs(PERIODS) do if period[2] == range then return period[1] end end
+    return "--"
+end
 
-    local is_positive = q.change >= 0
-    local direction_color = is_positive and theme.positive or theme.negative
+local function price_text(quote, value)
+    value = value or quote.price
+    if value <= 0 then return "N/A" end
+    local prefix = quote.symbol:sub(1, 1) == "^" and "" or (quote.currency == "USD" and "$" or (quote.currency .. " "))
+    if value < 0.01 then return prefix .. string.format("%.6f", value) end
+    if value < 1 then return prefix .. string.format("%.4f", value) end
+    return prefix .. string.format("%.2f", value)
+end
 
-    -- Card background
-    if is_selected then
-        screen.draw_card(card_x, y, card_w, card_h, {bg=theme.card_highlight, border=theme.accent, radius=CARD_RADIUS})
+local function change_text(quote)
+    if quote.price <= 0 then return "Change unavailable" end
+    local sign = quote.change >= 0 and "+" or ""
+    return sign .. string.format("%.2f", quote.change) .. " / " .. sign .. string.format("%.2f%%", quote.change_pct)
+end
+
+local function draw_quote_row(quote, y, selected)
+    local fg, secondary = U.row(24, y, 672, ROW_HEIGHT - 6, selected)
+    local change_color = quote.change >= 0 and C.green or C.red
+    U.display(quote.symbol:gsub("%-USD$", ""), 42, y + 6, 28, fg, 204)
+    U.text((quote.stale and "Cached / " or "") .. quote.name, 42, y + 48, 14, secondary, 204)
+    local history = quote.history
+    if history and #history >= 2 then
+        for gy = y + 12, y + 40, 14 do U.rule(266, gy, 144, selected and C.quiet or C.line) end
+        U.sparkline(history, 266, y + 12, 144, 31, selected and fg or change_color)
     else
-        screen.draw_card(card_x, y, card_w, card_h, {bg=theme.card_bg, radius=CARD_RADIUS})
+        U.text("No history", 266, y + 22, 14, secondary, 144)
     end
-
-    -- Colored left border strip
-    screen.draw_rect(card_x, y + 4, 3, card_h - 8, {color=direction_color, filled=true, radius=1})
-
-    -- Symbol (strip -USD suffix for crypto)
-    local display_symbol = q.symbol:gsub("%-USD$", "")
-    screen.draw_text(display_symbol, card_x + 14, y + 6, {color=theme.text, size=15, bold=true})
-
-    -- Name
-    screen.draw_text(q.name, card_x + 14, y + 26, {color=theme.text_dim, size=11})
-
-    -- Sparkline
-    local spark_data = state.sparklines[q.symbol]
-    if spark_data and #spark_data >= 2 then
-        screen.draw_sparkline(spark_data, card_x + 180, y + 8, 100, card_h - 16, {color=direction_color})
-    end
-
-    -- Price
-    local price_str
-    if q.price == 0 then
-        price_str = "N/A"
-    elseif q.price < 0.01 then
-        price_str = string.format("$%.6f", q.price)
-    elseif q.price < 1 then
-        price_str = string.format("$%.4f", q.price)
-    else
-        price_str = string.format("$%.2f", q.price)
-    end
-    local pw = screen.get_text_width(price_str, 15, true)
-    screen.draw_text(price_str, card_x + card_w - 14 - pw, y + 4, {color=theme.text, size=15, bold=true})
-
-    -- Change
-    local arrow = is_positive and "\226\150\178" or "\226\150\188"
-    local sign = is_positive and "+" or ""
-    local change_str
-    if q.price == 0 then
-        change_str = "---"
-    else
-        change_str = arrow .. " " .. sign .. string.format("%.2f", q.change) .. " (" .. sign .. string.format("%.1f", q.change_pct) .. "%)"
-    end
-    local cw = screen.get_text_width(change_str, 12, false)
-    screen.draw_text(change_str, card_x + card_w - 14 - cw, y + 28, {color=direction_color, size=12})
+    U.text(period_label(quote.history_range) .. (quote.stale and " / CACHED" or " / HISTORY"), 266, y + 50, 14, secondary, 150)
+    U.display(price_text(quote), 438, y + 6, 30, fg, 238)
+    U.text(change_text(quote), 438, y + 48, 16, (quote.price > 0 and not selected) and change_color or fg, 238, true)
 end
 
 local function draw_watchlist_screen()
     local tab_id = state.tab_ids[state.active_tab]
     local quotes = state.quotes[tab_id] or {}
     local n = #quotes
-
-    draw_header("Stock Market",
-        state.loading and "Loading..." or "Live",
-        state.loading and theme.text_dim or {100, 220, 100})
-    draw_tab_bar(state.tabs, state.active_tab, 40)
-
-    local content_y = 72
-    local footer_y = 684
-    local content_h = footer_y - content_y
-
-    if state.loading then
-        local tw = screen.get_text_width("Fetching quotes...", 16, false)
-        screen.draw_text("Fetching quotes...", (720 - tw) / 2, content_y + content_h / 2 - 8, {color=theme.text_dim, size=16})
-    elseif n > 0 then
-        local visible = math.max(1, math.floor(content_h / ROW_HEIGHT))
+    local loading = state.loading and state.loading_tab == tab_id
+    local error_msg = state.quote_errors[tab_id] or ""
+    U.header("Stock Market", "YAHOO FINANCE / QUOTE SNAPSHOTS", loading and "Refreshing" or (error_msg ~= "" and (n > 0 and "Partial / stale" or "Unavailable") or "Snapshots"), error_msg ~= "" and C.gold or C.muted)
+    U.tabs(state.tabs, state.active_tab)
+    local labels = {}
+    for i, period in ipairs(PERIODS) do labels[i] = period[1] end
+    U.tabs(labels, state.list_period_idx, 156)
+    U.text(error_msg ~= "" and "INCOMPLETE / X RETRY / CACHED VALUES MARKED" or (loading and "REFRESHING / PREVIOUS SNAPSHOTS RETAINED" or "YAHOO / DATA MAY BE DELAYED"), 24, 198, 14, error_msg ~= "" and C.gold or C.muted, 558)
+    if n > 0 then
         state.cursor = math.max(1, math.min(state.cursor, n))
-
-        local start_idx
-        if n <= visible then
-            start_idx = 1
-        else
-            start_idx = math.max(1, math.min(state.cursor - 1, n - visible + 1))
+        U.text(state.cursor .. " / " .. n, 612, 198, 14, C.muted, 84)
+        local start = math.max(1, math.min(state.cursor - 1, math.max(1, n - LIST_VISIBLE + 1)))
+        for idx = start, math.min(n, start + LIST_VISIBLE - 1) do
+            draw_quote_row(quotes[idx], 218 + (idx - start) * ROW_HEIGHT, idx == state.cursor)
         end
-        local end_idx = math.min(start_idx + visible - 1, n)
-
-        local y = content_y + 2
-        for idx = start_idx, end_idx do
-            draw_quote_row(quotes[idx], y, idx == state.cursor)
-            y = y + ROW_HEIGHT
-        end
-
-        draw_scroll_indicator(content_y, content_h, state.cursor, n, visible)
+    elseif loading then
+        U.empty("Fetching quote snapshots", "Requesting Yahoo prices and history for this list. Quotes may be delayed.")
+    elseif error_msg ~= "" then
+        U.empty("Quotes unavailable", error_msg .. ". Press X to retry, or Y to browse the watchlist catalog.")
+    elseif tab_id == "watchlist" and #state.watchlist == 0 then
+        U.empty("Your watchlist is empty", "Press Y to browse sectors, then A to add a symbol. Your list is saved on this device.")
+    else
+        U.empty("No quotes returned", "Press X to retry these symbols, or L1 / R1 to switch lists.")
     end
-
-    -- Period pills at bottom of list area
-    local period_y = footer_y - 28
-    screen.draw_rect(0, period_y, 720, 28, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, period_y, 720, period_y, {color=theme.border})
-    local px = 10
-    for i, p in ipairs(PERIODS) do
-        local label = p[1]
-        local is_active = (i == state.list_period_idx)
-        local tw = screen.get_text_width(label, 11, is_active)
-        local tab_w = tw + 12
-        if is_active then
-            screen.draw_rect(px, period_y + 3, tab_w, 20, {color=theme.accent, filled=true, radius=4})
-            screen.draw_text(label, px + 6, period_y + 5, {color={20, 20, 30}, size=11, bold=true})
-        else
-            screen.draw_rect(px, period_y + 3, tab_w, 20, {color=theme.card_bg, filled=true, radius=4})
-            screen.draw_text(label, px + 6, period_y + 5, {color=theme.text_dim, size=11})
-        end
-        px = px + tab_w + 4
-    end
-    local hint_str = "L2/R2 period"
-    local hw = screen.get_text_width(hint_str, 10, false)
-    screen.draw_text(hint_str, 710 - hw, period_y + 8, {color=theme.text_dim, size=10})
-
-    draw_footer({
-        {"L1/R1", "Tab", theme.btn_l},
-        {"A", "Detail", theme.btn_a},
-        {"X", "Refresh", theme.btn_x},
-        {"Y", "Browse", theme.btn_y},
-    })
+    U.footer({{"L1/R1", "List"}, {"L2/R2", "Range"}, {"A", "Quote"}, {"X", error_msg ~= "" and "Retry" or "Refresh"}, {"Y", "Browse"}})
 end
 
--- ── Detail Screen Drawing ────────────────────────────────────────────────────
+local function draw_range_panel(x, y, w, quote, label, low, high, available)
+    U.panel(x, y, w, 82, C.panel)
+    U.text(label, x + 16, y + 10, 14, C.muted, w - 32, true)
+    U.text(available and (price_text(quote, low) .. "  /  " .. price_text(quote, high)) or "Not supplied", x + 16, y + 35, 18, C.paper, w - 32, true)
+    U.rect(x + 16, y + 67, w - 32, 3, C.line)
+    if available and high > low and quote.price > 0 then
+        local progress = math.max(0, math.min(1, (quote.price - low) / (high - low)))
+        U.rect(x + 16 + (w - 36) * progress, y + 63, 4, 11, C.red)
+    end
+end
 
 local function draw_detail_screen()
-    local q = state.detail_quote
-    if not q then
-        draw_header("Stock")
-        screen.draw_text("No data", 20, 200, {color=theme.text_dim, size=16})
-        draw_footer({{"B", "Back", theme.btn_b}})
+    local quote = state.detail_quote
+    if not quote then
+        U.header("Quote", "STOCK MARKET / DETAIL", "Unavailable", C.gold)
+        U.empty("No quote available", "Press B to return to the list, then X to refresh quotes.")
+        U.footer({{"B", "Back"}})
         return
     end
-
-    local is_positive = q.change >= 0
-    local change_color = is_positive and theme.positive or theme.negative
-    local sign = is_positive and "+" or ""
-
-    -- Header with gradient
-    screen.draw_gradient_rect(0, 0, 720, 70,
-        theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
-        theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
-    screen.draw_line(0, 70, 720, 70, {color=theme.border})
-
-    -- Symbol and name
-    screen.draw_text(q.symbol, 20, 8, {color=theme.text, size=24, bold=true})
-    screen.draw_text(q.name, 20, 38, {color=theme.text_dim, size=14})
-
-    -- Price (top right)
-    local price_str = q.price > 0 and string.format("$%.2f", q.price) or "N/A"
-    local pw = screen.get_text_width(price_str, 24, true)
-    screen.draw_text(price_str, 700 - pw, 8, {color=theme.text, size=24, bold=true})
-
-    -- Change (below price)
-    local arrow = is_positive and "\226\150\178" or "\226\150\188"
-    local change_str = q.price > 0 and (arrow .. " " .. sign .. string.format("%.2f", q.change) .. " (" .. sign .. string.format("%.1f", q.change_pct) .. "%)") or "---"
-    local cw = screen.get_text_width(change_str, 14, false)
-    screen.draw_text(change_str, 700 - cw, 40, {color=change_color, size=14})
-
-    -- Period tabs
-    local y = 78
-    local tab_x = 20
-    for i, period in ipairs(PERIODS) do
-        local is_active = (i == state.detail_period_idx)
-        local label = period[1]
-        local tw = screen.get_text_width(label, 12, is_active)
-        local tab_w = tw + 16
-        if is_active then
-            screen.draw_rect(tab_x, y, tab_w, 22, {color=theme.accent, filled=true, radius=4})
-            screen.draw_text(label, tab_x + 8, y + 3, {color={20, 20, 30}, size=12, bold=true})
-        else
-            screen.draw_rect(tab_x, y, tab_w, 22, {color=theme.card_bg, filled=true, radius=4})
-            screen.draw_text(label, tab_x + 8, y + 3, {color=theme.text_dim, size=12})
-        end
-        tab_x = tab_x + tab_w + 6
-    end
-
-    -- L1/R1 hint
-    local hw = screen.get_text_width("L1/R1 switch", 10, false)
-    screen.draw_text("L1/R1 switch", 700 - hw, y + 5, {color=theme.text_dim, size=10})
-
-    -- Chart area
-    local chart_y = 108
-    local chart_h = 180
-    screen.draw_card(8, chart_y, 704, chart_h, {bg=theme.card_bg, border=theme.border, radius=8, shadow=true})
-
-    local spark_data = state.sparklines[q.symbol]
-    if spark_data and #spark_data >= 2 then
-        screen.draw_sparkline(spark_data, 16, chart_y + 8, 688, chart_h - 16, {color=change_color})
+    local change_color = quote.change >= 0 and C.green or C.red
+    U.header(quote.symbol:gsub("%-USD$", ""), quote.name .. " / YAHOO FINANCE", state.detail_loading and "Refreshing" or ((quote.stale or state.detail_error ~= "") and "Cached quote" or "Snapshot"), (quote.stale or state.detail_error ~= "") and C.gold or C.muted)
+    U.panel(24, 112, 672, 108, C.paper, C.red)
+    U.text(quote.symbol:sub(1, 1) == "^" and "LAST QUOTE / INDEX POINTS" or ("LAST QUOTE / " .. quote.currency), 42, 124, 14, C.black, 358, true)
+    U.display(price_text(quote), 42, 146, 44, C.black, 370)
+    U.text("CHANGE / " .. period_label(quote.history_range), 438, 124, 14, C.black, 238, true)
+    U.text(change_text(quote), 438, 151, 18, C.black, 238, true)
+    local stamp = type(quote.quote_time) == "number" and quote.quote_time or quote.received_at
+    U.text((type(quote.quote_time) == "number" and "As of " or "Fetched ") .. os.date("%d %b %H:%M", stamp), 42, 197, 14, C.black, 356)
+    U.text("May be delayed", 438, 197, 14, C.black, 238)
+    local labels = {}
+    for i, period in ipairs(PERIODS) do labels[i] = period[1] end
+    U.tabs(labels, state.detail_period_idx, 232)
+    U.panel(24, 280, 672, 226, C.panel)
+    U.text("PRICE HISTORY / " .. PERIODS[state.detail_period_idx][1], 42, 292, 14, C.muted, 620, true)
+    local history = state.detail_history
+    if state.detail_loading then
+        U.display("Fetching history", 42, 352, 32, C.paper, 620)
+        U.text("Requesting the selected range from Yahoo.", 42, 405, 16, C.muted, 620)
+    elseif state.detail_error ~= "" or not history or #history < 2 then
+        U.display("History unavailable", 42, 352, 32, C.paper, 620)
+        U.text((state.detail_error ~= "" and state.detail_error or "Too few price samples were returned.") .. " X to retry.", 42, 405, 16, C.muted, 620)
     else
-        local tw = screen.get_text_width("No chart data", 13, false)
-        screen.draw_text("No chart data", (720 - tw) / 2, chart_y + chart_h / 2 - 8, {color=theme.text_dim, size=13})
+        for gy = 326, 460, 45 do U.rule(42, gy, 636, C.line) end
+        U.sparkline(history, 42, 326, 636, 134, change_color)
+        local low, high = history[1], history[1]
+        for _, value in ipairs(history) do low, high = math.min(low, value), math.max(high, value) end
+        U.text("Low " .. price_text(quote, low), 42, 476, 14, C.muted, 310)
+        U.text("High " .. price_text(quote, high), 438, 476, 14, C.muted, 238)
     end
-
-    -- Stats cards
-    local stats_y = chart_y + chart_h + 12
-
-    -- Day range card
-    screen.draw_card(8, stats_y, 344, 60, {bg=theme.card_bg, border=theme.border, radius=6})
-    screen.draw_text("Day Range", 18, stats_y + 6, {color=theme.text_dim, size=11})
-    local low_str = q.low > 0 and string.format("$%.2f", q.low) or "---"
-    local high_str = q.high > 0 and string.format("$%.2f", q.high) or "---"
-    screen.draw_text(low_str, 18, stats_y + 22, {color=theme.text, size=12})
-    local hsw = screen.get_text_width(high_str, 12, false)
-    screen.draw_text(high_str, 342 - hsw, stats_y + 22, {color=theme.text, size=12})
-    if q.low > 0 and q.high > q.low and q.price > 0 then
-        local progress = math.max(0, math.min(1, (q.price - q.low) / (q.high - q.low)))
-        screen.draw_progress_bar(18, stats_y + 42, 324, 6, progress, {})
-    end
-
-    -- 52-week range card
-    screen.draw_card(368, stats_y, 344, 60, {bg=theme.card_bg, border=theme.border, radius=6})
-    screen.draw_text("52-Week Range", 378, stats_y + 6, {color=theme.text_dim, size=11})
-    local w52_low = q.week52_low > 0 and string.format("$%.2f", q.week52_low) or "---"
-    local w52_high = q.week52_high > 0 and string.format("$%.2f", q.week52_high) or "---"
-    screen.draw_text(w52_low, 378, stats_y + 22, {color=theme.text, size=12})
-    local w52hw = screen.get_text_width(w52_high, 12, false)
-    screen.draw_text(w52_high, 702 - w52hw, stats_y + 22, {color=theme.text, size=12})
-    if q.week52_low > 0 and q.week52_high > q.week52_low and q.price > 0 then
-        local progress = math.max(0, math.min(1, (q.price - q.week52_low) / (q.week52_high - q.week52_low)))
-        screen.draw_progress_bar(378, stats_y + 42, 324, 6, progress, {})
-    end
-
-    draw_footer({
-        {"B", "Back", theme.btn_b},
-        {"L1/R1", "Period", theme.btn_l},
-    })
+    draw_range_panel(24, 518, 328, quote, period_label(quote.history_range) .. " RANGE / LOW & HIGH", quote.low, quote.high, quote.low > 0 and quote.high > 0)
+    draw_range_panel(368, 518, 328, quote, "52-WEEK RANGE / LOW & HIGH", quote.week52_low, quote.week52_high, quote.has_week52)
+    U.text("Price and change are snapshots. History follows the selected range.", 24, 616, 14, C.muted, 672)
+    U.footer({{"B", "Back"}, {"L1/R1", "Range"}, {"X", "Retry"}})
 end
-
--- ── Browse Screen Drawing ────────────────────────────────────────────────────
 
 local function update_browse_stocks()
     local sector = SECTORS[state.browse_sector_idx]
@@ -565,130 +441,72 @@ local function update_browse_stocks()
 end
 
 local function draw_browse_screen()
-    draw_header("Browse Stocks",
-        #STOCK_UNIVERSE .. " stocks", theme.text_dim)
-
-    -- Sector tabs
-    local y = 44
-    local tab_x = 10
-    for i, sector in ipairs(SECTORS) do
-        local label = SECTOR_LABELS[sector] or sector
-        local is_active = (i == state.browse_sector_idx)
-        local tw = screen.get_text_width(label, 11, is_active)
-        local tab_w = tw + 12
-        if is_active then
-            screen.draw_rect(tab_x, y, tab_w, 20, {color=theme.accent, filled=true, radius=4})
-            screen.draw_text(label, tab_x + 6, y + 3, {color={20, 20, 30}, size=11, bold=true})
-        else
-            screen.draw_rect(tab_x, y, tab_w, 20, {color=theme.card_bg, filled=true, radius=4})
-            screen.draw_text(label, tab_x + 6, y + 3, {color=theme.text_dim, size=11})
-        end
-        tab_x = tab_x + tab_w + 4
-    end
-
-    -- Stock list
-    local list_y = 70
-    local list_h = 614
     local stocks = state.browse_stocks
     local n = #stocks
-    local browse_row_h = 44
-
+    local sector = SECTORS[state.browse_sector_idx]
+    U.header("Browse Stocks", "WATCHLIST / SYMBOL CATALOG", #STOCK_UNIVERSE .. " symbols")
+    U.panel(24, 112, 672, 72, C.panel, C.red)
+    U.display(sector, 42, 120, 34, C.paper, 410)
+    U.text(n .. " symbols / " .. state.browse_sector_idx .. " of " .. #SECTORS, 482, 133, 14, C.muted, 196)
+    for i = 1, #SECTORS do U.rect(42 + (i - 1) * 80, 174, 72, 3, i == state.browse_sector_idx and C.red or C.line) end
+    U.text("SYMBOL / COMPANY", 24, 198, 14, C.muted, 400, true)
+    U.text("TIER / WATCHLIST", 482, 198, 14, C.muted, 214, true)
     if n == 0 then
-        local tw = screen.get_text_width("No stocks in this sector", 14, false)
-        screen.draw_text("No stocks in this sector", (720 - tw) / 2, list_y + 40, {color=theme.text_dim, size=14})
+        U.empty("No symbols in this sector", "Press L1 / R1 for another sector, or B to return to your quotes.")
     else
-        local visible = math.max(1, math.floor(list_h / browse_row_h))
         state.browse_cursor = math.max(1, math.min(state.browse_cursor, n))
-
-        local start_idx
-        if n <= visible then
-            start_idx = 1
-        else
-            start_idx = math.max(1, math.min(state.browse_cursor - 1, n - visible + 1))
-        end
-        local end_idx = math.min(start_idx + visible - 1, n)
-
-        local cy = list_y + 2
-        for idx = start_idx, end_idx do
+        local start = math.max(1, math.min(state.browse_cursor - 1, math.max(1, n - LIST_VISIBLE + 1)))
+        for idx = start, math.min(n, start + LIST_VISIBLE - 1) do
             local stock = stocks[idx]
-            local is_selected = (idx == state.browse_cursor)
-            local in_wl = is_in_watchlist(stock.symbol)
-
-            local card_x = 6
-            local card_w = 708
-            local card_h = browse_row_h - 4
-
-            if is_selected then
-                screen.draw_card(card_x, cy, card_w, card_h, {bg=theme.card_highlight, border=theme.accent, radius=CARD_RADIUS})
-            else
-                screen.draw_card(card_x, cy, card_w, card_h, {bg=theme.card_bg, radius=CARD_RADIUS})
-            end
-
-            -- Symbol
-            screen.draw_text(stock.symbol, card_x + 12, cy + 4, {color=theme.text, size=15, bold=true})
-            -- Name
-            screen.draw_text(stock.name, card_x + 12, cy + 24, {color=theme.text_dim, size=12})
-
-            -- Tier badge
-            local tier_color = TIER_COLORS[stock.tier] or {140, 140, 160}
-            screen.draw_pill(stock.tier:upper(), card_x + card_w - 140, cy + (card_h - 16) / 2,
-                tier_color[1], tier_color[2], tier_color[3], {text_color={20,20,30}, size=10})
-
-            -- Watchlist status
-            if in_wl then
-                screen.draw_pill("IN LIST", card_x + card_w - 70, cy + (card_h - 16) / 2,
-                    theme.positive.r, theme.positive.g, theme.positive.b, {text_color={20,20,30}, size=10})
-            end
-
-            cy = cy + browse_row_h
-        end
-
-        draw_scroll_indicator(list_y, list_h, state.browse_cursor, n, visible)
-    end
-
-    -- Footer
-    local hints = {
-        {"B", "Back", theme.btn_b},
-        {"L1/R1", "Sector", theme.btn_l},
-    }
-    if n > 0 then
-        local stock = stocks[state.browse_cursor]
-        if stock then
-            if is_in_watchlist(stock.symbol) then
-                hints[#hints + 1] = {"X", "Remove", theme.btn_x}
-            else
-                hints[#hints + 1] = {"A", "Add", theme.btn_a}
-            end
+            local y = 218 + (idx - start) * ROW_HEIGHT
+            local fg, secondary = U.row(24, y, 672, ROW_HEIGHT - 6, idx == state.browse_cursor)
+            U.display(stock.symbol, 42, y + 7, 28, fg, 410)
+            U.text(stock.name, 42, y + 48, 16, secondary, 410)
+            U.text(stock.tier:upper() .. " CAP", 482, y + 13, 14, secondary, 196, true)
+            U.text(is_in_watchlist(stock.symbol) and "IN WATCHLIST" or "A TO ADD", 482, y + 48, 14, is_in_watchlist(stock.symbol) and (idx == state.browse_cursor and fg or C.green) or secondary, 196, true)
         end
     end
-    draw_footer(hints)
+    local hints = {{"B", "Back"}, {"L1/R1", "Sector"}, {"D-pad", "Move"}}
+    local stock = stocks[state.browse_cursor]
+    if stock then hints[#hints + 1] = is_in_watchlist(stock.symbol) and {"X", "Remove"} or {"A", "Add"} end
+    U.footer(hints)
 end
 
--- ── Lifecycle ────────────────────────────────────────────────────────────────
+local function visual_key()
+    local tab = state.tab_ids[state.active_tab]
+    return table.concat({state.screen_stack[#state.screen_stack], state.active_tab, tostring(state.quotes[tab]),
+        state.cursor, state.list_period_idx, tostring(state.loading and state.loading_tab == tab), state.quote_errors[tab] or "",
+        tostring(state.detail_quote), tostring(state.detail_history), state.detail_period_idx,
+        tostring(state.detail_loading), state.detail_error, state.browse_sector_idx, state.browse_cursor,
+        state.watchlist_revision}, "\0")
+end
 
 function on_init()
     state.watchlist = load_watchlist()
     update_browse_stocks()
-    state.loading = true
-    state.needs_initial_load = true
+    load_quotes()
+    app.request_redraw()
 end
 
 function on_update(dt)
-    if state.ready_to_load then
-        state.ready_to_load = false
-        load_quotes()
+    local before = visual_key()
+    for _, resp in ipairs(http.poll()) do
+        local handler = state.pending[resp.id]
+        if handler then state.pending[resp.id] = nil; handler(resp) end
     end
-
     if state.screen_stack[#state.screen_stack] == "watchlist" then
         state.refresh_timer = state.refresh_timer + dt
         if state.refresh_timer >= state.refresh_interval then
             state.refresh_timer = 0
-            load_quotes()
+            if not state.loading and (state.tab_ids[state.active_tab] ~= "watchlist" or #state.watchlist > 0) then load_quotes() end
         end
     end
+    local dirty = before ~= visual_key()
+    if dirty then app.request_redraw() end
+    return dirty
 end
 
-function on_input(button, action)
+local function handle_input(button, action)
     if action ~= "press" and action ~= "repeat" then return end
 
     local current = state.screen_stack[#state.screen_stack]
@@ -698,14 +516,14 @@ function on_input(button, action)
         if button == "l1" and action == "press" then
             state.active_tab = state.active_tab > 1 and (state.active_tab - 1) or #state.tabs
             state.cursor = 1
-            if not state.quotes[state.tab_ids[state.active_tab]] then
+            if not state.quotes[state.tab_ids[state.active_tab]] or state.quote_periods[state.tab_ids[state.active_tab]] ~= PERIODS[state.list_period_idx][2] then
                 load_quotes()
             end
             return
         elseif button == "r1" and action == "press" then
             state.active_tab = state.active_tab < #state.tabs and (state.active_tab + 1) or 1
             state.cursor = 1
-            if not state.quotes[state.tab_ids[state.active_tab]] then
+            if not state.quotes[state.tab_ids[state.active_tab]] or state.quote_periods[state.tab_ids[state.active_tab]] ~= PERIODS[state.list_period_idx][2] then
                 load_quotes()
             end
             return
@@ -721,53 +539,54 @@ function on_input(button, action)
             state.cursor = math.min(math.max(1, n), state.cursor + 1)
         elseif button == "a" and n > 0 and state.cursor <= n then
             state.detail_quote = quotes[state.cursor]
-            state.detail_period_idx = 2
+            state.detail_period_idx = state.list_period_idx
+            for i, period in ipairs(PERIODS) do
+                if period[2] == state.detail_quote.history_range then state.detail_period_idx = i end
+            end
+            state.detail_history = state.detail_quote.history
+            state.detail_error = ""
+            state.detail_loading = false
             state.screen_stack[#state.screen_stack + 1] = "detail"
         elseif button == "x" then
-            state.quotes = {}
-            state.sparklines = {}
             load_quotes()
         elseif button == "y" then
             state.screen_stack[#state.screen_stack + 1] = "browse"
         elseif button == "l2" and action == "press" then
-            state.list_period_idx = math.max(1, state.list_period_idx - 1)
-            state.quotes = {}
-            state.sparklines = {}
-            load_quotes()
+            if state.list_period_idx > 1 then
+                state.list_period_idx = state.list_period_idx - 1
+                load_quotes()
+            end
         elseif button == "r2" and action == "press" then
-            state.list_period_idx = math.min(#PERIODS, state.list_period_idx + 1)
-            state.quotes = {}
-            state.sparklines = {}
-            load_quotes()
+            if state.list_period_idx < #PERIODS then
+                state.list_period_idx = state.list_period_idx + 1
+                load_quotes()
+            end
         end
 
     elseif current == "detail" then
         if button == "b" then
             state.screen_stack[#state.screen_stack] = nil
+            state.detail_gen = state.detail_gen + 1  -- drop an in-flight chart fetch
+            state.detail_loading = false
         elseif button == "l1" then
-            state.detail_period_idx = math.max(1, state.detail_period_idx - 1)
-            -- Refresh chart for new period
-            local range = PERIODS[state.detail_period_idx][2]
-            local q, closes = fetch_quote_from_chart(state.detail_quote.symbol, range)
-            if q then
-                state.detail_quote = q
-                state.sparklines[q.symbol] = closes
+            if state.detail_period_idx > 1 then
+                state.detail_period_idx = state.detail_period_idx - 1
+                load_detail_chart(state.detail_quote.symbol, PERIODS[state.detail_period_idx][2])
             end
         elseif button == "r1" then
-            state.detail_period_idx = math.min(#PERIODS, state.detail_period_idx + 1)
-            local range = PERIODS[state.detail_period_idx][2]
-            local q, closes = fetch_quote_from_chart(state.detail_quote.symbol, range)
-            if q then
-                state.detail_quote = q
-                state.sparklines[q.symbol] = closes
+            if state.detail_period_idx < #PERIODS then
+                state.detail_period_idx = state.detail_period_idx + 1
+                load_detail_chart(state.detail_quote.symbol, PERIODS[state.detail_period_idx][2])
             end
+        elseif button == "x" and not state.detail_loading then
+            load_detail_chart(state.detail_quote.symbol, PERIODS[state.detail_period_idx][2])
         end
 
     elseif current == "browse" then
         if button == "b" then
             state.screen_stack[#state.screen_stack] = nil
             -- Refresh watchlist if needed
-            state.quotes["watchlist"] = nil
+            state.quote_periods["watchlist"] = nil
             load_quotes()
         elseif button == "l1" then
             state.browse_sector_idx = state.browse_sector_idx > 1 and (state.browse_sector_idx - 1) or #SECTORS
@@ -786,7 +605,7 @@ function on_input(button, action)
             if stock and not is_in_watchlist(stock.symbol) then
                 state.watchlist[#state.watchlist + 1] = {symbol=stock.symbol, name=stock.name}
                 save_watchlist()
-                state.quotes["watchlist"] = nil
+                state.quote_periods["watchlist"] = nil
             end
         elseif button == "x" and #state.browse_stocks > 0 then
             local stock = state.browse_stocks[state.browse_cursor]
@@ -799,27 +618,21 @@ function on_input(button, action)
                 end
                 state.watchlist = new_wl
                 save_watchlist()
-                state.quotes["watchlist"] = nil
+                state.quote_periods["watchlist"] = nil
             end
         end
     end
 end
 
+function on_input(button, action)
+    local before = visual_key()
+    handle_input(button, action)
+    if before ~= visual_key() then app.request_redraw() end
+end
+
 function on_render()
-    screen.clear(theme.bg.r, theme.bg.g, theme.bg.b)
-
-    -- After first frame renders, allow on_update to fetch data
-    if state.needs_initial_load then
-        state.needs_initial_load = false
-        state.ready_to_load = true
-    end
-
     local current = state.screen_stack[#state.screen_stack]
-    if current == "watchlist" then
-        draw_watchlist_screen()
-    elseif current == "detail" then
-        draw_detail_screen()
-    elseif current == "browse" then
-        draw_browse_screen()
-    end
+    if current == "watchlist" then draw_watchlist_screen()
+    elseif current == "detail" then draw_detail_screen()
+    elseif current == "browse" then draw_browse_screen() end
 end
