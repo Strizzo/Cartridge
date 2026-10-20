@@ -4,3 +4,5 @@ LIBRARY_PATH = { value = "/opt/homebrew/lib", force = false }
 
 [target.aarch64-unknown-linux-gnu]
 linker = "aarch64-linux-gnu-gcc"
+# RK3326 is a Cortex-A35; let LLVM schedule for it instead of generic ARMv8.
+rustflags = ["-C", "target-cpu=cortex-a35"]

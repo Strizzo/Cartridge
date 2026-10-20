@@ -44,11 +44,26 @@ prototype; it is not a general-purpose public installer.
 file, and the limits of this tested setup. Do not follow legacy boot-selector
 instructions for this release.
 
-**Source and documentation:** the default `main` branch still contains the older
-runtime. To work with the version shown in the current demos, check out
-[`v0.7.0`](https://github.com/Strizzo/Cartridge/tree/v0.7.0) and use its
-[simulator guide](https://github.com/Strizzo/Cartridge/blob/v0.7.0/docs/simulator.md)
-and [app development guide](https://github.com/Strizzo/Cartridge/blob/v0.7.0/docs/app-development.md).
+**Source and documentation:** `main` contains the released **v0.7.0 runtime**,
+plus current documentation and media. Use the immutable
+[`v0.7.0`](https://github.com/Strizzo/Cartridge/tree/v0.7.0) tag to reproduce the
+release source. The [simulator guide](docs/simulator.md) and
+[app development guide](docs/app-development.md) describe the current platform.
+
+### Try the simulator first
+
+On a Mac with Rust and the SDL dependencies listed below installed:
+
+```bash
+./sim.sh                             # native launcher, keyboard or gamepad
+./sim.sh app lua_cartridges/calculator
+./sim.sh check                       # automated UI/app checks; no SD card
+```
+
+The simulator runs the actual UI and Lua apps at 720×720 with isolated app
+storage and simulated device readings. It does not emulate the handheld GPU,
+drivers or battery behavior. See [ARM VM checks](docs/arm-vm.md) for the separate
+Linux compatibility and startup/rollback rehearsal.
 
 ## Architecture
 
@@ -67,14 +82,14 @@ The top-level `cartridge` binary ties everything together as the single entry po
 
 ## Building
 
-Requires SDL2, SDL2_ttf, and SDL2_gfx development libraries:
+Requires Rust, SDL2, SDL2_ttf, SDL2_image and SDL2_gfx development libraries:
 
 ```bash
 # macOS
-brew install sdl2 sdl2_ttf sdl2_gfx
+brew install sdl2 sdl2_ttf sdl2_image sdl2_gfx
 
 # Debian/Ubuntu
-sudo apt-get install libsdl2-dev libsdl2-ttf-dev libsdl2-gfx-dev
+sudo apt-get install libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev libsdl2-gfx-dev libasound2-dev
 ```
 
 Then build:
@@ -90,7 +105,7 @@ cargo build --release
 cargo run
 
 # Run a specific Lua app
-cargo run -- run --path cartridges/calculator
+cargo run -- run --path lua_cartridges/calculator
 
 # Show the demo screen
 cargo run -- demo
@@ -113,33 +128,38 @@ cargo run -- demo
 
 ## Cross-Compilation (aarch64)
 
-Build for ARM64 Linux handhelds with [cross-rs](https://github.com/cross-rs/cross):
+The CI device build uses `docker/Dockerfile.device` to match the supported
+handheld's Linux library baseline. With Docker running:
 
 ```bash
-cross build --release --target aarch64-unknown-linux-gnu
+docker build -f docker/Dockerfile.device -t cartridge-device .
+docker run --rm -v "$PWD":/src -w /src cartridge-device \
+  cargo build --workspace --release --target aarch64-unknown-linux-gnu
 ```
+
+This builds binaries only. Follow [INSTALL.md](INSTALL.md) before putting a
+bundle on a physical card.
 
 ## Lua App SDK
 
 Apps are "cartridges" — small Lua programs with a simple lifecycle:
 
 ```lua
-function on_init(ctx)
+function on_init()
     -- Load data, set up state
 end
 
-function on_input(event)
-    -- Handle button presses
+function on_input(button, action)
+    -- Handle button presses and releases
 end
 
 function on_update(dt)
     -- Update state each frame (dt = seconds since last frame)
 end
 
-function on_render(screen)
-    -- Draw everything
-    screen:clear()
-    screen:draw_text("Hello", 20, 20, { bold = true, size = 24 })
+function on_render()
+    screen.clear(theme.bg.r, theme.bg.g, theme.bg.b)
+    screen.draw_text("Hello", 20, 20, { bold = true, size = 24 })
 end
 ```
 
@@ -147,7 +167,7 @@ end
 
 | Module | Description |
 |--------|-------------|
-| `screen` | 640x480 drawing surface — text, shapes, colors |
+| `screen` | 720×720 drawing surface — text, shapes, colors |
 | `theme` | Consistent dark theme with accent colors |
 | `storage` | Scoped key-value persistence per app |
 | `http` | HTTP requests for fetching data |
@@ -170,7 +190,7 @@ end
 | App | Category | Description |
 |-----|----------|-------------|
 | [VibeBoy](https://github.com/Strizzo/vibeboy-cartridge) | Tools | Remote control for VibeBoy daemon, manage tmux sessions and Claude Code |
-| [World Pulse](https://github.com/Strizzo/worldpulse-cartridge) | Tools | Real-time global earthquake monitor and intelligence dashboard |
+| [World Pulse](https://github.com/Strizzo/worldpulse-cartridge) | Preview | Experimental live-data dashboard; held out of the Store pending provider verification |
 
 ## Creating Cartridges
 
@@ -228,13 +248,16 @@ cargo test --test snapshot_test         # visual regression test
 CARTRIDGE_FPS=1 ./dev-run.sh            # on-screen FPS overlay
 ```
 
-### Publishing to the registry
+### Publishing to the Store
 
-The app registry is the `registry.json` file in this repo. To list your cartridge:
+Apps live in their own repositories, with versioned release packages. The
+[official catalogue](https://github.com/Strizzo/cartridge-apps) contains signed
+metadata pointing to those packages, including hashes, exact sizes, permissions
+and minimum runtime versions. The `registry.json` shipped here is the bundled
+offline fallback; adding a link there does not publish a downloadable Store app.
 
-1. Host your cartridge in a public GitHub repo
-2. Add a release workflow that creates a `.zip` artifact (see any existing cartridge repo for reference)
-3. Open a PR adding your app entry to `registry.json`
+Follow the [Store publishing guide](docs/app-store.md) for packaging, validation
+and catalogue review. No account or GitHub token is required on the handheld.
 
 ## Project Structure
 
@@ -250,15 +273,15 @@ Cartridge/
     cartridge-net/            # HTTP and networking
     cartridge-launcher/       # Launcher UI
     cartridge-boot/           # Device bootstrap
-  assets/fonts/               # Bundled fonts (Cascadia Mono)
-  cartridges/                 # Bundled Lua apps
+  assets/fonts/               # Bundled fonts and license notices
+  lua_cartridges/             # Bundled Lua apps
   install.sh                  # Build script
   install_to_device.sh        # Cross-compile and deploy to device
 ```
 
 ## Device Deployment
 
-Cross-compile for aarch64, then copy the binary, `assets/`, and `cartridges/` to the device. See `install_to_device.sh` for automated deployment.
+Cross-compile for aarch64, then copy the binary, `assets/`, and `lua_cartridges/` to the device. See `install_to_device.sh` for automated deployment.
 
 ## License
 

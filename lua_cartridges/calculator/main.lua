@@ -1,6 +1,9 @@
 -- Calculator App for Cartridge OS (Lua)
 -- Safe expression evaluator with history
 
+local U = ui.public
+local C = U.C
+
 -- ── Expression Evaluator (Recursive Descent Parser) ──────────────────────────
 
 local FUNCTIONS = {
@@ -288,59 +291,8 @@ local state = {
     history = {},
     history_selected = 1,
     history_scroll = 0,
-    history_visible = 9,
+    history_visible = 6,
 }
-
--- ── Drawing Helpers ──────────────────────────────────────────────────────────
-
-local function draw_header(title)
-    screen.draw_gradient_rect(0, 0, 720, 40,
-        theme.header_gradient_top.r, theme.header_gradient_top.g, theme.header_gradient_top.b,
-        theme.header_gradient_bottom.r, theme.header_gradient_bottom.g, theme.header_gradient_bottom.b)
-    screen.draw_line(0, 0, 720, 0, {color=theme.accent})
-    screen.draw_text(title, 12, 10, {color=theme.text, size=20, bold=true})
-end
-
-local function draw_footer(hints)
-    screen.draw_rect(0, 684, 720, 36, {color=theme.bg_header, filled=true})
-    screen.draw_line(0, 684, 720, 684, {color=theme.border})
-    local x = 10
-    for _, h in ipairs(hints) do
-        local w = screen.draw_button_hint(h[1], h[2], x, 692, {color=h[3], size=12})
-        x = x + w + 14
-    end
-end
-
-local function get_button_colors(btn_type, is_selected)
-    if is_selected then
-        if btn_type == TYPE_EQUAL then
-            return {60,170,60}, {255,255,255}, theme.accent
-        elseif btn_type == TYPE_OP then
-            return {50,85,160}, {255,255,255}, theme.accent
-        elseif btn_type == TYPE_CLEAR then
-            return {160,50,50}, {255,255,255}, theme.accent
-        elseif btn_type == TYPE_DEL then
-            return {140,80,40}, {255,255,255}, theme.accent
-        elseif btn_type == TYPE_FUNC then
-            return {55,65,95}, {255,255,255}, theme.accent
-        else
-            return theme.card_highlight, {255,255,255}, theme.accent
-        end
-    end
-    if btn_type == TYPE_EQUAL then
-        return {45,140,45}, {255,255,255}, {55,160,55}
-    elseif btn_type == TYPE_OP then
-        return {40,65,130}, {180,210,255}, {50,80,155}
-    elseif btn_type == TYPE_CLEAR then
-        return {130,40,40}, {255,180,180}, {155,50,50}
-    elseif btn_type == TYPE_DEL then
-        return {110,65,30}, {255,200,150}, {135,80,40}
-    elseif btn_type == TYPE_FUNC then
-        return {38,48,72}, {160,190,230}, {50,62,90}
-    else
-        return theme.card_bg, theme.text, theme.border
-    end
-end
 
 -- ── Calc Logic ───────────────────────────────────────────────────────────────
 
@@ -493,187 +445,97 @@ local function move_cursor(drow, dcol)
     state.cursor_col = new_col
 end
 
--- ── Calc Screen Drawing ─────────────────────────────────────────────────────
+-- ── Instrument and History ──────────────────────────────────────────────────
+
+-- Expressions are ASCII internally. Keep the editable end visible without
+-- shrinking the body text or changing the stored expression.
+local function expression_tail(expression, width)
+    local value = expression == "" and "Enter an expression" or expression
+    if screen.get_text_width(value, 18, false) <= width then return value end
+    while #value > 1 and screen.get_text_width("..." .. value, 18, false) > width do
+        value = value:sub(2)
+    end
+    return "..." .. value
+end
 
 local function draw_calc_screen()
-    draw_header("Calculator")
+    U.header("Calculator", "CALCULATION / INSTRUMENT", "LOCAL HISTORY", C.muted)
+    U.panel(24, 112, 672, 150, C.paper, C.red)
+    U.text("EXPRESSION", 44, 126, 14, C.black, 136, true)
+    U.text(expression_tail(state.expression, 476), 200, 126, 18, C.black, 476)
+    U.rule(44, 157, 632, C.quiet)
 
-    -- Display area
-    local display_y = 44
-    local display_h = 116
-    screen.draw_card(12, display_y, 696, display_h, {bg=theme.card_bg, border=theme.border, radius=10, shadow=true})
-
-    -- Format expression for display
-    local formatted = ""
-    local raw = state.expression
-    local i = 1
-    while i <= #raw do
-        local ch = raw:sub(i, i)
-        if (ch == "+" or ch == "-") and i > 1 and not ({["+"] = true, ["-"] = true, ["*"] = true, ["/"] = true, ["("] = true, ["^"] = true})[raw:sub(i - 1, i - 1)] then
-            formatted = formatted .. " " .. ch .. " "
-        else
-            formatted = formatted .. ch
-        end
-        i = i + 1
-    end
-    local display_expr = formatted:gsub("/", " \195\183 "):gsub("%*", " \195\151 ")
-    display_expr = display_expr:gsub("pi", "\207\128")
-    display_expr = display_expr:gsub("sqrt%(", "\226\136\154(")
-
-    if display_expr == "" then
-        display_expr = "0"
-    end
-
-    -- Draw expression (right-aligned)
-    local expr_color = state.expression == "" and theme.text_dim or theme.text
-    local max_expr_w = 672
-    local tw = screen.get_text_width(display_expr, 28, true)
-    if tw > max_expr_w then
-        -- Show rightmost portion
-        local expr_x = 24
-        screen.draw_text(display_expr, expr_x, display_y + 16, {color=expr_color, size=28, bold=true, max_width=max_expr_w})
-    else
-        local expr_x = 12 + 696 - 12 - tw
-        screen.draw_text(display_expr, expr_x, display_y + 16, {color=expr_color, size=28, bold=true})
-    end
-
-    -- Divider
-    screen.draw_line(24, display_y + 55, 698, display_y + 55, {color={50, 50, 70}})
-
-    -- Result preview or error
-    local preview_y = display_y + 60
     if state.error_text ~= "" then
-        local ew = screen.get_text_width(state.error_text, 20, false)
-        screen.draw_text(state.error_text, 698 - ew, preview_y, {color=theme.negative, size=20})
-    elseif state.result_text ~= "" and state.expression ~= "" then
-        local preview_str = "= " .. state.result_text
-        local pw = screen.get_text_width(preview_str, 20, false)
-        screen.draw_text(preview_str, 698 - pw, preview_y, {color=theme.text_dim, size=20})
+        U.display("CHECK INPUT", 44, 172, 40, C.red, 632)
+        U.text(state.error_text .. ". B edits; AC clears.", 44, 226, 16, C.black, 632)
+    else
+        local value = state.result_text ~= "" and state.result_text or "0"
+        U.display(value, 44, 166, 76, C.black, 632)
+        local note = state.expression == "" and "D-pad chooses a key. A enters it."
+            or (state.result_text == "" and "Finish the expression, then choose =."
+            or "RESULT / choose = to save to history")
+        U.text(note, 44, 238, 14, C.black, 632)
     end
 
-    -- Button grid
-    local grid_y_start = 168
-    local grid_x_start = 10
-    local btn_w = 136
-    local btn_h = 48
-    local gap_x = 5
-    local gap_y = 4
-
+    U.text("KEYPAD", 24, 274, 14, C.muted, 120, true)
+    U.text("C entry / AC all / functions in radians", 184, 274, 14, C.muted, 512)
     for row = 1, GRID_ROWS do
         for col = 1, GRID_COLS do
             local btn = GRID[row][col]
-            if btn.type ~= TYPE_EMPTY then
-                local x = grid_x_start + (col - 1) * (btn_w + gap_x)
-                local y = grid_y_start + (row - 1) * (btn_h + gap_y)
-                local is_selected = (row == state.cursor_row and col == state.cursor_col)
-
-                local bg, text_color, border_color = get_button_colors(btn.type, is_selected)
-
-                -- Selection glow
-                if is_selected then
-                    screen.draw_rect(x - 2, y - 2, btn_w + 4, btn_h + 4, {color=theme.accent, filled=true, radius=10})
-                end
-
-                screen.draw_rect(x, y, btn_w, btn_h, {color=bg, filled=true, radius=8})
-                if border_color then
-                    screen.draw_rect(x, y, btn_w, btn_h, {color=border_color, filled=false, radius=8})
-                end
-
-                -- Label
-                local font_size = 20
-                if btn.label == "DEL" or btn.label == "AC" or btn.label == "+/\226\136\146"
-                   or btn.label == "sin" or btn.label == "cos" or btn.label == "tan" or btn.label == "ln" then
-                    font_size = 16
-                end
-                local lw = screen.get_text_width(btn.label, font_size, true)
-                local lh = screen.get_line_height(font_size, true)
-                screen.draw_text(btn.label, x + (btn_w - lw) / 2, y + (btn_h - lh) / 2, {color=text_color, size=font_size, bold=true})
-            end
+            local x = 24 + (col - 1) * 136
+            local y = 300 + (row - 1) * 58
+            local selected = row == state.cursor_row and col == state.cursor_col
+            local bg, fg = C.panel, C.paper
+            if btn.type == TYPE_DIGIT then bg = C.panel2
+            elseif btn.type == TYPE_EQUAL then bg, fg = C.red, C.black
+            elseif btn.type == TYPE_CLEAR or btn.type == TYPE_DEL then fg = C.red
+            elseif btn.type == TYPE_OP then fg = C.gold
+            else fg = C.muted end
+            if selected then bg, fg = C.paper, C.black end
+            U.rect(x, y, 128, 52, bg)
+            if selected then U.rect(x, y, 4, 52, C.red) end
+            local label = btn.label
+            if btn.action == "sqrt(" then label = "SQRT"
+            elseif btn.action == "pi" then label = "PI"
+            elseif btn.action == "negate" then label = "+/-" end
+            local size = (btn.type == TYPE_DIGIT or btn.type == TYPE_OP or btn.type == TYPE_EQUAL)
+                and 26 or 18
+            -- Keep math symbols in the body font; the display face is for readouts.
+            local width = screen.get_text_width(label, size, true)
+            U.text(label, x + (128 - width) / 2, y + (52 - screen.get_line_height(size, true)) / 2,
+                size, fg, 108, true)
         end
     end
-
-    draw_footer({
-        {"A", "Press", theme.btn_a},
-        {"B", "Del", theme.btn_b},
-        {"Y", "History", theme.btn_y},
-    })
+    U.footer({{"A", "Enter"}, {"B", "Delete"}, {"Y", "History"}, {"D-PAD", "Key"}})
 end
 
--- ── History Screen Drawing ───────────────────────────────────────────────────
-
 local function draw_history_screen()
-    draw_header("History")
-
+    U.header("Calculator", "CALCULATION / ARCHIVE", #state.history .. " SAVED", C.muted)
+    U.tabs({"Instrument", "History"}, 2)
     local history = state.history
     if #history == 0 then
-        local tw = screen.get_text_width("No calculations yet", 18, false)
-        screen.draw_text("No calculations yet", (720 - tw) / 2, 200, {color=theme.text_dim, size=18})
-        local hw = screen.get_text_width("Press B to go back", 14, false)
-        screen.draw_text("Press B to go back", (720 - hw) / 2, 236, {color=theme.text_dim, size=14})
-        draw_footer({{"B", "Back", theme.btn_b}})
+        U.empty("No calculations saved", "B returns to the keypad. Enter an expression and choose = to save it.")
+        U.footer({{"B", "Back"}})
         return
     end
-
-    -- Ensure selected is in range
     state.history_selected = math.max(1, math.min(state.history_selected, #history))
-
-    -- Ensure visible
     if state.history_selected < state.history_scroll + 1 then
         state.history_scroll = state.history_selected - 1
     elseif state.history_selected > state.history_scroll + state.history_visible then
         state.history_scroll = state.history_selected - state.history_visible
     end
-
-    local content_y = 50
-    local item_h = 62
-    local item_gap = 6
-    local x_pad = 12
-    local card_w = 696
-
-    for i = state.history_scroll + 1, math.min(#history, state.history_scroll + state.history_visible + 1) do
+    state.history_scroll = math.max(0, math.min(state.history_scroll, #history - state.history_visible))
+    U.text("EXPRESSION / RESULT", 24, 158, 14, C.muted, 440, true)
+    U.text(state.history_selected .. " / " .. #history, 600, 158, 14, C.muted, 96, true)
+    for i = state.history_scroll + 1, math.min(#history, state.history_scroll + state.history_visible) do
         local entry = history[i]
-        local local_idx = i - state.history_scroll - 1
-        local y = content_y + local_idx * (item_h + item_gap)
-
-        if y + item_h > 684 then break end
-
-        local is_selected = (i == state.history_selected)
-
-        if is_selected then
-            screen.draw_card(x_pad, y, card_w, item_h, {bg=theme.card_highlight, border=theme.accent, radius=8, shadow=true})
-        else
-            screen.draw_card(x_pad, y, card_w, item_h, {bg=theme.card_bg, border=theme.border, radius=8})
-        end
-
-        -- Expression
-        local expr_display = entry.expr:gsub("/", " \195\183 "):gsub("%*", " \195\151 "):gsub("pi", "\207\128"):gsub("sqrt%(", "\226\136\154(")
-        screen.draw_text(expr_display, x_pad + 14, y + 10, {color=theme.text, size=16, max_width=400})
-
-        -- Result (right-aligned)
-        local result_str = "= " .. entry.result
-        local rw = screen.get_text_width(result_str, 16, true)
-        screen.draw_text(result_str, x_pad + card_w - 14 - rw, y + 10, {color=theme.text_accent, size=16, bold=true})
-
-        -- Index number
-        local idx_str = "#" .. (#history - i + 1)
-        screen.draw_text(idx_str, x_pad + 14, y + 38, {color=theme.text_dim, size=11})
+        local y = 182 + (i - state.history_scroll - 1) * 78
+        local fg, secondary = U.row(24, y, 672, 72, i == state.history_selected)
+        U.text(string.format("%02d", #history - i + 1), 40, y + 12, 14, secondary, 38, true)
+        U.text(expression_tail(entry.expr, 592), 88, y + 9, 18, secondary, 592)
+        U.display("= " .. entry.result, 88, y + 32, 28, fg, 592)
     end
-
-    -- Scroll indicators
-    if state.history_scroll > 0 then
-        local tw = screen.get_text_width("\226\150\178 more", 14, false)
-        screen.draw_text("\226\150\178 more", (720 - tw) / 2, 42, {color=theme.text_dim, size=14})
-    end
-    if state.history_scroll + state.history_visible < #history then
-        local tw = screen.get_text_width("\226\150\188 more", 14, false)
-        screen.draw_text("\226\150\188 more", (720 - tw) / 2, 670, {color=theme.text_dim, size=14})
-    end
-
-    draw_footer({
-        {"A", "Recall", theme.btn_a},
-        {"B", "Back", theme.btn_b},
-        {"X", "Clear All", theme.btn_x},
-    })
+    U.footer({{"A", "Recall"}, {"B", "Back"}, {"X", "Clear all"}, {"D-PAD", "Scroll"}})
 end
 
 -- ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -686,7 +548,7 @@ function on_init()
     end
 end
 
-function on_input(button, action)
+local function handle_input(button, action)
     if action ~= "press" and action ~= "repeat" then return end
 
     local current = state.screen_stack[#state.screen_stack]
@@ -732,14 +594,28 @@ function on_input(button, action)
         elseif button == "dpad_up" then
             state.history_selected = math.max(1, state.history_selected - 1)
         elseif button == "dpad_down" then
-            state.history_selected = math.min(#state.history, state.history_selected + 1)
+            state.history_selected = math.max(1, math.min(#state.history, state.history_selected + 1))
         end
     end
 end
 
-function on_render()
-    screen.clear(theme.bg.r, theme.bg.g, theme.bg.b)
+local function input_snapshot()
+    return table.concat({#state.screen_stack, state.cursor_row, state.cursor_col,
+        state.expression, state.result_text, state.error_text, #state.history,
+        state.history_selected, state.history_scroll}, "\0")
+end
 
+function on_input(button, action)
+    local before = input_snapshot()
+    handle_input(button, action)
+    if before ~= input_snapshot() then app.request_redraw() end
+end
+
+function on_update(dt)
+    return false
+end
+
+function on_render()
     local current = state.screen_stack[#state.screen_stack]
     if current == "calc" then
         draw_calc_screen()

@@ -1,0 +1,18 @@
+{
+  "hostname": "r36s-plus",
+  "battery": { "percent": 9, "charging": false },
+  "wifi": {
+    "connected": false,
+    "ssid": "",
+    "rssi": 0,
+    "networks": [
+      { "ssid": "HomeNet",    "signal": 40, "security": "WPA2", "saved": true },
+      { "ssid": "OpenWifi",   "signal": 20, "security": "--",   "saved": false }
+    ]
+  },
+  "mem_total_mb": 1024,
+  "disk": { "total_gb": 29.7, "used_gb": 27.9 },
+  "cpu_percent": 60,
+  "brightness": 30,
+  "volume": 0
+}

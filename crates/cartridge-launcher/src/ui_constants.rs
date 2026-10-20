@@ -1,5 +1,4 @@
 use sdl2::pixels::Color;
-use std::path::PathBuf;
 
 /// Category color mapping for app store pills and strips.
 pub fn category_color(category: &str) -> Color {
@@ -51,18 +50,7 @@ pub fn app_short_name(app_id: &str) -> &str {
 
 /// Build a list of name variants to try (original, hyphen, underscore).
 pub fn name_variants(app_id: &str) -> Vec<String> {
-    let short = app_short_name(app_id);
-    let mut names: Vec<String> = vec![app_id.to_string(), short.to_string()];
-    // Also try with hyphens/underscores swapped
-    let with_underscore = short.replace('-', "_");
-    let with_hyphen = short.replace('_', "-");
-    if with_underscore != short {
-        names.push(with_underscore);
-    }
-    if with_hyphen != short {
-        names.push(with_hyphen);
-    }
-    names
+    cartridge_core::paths::cartridge_name_variants(app_id)
 }
 
 use std::sync::OnceLock;
@@ -70,25 +58,32 @@ use std::sync::Mutex;
 use std::collections::HashMap;
 
 /// Process-wide cache for resolved icon paths. Resolution involves multiple
-/// stat() syscalls; the result is stable for the process lifetime.
+/// stat() syscalls; invalidated when a Store job changes local apps.
 fn icon_path_cache() -> &'static Mutex<HashMap<String, Option<String>>> {
     static CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// Resolve the icon.png path for an app, checking bundled and install locations.
-/// Cached for the process lifetime — icons don't move at runtime.
+/// Invalidated after install, update, rollback or removal.
 pub fn resolve_icon_path(app_id: &str) -> Option<String> {
+    resolve_icon_file(app_id, "icon.png")
+}
+
+/// Resolve an arbitrary icon variant next to the cartridge (for example
+/// `icon_focused.png`, the red-tile variant of the Neo-Tokyo icons).
+pub fn resolve_icon_file(app_id: &str, file: &str) -> Option<String> {
+    let key = format!("{app_id}\u{0}{file}");
     if let Ok(cache) = icon_path_cache().lock() {
-        if let Some(cached) = cache.get(app_id) {
+        if let Some(cached) = cache.get(&key) {
             return cached.clone();
         }
     }
 
-    let result = resolve_icon_path_uncached(app_id);
+    let result = resolve_icon_path_uncached(app_id, file);
 
     if let Ok(mut cache) = icon_path_cache().lock() {
-        cache.insert(app_id.to_string(), result.clone());
+        cache.insert(key, result.clone());
     }
     result
 }
@@ -96,40 +91,46 @@ pub fn resolve_icon_path(app_id: &str) -> Option<String> {
 /// Force re-resolution on next call (use after install/remove).
 pub fn invalidate_icon_path(app_id: &str) {
     if let Ok(mut cache) = icon_path_cache().lock() {
-        cache.remove(app_id);
+        cache.retain(|k, _| !k.starts_with(&format!("{app_id}\u{0}")));
     }
 }
 
-fn resolve_icon_path_uncached(app_id: &str) -> Option<String> {
-    let home = std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."));
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
-    let cwd = std::env::current_dir().unwrap_or_default();
+fn resolve_icon_path_uncached(app_id: &str, file: &str) -> Option<String> {
+    let path = cartridge_core::paths::resolve_cartridge_dir(app_id)?.join(file);
+    path.is_file().then(|| path.to_string_lossy().into_owned())
+}
 
-    let variants = name_variants(app_id);
+/// Paths previously cached for an app, including variants, for GPU eviction.
+pub fn cached_icon_paths(app_id: &str) -> Vec<String> {
+    icon_path_cache().lock().map(|cache| cache.iter()
+        .filter(|(key, _)| key.starts_with(&format!("{app_id}\u{0}")))
+        .filter_map(|(_, path)| path.clone()).collect()).unwrap_or_default()
+}
 
-    for name in &variants {
-        if let Some(ref dir) = exe_dir {
-            let bundled_icon = dir.join("lua_cartridges").join(name).join("icon.png");
-            if bundled_icon.exists() {
-                return Some(bundled_icon.to_string_lossy().to_string());
-            }
+#[cfg(test)]
+mod icon_completion_tests {
+    use super::*;
+    use crate::store_jobs::{Completion, LocalApps};
+
+    #[test]
+    fn completion_invalidates_both_icon_variants_and_evicts_old_gpu_paths() {
+        let id = "dev.cartridge.icon-completion-test";
+        let entry: crate::data::AppEntry = serde_json::from_value(serde_json::json!({"id":id,"name":"Test"})).unwrap();
+        let mut ctx = crate::screens::test_context();
+        ctx.local_apps.apps.push(entry.clone());
+        {
+            let mut cache = icon_path_cache().lock().unwrap();
+            cache.insert(format!("{id}\u{0}icon.png"), Some("/old/icon.png".into()));
+            cache.insert(format!("{id}\u{0}icon_focused.png"), Some("/old/icon_focused.png".into()));
+            cache.insert(format!("{id}\u{0}missing.png"), None);
         }
-        let dev_icon = cwd.join("lua_cartridges").join(name).join("icon.png");
-        if dev_icon.exists() {
-            return Some(dev_icon.to_string_lossy().to_string());
-        }
+        ctx.apply_store_completion(Completion {
+            local: LocalApps { apps:vec![entry], ..Default::default() }, installer:None,
+            registry:None, outcome:Ok(None),
+        });
+        assert!(ctx.invalidated_textures.contains(&"/old/icon.png".into()));
+        assert!(ctx.invalidated_textures.contains(&"/old/icon_focused.png".into()));
+        assert!(!icon_path_cache().lock().unwrap().keys().any(|key| key.starts_with(&format!("{id}\u{0}"))));
+        std::fs::remove_dir_all(ctx.storage.data_dir.parent().unwrap().parent().unwrap()).unwrap();
     }
-
-    for name in &variants {
-        let installed_icon = home.join(".cartridges/apps").join(name).join("icon.png");
-        if installed_icon.exists() {
-            return Some(installed_icon.to_string_lossy().to_string());
-        }
-    }
-
-    None
 }

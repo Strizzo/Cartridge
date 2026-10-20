@@ -1,1 +1,20 @@
-{"id":"dev.cartridge.network-tool","name":"Net Tool","version":"0.1.0","author":"CartridgeOS Team","description":"Network diagnostics and IP lookup","category":"Tools","tags":["network","ip","dns","cyberdeck"],"permissions":["network"],"entry":"main.lua"}
+{
+  "id": "dev.cartridge.network-tool",
+  "name": "Net Tool",
+  "version": "0.2.0",
+  "author": "CartridgeOS Team",
+  "description": "Network diagnostics and IP lookup",
+  "category": "Tools",
+  "tags": [
+    "network",
+    "ip",
+    "dns",
+    "cyberdeck"
+  ],
+  "permissions": [
+    "network"
+  ],
+  "entry": "main.lua",
+  "min_runtime": "0.7.0",
+  "repo_url": "https://github.com/Strizzo/Cartridge/tree/v0.7.0/lua_cartridges/network_tool"
+}

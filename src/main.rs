@@ -6,6 +6,17 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     match args.get(1).map(|s| s.as_str()) {
+        Some("system-verify") => {
+            let result = if args.len() == 4 && args[2] == "--path" {
+                cartridge_net::system_update::verify_release_dir(std::path::Path::new(&args[3]))
+            } else {
+                Err("Usage: cartridge system-verify --path <release-directory>".into())
+            };
+            match result {
+                Ok(release) => println!("Verified CartridgeOS {} ({})", release.version, release.revision),
+                Err(error) => { eprintln!("System verification failed: {error}"); std::process::exit(1); }
+            }
+        }
         Some("run") => {
             let app_dir = parse_run_args(&args);
             let assets_dir = find_assets_dir();
@@ -26,6 +37,9 @@ fn main() {
         Some("help") | Some("--help") | Some("-h") => {
             print_usage();
         }
+        Some("version") | Some("--version") | Some("-V") => {
+            println!("cartridge {}", env!("CARGO_PKG_VERSION"));
+        }
         Some(unknown) => {
             eprintln!("Unknown command: {unknown}");
             print_usage();
@@ -34,9 +48,32 @@ fn main() {
         None => {
             // Default: run the launcher in a loop so we can launch apps and return
             let assets_dir = find_assets_dir();
+            let mut resume_game = None;
             loop {
-                match cartridge_launcher::run_launcher(&assets_dir) {
+                let config = cartridge_launcher::LauncherConfig {
+                    resume_game: resume_game.take(),
+                    ..Default::default()
+                };
+                match cartridge_launcher::run_launcher_with_config(&assets_dir, config)
+                    .map(|(result, _)| result)
+                {
                     Ok(cartridge_launcher::LauncherResult::Quit) => break,
+                    Ok(cartridge_launcher::LauncherResult::LaunchGame(mut game)) => {
+                        if let Err(error) = cartridge_launcher::games::launch(&game) {
+                            log::error!("Game launch failed: {error}");
+                            game.error = Some(error);
+                        }
+                        resume_game = Some(game);
+                    }
+                    Ok(cartridge_launcher::LauncherResult::EmulationStation) => {
+                        std::process::exit(20)
+                    }
+                    Ok(cartridge_launcher::LauncherResult::RestartForUpdate) => {
+                        std::process::exit(40)
+                    }
+                    Ok(cartridge_launcher::LauncherResult::PowerRequested) => {
+                        std::process::exit(30)
+                    }
                     Ok(cartridge_launcher::LauncherResult::LaunchApp(app_dir)) => {
                         log::info!("Launching app from: {}", app_dir.display());
                         if let Err(e) = cartridge_lua::run_lua_app(&app_dir, &assets_dir) {
@@ -45,11 +82,9 @@ fn main() {
                             // Write crash log next to the binary for debugging
                             if let Ok(exe) = std::env::current_exe() {
                                 if let Some(dir) = exe.parent() {
-                                    let log_path = dir.join("crash.log");
-                                    let msg = format!(
-                                        "App: {}\nError: {e}\n",
-                                        app_dir.display()
-                                    );
+                                    let log_path = std::env::var_os("CARTRIDGE_UPDATE_STATE")
+                                        .map(PathBuf::from).unwrap_or_else(|| dir.to_path_buf()).join("crash.log");
+                                    let msg = format!("App: {}\nError: {e}\n", app_dir.display());
                                     let _ = std::fs::OpenOptions::new()
                                         .create(true)
                                         .append(true)
@@ -100,30 +135,11 @@ fn print_usage() {
     eprintln!("  (default)          Launch the CartridgeOS home screen");
     eprintln!("  run --path <dir>   Run a Lua cartridge app");
     eprintln!("  demo               Run the built-in demo screen");
+    eprintln!("  --version          Print the version and exit");
     eprintln!("  help               Show this help message");
 }
 
+/// Honors CARTRIDGE_ASSETS, then probes cwd / exe dir (see cartridge_core::paths).
 fn find_assets_dir() -> PathBuf {
-    let cwd = std::env::current_dir().unwrap_or_default();
-    let cwd_assets = cwd.join("assets");
-    if cwd_assets.join("fonts").exists() {
-        return cwd_assets;
-    }
-
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(exe_dir) = exe.parent()
-    {
-        let exe_assets = exe_dir.join("assets");
-        if exe_assets.join("fonts").exists() {
-            return exe_assets;
-        }
-        if let Some(parent) = exe_dir.parent() {
-            let parent_assets = parent.join("assets");
-            if parent_assets.join("fonts").exists() {
-                return parent_assets;
-            }
-        }
-    }
-
-    cwd_assets
+    cartridge_core::paths::assets_dir()
 }

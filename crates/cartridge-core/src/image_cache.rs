@@ -3,11 +3,16 @@ use sdl2::render::{Texture, TextureCreator};
 use sdl2::video::WindowContext;
 use std::collections::HashMap;
 
+use crate::gradient_cache::GradientCache;
+
 /// Manages image loading and caching, mirroring the FontCache pattern.
+/// Also owns the procedurally generated gradient textures (see
+/// `GradientCache`) so `Screen` can reach them without growing a field.
 pub struct ImageCache {
     _ctx: Sdl2ImageContext,
     textures: HashMap<String, Texture<'static>>,
     creator_ptr: *const TextureCreator<WindowContext>,
+    pub gradients: GradientCache,
 }
 
 impl ImageCache {
@@ -19,8 +24,12 @@ impl ImageCache {
             _ctx: ctx,
             textures: HashMap::new(),
             creator_ptr: texture_creator as *const TextureCreator<WindowContext>,
+            gradients: GradientCache::new(texture_creator),
         })
     }
+
+    /// Release a large preview once selection changes.
+    pub fn remove(&mut self, path: &str) { self.textures.remove(path); }
 
     /// Get a cached texture by file path. Lazy-loads from disk on first access.
     /// Returns None if the file cannot be loaded.

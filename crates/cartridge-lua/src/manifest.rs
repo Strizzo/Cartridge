@@ -15,6 +15,8 @@ pub struct CartridgeManifest {
     #[serde(default)]
     pub permissions: Vec<String>,
     pub entry: String,
+    #[serde(default)]
+    pub min_runtime: Option<String>,
 }
 
 impl CartridgeManifest {
@@ -26,9 +28,19 @@ impl CartridgeManifest {
                 manifest_path.display()
             )
         })?;
-        let manifest: CartridgeManifest = serde_json::from_str(&content).map_err(|e| {
-            format!("Failed to parse cartridge.json: {e}")
-        })?;
+        let manifest: CartridgeManifest = serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse cartridge.json: {e}"))?;
+        if let Some(minimum) = &manifest.min_runtime {
+            let minimum = semver::Version::parse(minimum)
+                .map_err(|_| "Invalid minimum runtime version in cartridge.json".to_string())?;
+            let runtime = semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
+            if minimum.cmp_precedence(&runtime).is_gt() {
+                return Err(format!(
+                    "{} requires CartridgeOS {} or later (this is {})",
+                    manifest.name, minimum, runtime
+                ));
+            }
+        }
         Ok(manifest)
     }
 }

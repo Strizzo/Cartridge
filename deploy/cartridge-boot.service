@@ -18,6 +18,7 @@ TTYVTDisallocate=yes
 Environment=HOME=/root
 Environment=SDL_VIDEODRIVER=kmsdrm
 Environment=SDL_AUDIODRIVER=alsa
+Environment=RUST_LOG=cartridge=info,cartridge_launcher=info,cartridge_core=info,cartridge_lua=info
 
 [Install]
 WantedBy=multi-user.target

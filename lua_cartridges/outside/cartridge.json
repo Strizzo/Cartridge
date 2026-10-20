@@ -1,0 +1,21 @@
+{
+  "id": "dev.cartridge.outside",
+  "name": "Outside",
+  "version": "1.0.0",
+  "author": "Cartridge Team",
+  "description": "An illustrated window onto live weather, hour by hour, anywhere.",
+  "category": "tools",
+  "tags": [
+    "weather",
+    "forecast",
+    "landscape",
+    "travel"
+  ],
+  "permissions": [
+    "network",
+    "storage"
+  ],
+  "entry": "main.lua",
+  "icon": "icon.png",
+  "min_runtime": "0.6.0"
+}

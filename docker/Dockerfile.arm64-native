@@ -1,0 +1,37 @@
+# Native aarch64 build image.
+#
+# `cross` only publishes x86_64 images, so on an Apple Silicon host (where the
+# Docker VM is itself arm64) it tries to run an emulated amd64 container and
+# fails. This image builds the device binaries *natively* inside an arm64
+# container instead -- no emulation, and much faster.
+#
+# Ubuntu 20.04 matches the glibc (2.31) of the cross image that produced the
+# binaries currently running on the device, so the result stays compatible
+# with ArkOS.
+FROM ubuntu:20.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        pkg-config \
+        libsdl2-dev \
+        libsdl2-ttf-dev \
+        libsdl2-image-dev \
+        libsdl2-gfx-dev \
+        libasound2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV RUSTUP_HOME=/opt/rustup \
+    CARGO_HOME=/opt/cargo \
+    PATH=/opt/cargo/bin:$PATH
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --profile minimal --default-toolchain stable
+
+# The repo's .cargo/config.toml names the cross-linker; inside an arm64
+# container the native compiler is the right one.
+ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=cc
+
+WORKDIR /src
