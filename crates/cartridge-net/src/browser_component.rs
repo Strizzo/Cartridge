@@ -271,7 +271,7 @@ fn validate_release(r: &ComponentRelease) -> Result<()> {
             ComponentEntry::Symlink { target, .. } => {
                 if target.is_empty()
                     || target.len() > 100
-                    || !printable(target)
+                    || !path_text(target)
                     || target.starts_with('/')
                 {
                     return Err("Unsafe symbolic link target".into());
@@ -390,13 +390,17 @@ fn resolve_link(path: &str, entries: &BTreeMap<&str, &ComponentEntry>) -> Result
     }
     Ok(())
 }
-fn printable(s: &str) -> bool {
-    s.bytes().all(|b| (32..127).contains(&b) && b != b'\\')
+// Component persistence is Unix-only. Debian has legitimate UTF-8 certificate
+// names and literal backslashes in systemd unit names. Only '/' separates paths;
+// retain those bytes instead of renaming trusted package files or links.
+fn path_text(s: &str) -> bool {
+    s.chars()
+        .all(|c| c >= ' ' && !('\u{7f}'..='\u{9f}').contains(&c))
 }
 fn safe_path(path: &str) -> Result<()> {
     if path.is_empty()
         || path.len() > 255
-        || !printable(path)
+        || !path_text(path)
         || path.split('/').count() > 32
         || path
             .split('/')

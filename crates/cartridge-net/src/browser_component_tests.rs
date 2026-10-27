@@ -47,6 +47,8 @@ impl Fixture {
             ("bubblewrap", "verified helper"),
             ("component.json", "{}\n"),
             ("packages.tsv", "chromium\t1.2.3\n"),
+            ("rootfs/etc/ssl/certs/Főtanúsítvány.pem", "certificate"),
+            (r"rootfs/usr/lib/systemd/system/system-systemd\x2dcryptsetup.slice", "unit"),
             ("notices/bubblewrap.txt", "license"),
             ("notices/static-libc.txt", "libc license"),
             ("notices/static-libcap.txt", "libcap license"),
@@ -295,7 +297,7 @@ fn manifest_rejects_path_link_parent_and_special_entry_attacks() {
         "rootfs/../escape",
         "rootfs//escape",
         "rootfs/./escape",
-        "rootfs\\escape",
+        "rootfs/escape\nfile",
         ".browser-release.json",
     ] {
         let mut r = f.release.clone();
@@ -773,5 +775,23 @@ fn indirect_symlink_escape_and_archive_link_target_substitution_fail() {
         assert!(store.status().unwrap().current.is_none());
         assert!(!store.root.join(".incoming").exists());
         assert!(!f.root.join("escape").exists());
+    }
+}
+
+#[test]
+fn debian_utf8_certificates_and_literal_unix_backslashes_keep_their_names() {
+    for name in [
+        "rootfs/etc/ssl/certs/Főtanúsítvány.pem",
+        r"rootfs/usr/lib/systemd/system/system-systemd\x2dcryptsetup.slice",
+    ] {
+        assert!(safe_path(name).is_ok());
+    }
+    for name in [
+        "rootfs/../escape",
+        "/absolute",
+        "rootfs/control\nfile",
+        "rootfs/",
+    ] {
+        assert!(safe_path(name).is_err());
     }
 }

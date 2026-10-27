@@ -48,8 +48,9 @@ The example omits required files; use the packager, not handwritten JSON.
 helper, `component.json`, build marker, packages, notices and rootfs copyright
 files. File modes are decimal 292 (0444) or 365 (0555); directories are 0555.
 A hardlink entry is `{"path":"...","type":"hardlink","target":"<earlier regular path>"}`.
-Its bytes count toward `logical_bytes`, not `stored_bytes`. Paths are printable
-ASCII, at most 255 bytes and 32 components; USTAR paths and link targets must be
+Its bytes count toward `logical_bytes`, not `stored_bytes`. Paths use printable UTF-8 Unix names, at most 255 bytes and 32 components.
+Literal backslashes remain filename bytes, as in Debian systemd units; only `/`
+separates components. USTAR paths and link targets must be
 representable without GNU/PAX extensions (link targets at most 100 bytes).
 Special files, privileged files, absolute/escaping/cyclic links, symlink parents,
 duplicates and extra archive/tree entries are rejected. Safe dangling links are

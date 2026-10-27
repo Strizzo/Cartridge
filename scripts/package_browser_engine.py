@@ -34,11 +34,11 @@ require = ota.require
 
 
 def safe_path(path):
-    require(isinstance(path, str) and 0 < len(path) <= 255 and path.isascii()
-            and all(32 <= ord(c) < 127 and c != "\\" for c in path), "Unsafe component path")
+    require(isinstance(path, str) and 0 < len(path.encode("utf-8")) <= 255
+            and all(ord(c) >= 32 and not 127 <= ord(c) <= 159 for c in path), "Unsafe component path")
     parts = path.split("/")
-    require(len(parts) <= 32 and all(p not in ("", ".", "..") and len(p) <= 100 for p in parts), "Unsafe component path")
-    tarfile.TarInfo(path).tobuf(format=tarfile.USTAR_FORMAT, encoding="ascii")
+    require(len(parts) <= 32 and all(p not in ("", ".", "..") and len(p.encode("utf-8")) <= 100 for p in parts), "Unsafe component path")
+    tarfile.TarInfo(path).tobuf(format=tarfile.USTAR_FORMAT, encoding="utf-8")
     return path
 
 
@@ -114,12 +114,12 @@ def validate_payload(value):
             logical += entry["size"]
         elif kind == "hardlink":
             safe_path(entry["target"])
-            require(len(entry["target"]) <= 100 and entries.get(entry["target"], {}).get("type") == "file", "Hardlink must reference earlier regular file")
+            require(len(entry["target"].encode("utf-8")) <= 100 and entries.get(entry["target"], {}).get("type") == "file", "Hardlink must reference earlier regular file")
             logical += entries[entry["target"]]["size"]
         elif kind == "symlink":
             target = entry["target"]
-            require(isinstance(target, str) and 0 < len(target) <= 100 and target.isascii()
-                    and all(32 <= ord(c) < 127 and c != "\\" for c in target)
+            require(isinstance(target, str) and 0 < len(target.encode("utf-8")) <= 100
+                    and all(ord(c) >= 32 and not 127 <= ord(c) <= 159 for c in target)
                     and not target.startswith("/"), "Unsafe symbolic link")
         entries[path] = entry
     require(stored == archive["stored_bytes"] and logical == archive["logical_bytes"], "Size accounting mismatch")
@@ -213,7 +213,7 @@ def write_archive(component, archive, entries):
     records = {e["path"]: e for e in entries}
     with archive.open("xb") as raw:
         with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0, compresslevel=6) as zipped:
-            with tarfile.open(fileobj=zipped, mode="w|", format=tarfile.USTAR_FORMAT, encoding="ascii") as tar:
+            with tarfile.open(fileobj=zipped, mode="w|", format=tarfile.USTAR_FORMAT, encoding="utf-8") as tar:
                 for entry in entries:
                     header = tarfile.TarInfo(entry["path"])
                     kind = entry["type"]
@@ -244,7 +244,7 @@ def verify_archive(archive, payload):
         for expected in payload["entries"]:
             block = stream.read(512)
             require(len(block) == 512 and block[257:265] == b"ustar\x0000", "Expected USTAR header")
-            entry = tarfile.TarInfo.frombuf(block, "ascii", "strict")
+            entry = tarfile.TarInfo.frombuf(block, "utf-8", "strict")
             kind = expected["type"]
             require(entry.name == expected["path"] and entry.type == {"file": tarfile.REGTYPE,
                 "directory": tarfile.DIRTYPE, "symlink": tarfile.SYMTYPE, "hardlink": tarfile.LNKTYPE}[kind], "Archive path/type mismatch")

@@ -30,6 +30,8 @@ def make_component(root):
         "packages.tsv": "chromium\t1.2.3-1\n", "notices/bubblewrap.txt": "license",
         "notices/static-libc.txt": "libc license", "notices/static-libcap.txt": "libcap license",
         "notices/sources.txt": "metadata only, not a source distribution",
+        "rootfs/etc/ssl/certs/Főtanúsítvány.pem": "certificate",
+        r"rootfs/usr/lib/systemd/system/system-systemd\x2dcryptsetup.slice": "unit",
         "rootfs/usr/lib/chromium/chromium": "fixture engine", "rootfs/usr/share/doc/chromium/copyright": "copyright",
     }.items():
         path = root / name
