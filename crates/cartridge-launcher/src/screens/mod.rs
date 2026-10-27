@@ -6,6 +6,7 @@ pub mod settings;
 pub mod overlay;
 pub mod wifi;
 pub mod system_update;
+pub mod remote_access;
 
 use cartridge_core::input::InputEvent;
 use cartridge_core::screen::Screen;
@@ -39,6 +40,7 @@ pub enum ScreenId {
     Settings,
     WiFi,
     SystemUpdate,
+    RemoteAccess,
 }
 
 /// Common trait for all launcher screens.

@@ -13,8 +13,18 @@ deploy/wifi/device-shot.sh                              # screenshot -> screensh
 
 ## One-time setup
 
-**1. Enable SSH on the device.** In ArkOS: **Options → Enable Remote Services**
-(some builds call it "Enable SSH"). The default login is `ark` / `ark`.
+**1. Enable SSH on the device.** In the 0.8 development runtime, open
+**Cartridge Settings → Remote Access**, press **A Enable**, then confirm. This
+starts SSH and enables it on future boots. **X Disable** stops it and disables
+startup; **Y Refresh** checks the actual state. The screen shows the login and
+network address. The Mac simulator changes only simulated SSH state. Existing
+device credentials and other remote services are unchanged.
+
+Older installed runtimes lack this screen: use ArkOS **Options → Enable Remote
+Services** (sometimes “Enable SSH”) once to bootstrap wireless development. The
+stock login is `ark` / `ark` unless you changed it. Cartridge’s own control uses
+the existing `ssh.service` or `sshd.service` and the device’s existing noninteractive
+service-management permission; permission failures appear on screen.
 
 **2. Find its address.** On the device, activate the saved home connection in
 EmulationStation and open **Options → WiFi → Current Network Info** to read its

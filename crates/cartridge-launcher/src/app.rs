@@ -367,6 +367,7 @@ fn create_screen(id: ScreenId) -> Box<dyn LauncherScreen> {
         ScreenId::Settings => Box::new(SettingsScreen::new()),
         ScreenId::WiFi => Box::new(WifiScreen::new()),
         ScreenId::SystemUpdate => Box::new(SystemUpdateScreen::new()),
+        ScreenId::RemoteAccess => Box::new(crate::screens::remote_access::RemoteAccessScreen::new()),
     }
 }
 

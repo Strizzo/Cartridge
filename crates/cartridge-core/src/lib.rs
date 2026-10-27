@@ -7,6 +7,7 @@ pub mod image_cache;
 pub mod input;
 pub mod paths;
 pub mod perf;
+pub mod remote_access;
 pub mod screen;
 pub mod screenshot;
 pub mod sim;
