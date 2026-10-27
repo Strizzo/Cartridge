@@ -8,7 +8,7 @@
 //!   SIGUSR1 arrived since the last call (unix only). The signal handler is
 //!   installed lazily on first use.
 //! - `save_now(canvas)` writes `screenshots/<UTC timestamp>.png` under the
-//!   working directory (see `paths::screenshots_dir`).
+//!   user storage (see `paths::screenshots_dir`).
 //!
 //! read_pixels on the accelerated renderer is best-effort: capturing after
 //! `present()` (as the Lua loop does, to keep its edit minimal) may return a
@@ -89,7 +89,7 @@ pub fn capture_frame_to_png(canvas: &Canvas<Window>, path: &Path) -> Result<(), 
     Ok(())
 }
 
-/// Write `screenshots/<timestamp>.png` and return its path.
+/// Write `<home>/.cartridges/screenshots/<timestamp>.png` and return its path.
 pub fn save_now(canvas: &Canvas<Window>) -> Result<PathBuf, String> {
     let dir = crate::paths::screenshots_dir();
     let path = dir.join(format!("{}.png", utc_timestamp()));

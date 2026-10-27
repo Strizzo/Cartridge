@@ -30,7 +30,7 @@
 # CARTRIDGE_HOT_RELOAD / CARTRIDGE_SIM_BATTERY / CARTRIDGE_SIM_WIFI as requested.
 #
 # Keys: arrows=D-pad  Z=A  X=B  C=X  V=Y  A=L1  S=R1  Q=L2  W=R2
-#       Enter=Start  Space=Select  Esc=quit  F12=screenshot (screenshots/)
+#       Enter=Start  Space=Select  Esc=quit  F12=screenshot (<home>/.cartridges/screenshots/)
 # See docs/simulator.md.
 set -euo pipefail
 

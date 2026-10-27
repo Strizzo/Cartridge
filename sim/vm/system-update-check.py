@@ -143,6 +143,11 @@ def main():
             wait_for(lambda: load_state().get('active') == release_id, 'Real first frame did not promote after health grace')
             report['checks'].append('Real ARM/SDL first frame and five-second health grace promote the candidate')
             pid = child(proc, candidate)
+            os.kill(pid, signal.SIGUSR1)
+            captures = home / '.cartridges/screenshots'
+            wait_for(lambda: list(captures.glob('*.png')), 'Native screenshot was not written to user storage')
+            subprocess.run(verify, check=True)
+            report['checks'].append('Real native screenshot stays outside the signed release; trusted verification still passes')
             os.kill(pid, signal.SIGKILL)
             wait_for(lambda: load_state().get('active') is None and 'Rolled back' in load_state().get('last_result', ''), 'Promoted release crash did not roll back')
             wait_for(lambda: child(proc, app), 'Base binary did not recover')

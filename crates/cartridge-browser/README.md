@@ -37,7 +37,8 @@ listed in the 0.8 launcher. The normal simulator provides isolated state under
   Start replaces the focused field text; R2 also presses Enter to submit.
   Existing passwords are never read into the native keyboard.
   Page tools also has an explicit Enter action.
-- On the Mac: F2 opens address entry, F12 captures the browser. A USB keyboard and
+- On the Mac: F2 opens address entry, F12 captures the browser to
+  `<CARTRIDGE_HOME>/.cartridges/screenshots` (the simulator uses `.sim/home`). A USB keyboard and
   mouse work alongside controller input. IJKL/TFGH simulate the two sticks.
 
 History and up to 64 bookmarks are stored separately from the engine profile.
