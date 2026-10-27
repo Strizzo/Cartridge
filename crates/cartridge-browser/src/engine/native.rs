@@ -565,13 +565,9 @@ impl Session {
                 if copied != meta.len() || copied > MAX_FILE_BYTES {
                     return Err("File changed while selecting; retry upload.".into());
                 }
-                #[cfg(target_os = "linux")]
-                paths.push(format!(
-                    "/profile/files/{}/{name}",
-                    staging.file_name().unwrap().to_string_lossy()
-                ));
-                #[cfg(not(target_os = "linux"))]
-                paths.push(snapshot.to_string_lossy().into_owned());
+                paths.push(self.profile_in_engine.join("files")
+                    .join(staging.file_name().unwrap()).join(name)
+                    .to_string_lossy().into_owned());
             }
             Ok(paths)
         })();

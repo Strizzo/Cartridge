@@ -141,6 +141,16 @@ pub fn discover(override_path: Option<PathBuf>) -> Result<PathBuf, String> {
     candidates.into_iter().find(|p|p.is_file()).ok_or("No local Chromium engine found. Install the browser engine bundle or set CARTRIDGE_BROWSER_ENGINE.".into())
 }
 
+// Only the prepared private wrapper remaps its profile to /profile. Native
+// Linux Chrome (including CI and desktop simulators) retains the host path.
+fn engine_profile(executable: &Path, profile: &Path) -> PathBuf {
+    let private_wrapper = cfg!(target_os = "linux") && executable.canonicalize().ok()
+        .and_then(|p| p.parent().map(Path::to_owned))
+        .is_some_and(|base| base.join(".cartridge-browser-build").is_file()
+            && base.join("rootfs/usr/lib/chromium/chromium").is_file());
+    if private_wrapper { PathBuf::from("/profile") } else { profile.to_owned() }
+}
+
 fn pipe() -> std::io::Result<(File, File)> {
     let mut raw = [-1; 2];
     if unsafe { libc::pipe(raw.as_mut_ptr()) } != 0 {
@@ -187,6 +197,7 @@ pub struct Session {
     focus_serial: u64,
     native_serial: u64,
     files_root: PathBuf,
+    profile_in_engine: PathBuf,
     frame_origins: HashMap<String, String>,
     upload: Option<Upload>,
     upload_staging: Vec<(String, PathBuf)>,
@@ -324,6 +335,7 @@ impl Session {
                 .unwrap_or_default()
                 .as_millis() as u64,
             files_root: profile.join("files"),
+            profile_in_engine: engine_profile(executable, profile),
             frame_origins: HashMap::new(),
             upload: None,
             upload_staging: Vec::new(),
