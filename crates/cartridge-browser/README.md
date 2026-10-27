@@ -32,7 +32,8 @@ listed in the 0.8 launcher. The normal simulator provides isolated state under
 - X: address/search. Y: bookmarks/history. Start: page tools. Select: leave Browser.
 - The native on-screen keyboard uses the same controls as the rest of Cartridge.
   A focused text field can open it; Start > Type also works for embedded fields.
-  Start inserts the text; R2 inserts and presses Enter to submit a form.
+  Start replaces the focused field text; R2 also presses Enter to submit.
+  Existing passwords are never read into the native keyboard.
   Page tools also has an explicit Enter action.
 - On the Mac: F2 opens address entry, F12 captures the browser. A USB keyboard and
   mouse work alongside controller input. IJKL/TFGH simulate the two sticks.
@@ -56,7 +57,8 @@ CARTRIDGE_BROWSER_TEST_OUT=/tmp/browser-check \
 
 The real-engine check serves a loopback-only fixture and verifies actual CSS grid
 layout and pixels, JavaScript, cookies, a mouse link, Back/Forward, native text
-insertion, form submission, zoom, JavaScript dialogs and new-window link routing. It uses throwaway profile storage. Real Mac
+insertion, form submission, zoom, JavaScript dialogs, new-window link routing,
+main-frame address tracking, and cancellation while a server stalls. It uses throwaway profile storage. Real Mac
 captures use a 720x720 UI. The live-site checks have opened articles and returned
 with Back on Slashdot and CNN, and dragged, zoomed and searched on OpenStreetMap.
 They use 75% page zoom to fit desktop layouts and consent dialogs in the viewport;
@@ -74,6 +76,10 @@ The wrapper refuses root execution, sandbox bypass, certificate bypass, and web
 security bypass flags. There is no unsafe fallback when namespaces are unavailable.
 
 The ARM VM has executed Chromium 156.0.8078.47 and real JavaScript in this setup.
+The native ARM frontend also renders OpenStreetMap through the private pipes.
+ARM interaction checks have passed for Slashdot article/Back and map drag/zoom/search.
+CNN has returned an “Unknown Error” page in an ARM trial and remains an open
+compatibility issue, even though its Mac interaction check passes.
 The portable helper and finalized private component also pass Chromium's internal
 namespace/seccomp sandbox report in the ARM VM. Full ARM frontend tests, physical
 old-kernel compatibility and performance are still being verified. The engine component is
@@ -81,7 +87,8 @@ not part of the normal runtime OTA payload or signed Store catalogue yet. Do not
 install random Chromium packages over the working handheld's Linux libraries.
 Downloads, file upload UI, multiple simultaneous tabs, and site-permission prompts
 are not implemented in this development build. Handheld audio output is not wired
-through the private engine yet; it must be checked separately from rendered video. This is not a release-ready claim.
+through the private engine yet; it must be checked separately from rendered video.
+GPU/WebGL acceleration is also not enabled in the private headless engine. This is not a release-ready claim.
 
 The component build recipe and isolation details are in [engine/README.md](engine/README.md).
 A persistent component can live at
@@ -100,3 +107,7 @@ zoom controls and location search on OpenStreetMap. It saves public-page capture
 inspection metadata and reports using its own profiles. A blocked consent dialog,
 changed site layout or unavailable network is reported as a failure. It does not
 bypass consent, authentication, certificates or site access restrictions.
+
+For repeatable UI captures, add `--capture /tmp/browser.png --capture-after 8
+--seconds 10 --hidden` after the simulator's `--` separator. Delayed capture lets
+lazy map tiles/images finish loading; it does not change normal browsing.

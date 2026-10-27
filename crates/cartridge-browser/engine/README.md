@@ -21,7 +21,8 @@ package versions and copyright notices. Do not run the finalizer on an unrelated
 filesystem; its build marker is required. `hardware_validated` remains false.
 
 The resulting directory contains `chromium`, `bubblewrap`, `rootfs/`, `notices/`,
-`packages.tsv` and `component.json`. Keep the whole directory together. The wrapper
+`packages.tsv` and `component.json`. Keep the whole directory together on a Linux filesystem that supports symlinks
+(such as the handheld root partition); the exFAT games partition is unsuitable. The wrapper
 runs as a normal user, mounts its root read-only, exposes only a private profile
 and temporary storage for writes, and uses existing network connectivity.
 Chromium's namespace and seccomp sandboxes remain active. Root execution and

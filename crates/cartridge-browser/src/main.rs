@@ -23,10 +23,21 @@ fn run() -> Result<(), String> {
                 }
                 options.seconds = Some(s);
             }
+            "--capture-after" => {
+                let seconds: f64 = args
+                    .next()
+                    .ok_or("--capture-after needs seconds")?
+                    .parse()
+                    .map_err(|_| "Invalid capture delay")?;
+                if !seconds.is_finite() || seconds < 0.0 {
+                    return Err("Capture delay must be nonnegative".into());
+                }
+                options.capture_after = Some(seconds);
+            }
             "--hidden" => options.hidden = true,
             "--help" => {
                 println!(
-                    "cartridge-browser [--url URL] [--engine PATH] [--profile DIRECTORY] [--capture PNG] [--seconds N] [--hidden]\nArrows scroll / focus links; Z open/click, X back, C address, V saved, Enter tools, Space exit.\nIJKL left stick: pointer. TFGH right stick: scroll. Hold A while moving to drag. F2 address; F12 screenshot."
+                    "cartridge-browser [--url URL] [--engine PATH] [--profile DIRECTORY] [--capture PNG] [--capture-after SECONDS] [--seconds N] [--hidden]\nArrows scroll / focus links; Z open/click, X back, C address, V saved, Enter tools, Space exit.\nIJKL left stick: pointer. TFGH right stick: scroll. Hold A while moving to drag. F2 address; F12 screenshot."
                 );
                 return Ok(());
             }

@@ -26,49 +26,69 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let serve = base.clone();
+    let slow_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let slow_release = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let server_started = slow_started.clone();
+    let server_release = slow_release.clone();
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let mut stream = match stream {
                 Ok(s) => s,
                 Err(_) => break,
             };
-            let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-            let mut request = [0u8; 8192];
-            let count = match stream.read(&mut request) {
-                Ok(n) => n,
-                Err(e) => {
-                    log::debug!("Fixture read: {e}");
-                    continue;
+            let serve = serve.clone();
+            let server_started = server_started.clone();
+            let server_release = server_release.clone();
+            std::thread::spawn(move || {
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+                let mut request = Vec::new();
+                let mut chunk = [0u8; 1024];
+                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let count = match stream.read(&mut chunk) {
+                        Ok(n) if n > 0 => n,
+                        _ => return,
+                    };
+                    request.extend_from_slice(&chunk[..count]);
+                    if request.len() > 8192 {
+                        return;
+                    }
                 }
-            };
-            if count == 0 {
-                continue;
-            }
-            let request = String::from_utf8_lossy(&request[..count]);
-            let path = request.split_whitespace().nth(1).unwrap_or("/");
-            log::debug!("Fixture request: {path} ({count} bytes)");
-            let page = if path.starts_with("/frame") {
-                "<body>SUBFRAME<script>history.replaceState({},'', '/frame?ad-frame');</script>"
-                    .to_string()
-            } else if path == "/second" {
-                "<title>Second page</title><h1>LINK WORKED</h1>".to_string()
-            } else if path.starts_with("/search?") {
-                format!("<title>Form result</title><h1>{path}</h1>")
-            } else {
-                format!(
-                    r#"<!doctype html><title>Browser acceptance</title>
+                let count = request.len();
+                let request = String::from_utf8_lossy(&request[..count]);
+                let path = request.split_whitespace().nth(1).unwrap_or("/");
+                log::debug!("Fixture request: {path} ({count} bytes)");
+                if path == "/slow" {
+                    server_started.store(true, std::sync::atomic::Ordering::Relaxed);
+                    let until = Instant::now() + Duration::from_secs(6);
+                    while !server_release.load(std::sync::atomic::Ordering::Relaxed)
+                        && Instant::now() < until
+                    {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                }
+                let page = if path.starts_with("/frame") {
+                    "<body>SUBFRAME<script>history.replaceState({},'', '/frame?ad-frame');</script>"
+                        .to_string()
+                } else if path == "/second" {
+                    "<title>Second page</title><h1>LINK WORKED</h1>".to_string()
+                } else if path.starts_with("/search?") {
+                    format!("<title>Form result</title><h1>{path}</h1>")
+                } else {
+                    format!(
+                        r#"<!doctype html><title>Browser acceptance</title>
 <style>body{{margin:0;background:rgb(17,51,170);color:white;font:24px sans-serif}}main{{display:grid;grid-template-columns:1fr 1fr;gap:20px;padding:28px}}input,button{{font:24px sans-serif}}a{{color:white}}</style>
 <main><h1>Actual HTML + CSS</h1><span id="js">PENDING</span><a id="next" href="{serve}/second">Next page</a>
 <a id="popup" href="{serve}/second" target="_blank">Open new window</a><button id="dialog" onclick="document.body.dataset.dialogResult=String(confirm('Continue?'))">Dialog</button><form action="/search"><input id="query" name="q"><button>Search</button></form></main>
 <iframe src="{serve}/frame" style="position:absolute;width:1px;height:1px;top:0"></iframe>
 <script>document.getElementById('js').textContent='JAVASCRIPT WORKED';</script>"#
-                )
-            };
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nSet-Cookie: test_cookie=stored; SameSite=Lax\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
-                page.len()
-            );
-            let _ = stream.write_all(response.as_bytes());
+                    )
+                };
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nSet-Cookie: test_cookie=stored; SameSite=Lax\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
+                    page.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+            });
         }
     });
     let nonce = std::time::SystemTime::now()
@@ -194,7 +214,10 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
     session
         .evaluate("document.getElementById('query').focus();true")
         .unwrap();
-    session.action(Action::Text("hello world".into())).unwrap();
+    session.action(Action::Text("old query".into())).unwrap();
+    session
+        .action(Action::ReplaceText("hello world".into()))
+        .unwrap();
     assert_eq!(
         session
             .evaluate("document.getElementById('query').value")
@@ -215,8 +238,31 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
     wait(&mut session, "document.title==='Browser acceptance'");
     session.action(Action::Forward).unwrap();
     wait(&mut session, "document.title==='Form result'");
+    let before = Instant::now();
+    session
+        .action(Action::Navigate(format!("{base}/slow")))
+        .unwrap();
+    assert!(
+        before.elapsed() < Duration::from_secs(1),
+        "navigation blocked the input worker"
+    );
+    let deadline = Instant::now() + Duration::from_secs(4);
+    while !slow_started.load(std::sync::atomic::Ordering::Relaxed) {
+        session.pump(Duration::from_millis(20)).unwrap();
+        assert!(
+            Instant::now() < deadline,
+            "slow fixture did not receive navigation"
+        );
+    }
+    let before = Instant::now();
+    session.action(Action::Stop).unwrap();
+    assert!(
+        before.elapsed() < Duration::from_secs(1),
+        "Stop waited for the server response"
+    );
+    slow_release.store(true, std::sync::atomic::Ordering::Relaxed);
     println!(
-        "PASS: actual HTML/CSS grid, JS, cookies, CSS pixels, mouse link, Back/Forward, text and form submission; screenshot {}",
+        "PASS: actual HTML/CSS grid, JS, cookies, CSS pixels, mouse link, Back/Forward, text/forms, zoom, dialogs, new-window routing, main-frame address and cancellation during slow HTTP; screenshot {}",
         output.display()
     );
     drop(session);

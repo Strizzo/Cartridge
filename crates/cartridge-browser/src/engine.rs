@@ -30,6 +30,7 @@ pub struct PageInfo {
     pub password: bool,
     pub dialog: Option<String>,
     pub engine_version: String,
+    pub http_status: Option<u16>,
 }
 pub struct Frame {
     pub width: u32,
@@ -57,6 +58,7 @@ pub enum Action {
     Scroll(f64, f64, f64, f64),
     Key(String, bool),
     Text(String),
+    ReplaceText(String),
     Zoom(f64),
     Visible(bool),
     FrameRate(u8),
@@ -154,6 +156,8 @@ pub struct Session {
     next_ack: Instant,
     frame_interval: Duration,
     pending_navigation: Option<(u64, Instant)>,
+    pending_info: Option<(u64, u64)>,
+    info_generation: u64,
 }
 impl Session {
     pub fn start(executable: &Path, profile: &Path, shared: Shared) -> Result<Self, String> {
@@ -266,6 +270,8 @@ impl Session {
             next_ack: Instant::now(),
             frame_interval: Duration::from_millis(40),
             pending_navigation: None,
+            pending_info: None,
+            info_generation: 0,
         };
         let version = s.call("Browser.getVersion", json!({}))?;
         s.shared.lock().unwrap().info.engine_version =
@@ -392,16 +398,15 @@ impl Session {
             self.closing_popups.insert(id.clone());
             self.send("Target.closeTarget", json!({"targetId":id}))?;
         }
-        if self.info_dirty && self.shared.lock().unwrap().info.dialog.is_none() {
+        if self.info_dirty
+            && self.pending_info.is_none()
+            && self.shared.lock().unwrap().info.dialog.is_none()
+        {
             self.info_dirty = false;
-            if let Ok(value)=self.evaluate("({title:document.title,url:location.href,password:document.activeElement?.type==='password',editable:!!(document.activeElement&&(document.activeElement.matches('input:not([type=button]):not([type=submit]),textarea')||document.activeElement.isContentEditable))})") {
-                let mut state=self.shared.lock().unwrap();
-                state.info.title=value["title"].as_str().unwrap_or("").chars().take(512).collect();
-                state.info.editable=value["editable"].as_bool().unwrap_or(false);
-                state.info.password=value["password"].as_bool().unwrap_or(false);
-                if let Some(url)=value["url"].as_str() {state.info.url=url.into();}
-                state.revision+=1;
-            }
+            // A provisional navigation can defer Runtime.evaluate until HTTP
+            // responds. Never wait synchronously for metadata in the input loop.
+            let id=self.send("Runtime.evaluate",json!({"expression":"({title:document.title,status:performance.getEntriesByType('navigation')[0]?.responseStatus,password:document.activeElement?.type==='password',editable:!!(document.activeElement&&(document.activeElement.matches('input:not([type=button]):not([type=submit]),textarea')||document.activeElement.isContentEditable))})", "returnByValue":true}))?;
+            self.pending_info = Some((id, self.info_generation));
         }
         Ok(())
     }
@@ -451,6 +456,27 @@ impl Session {
     }
     fn event(&mut self, value: &Value) -> Result<(), String> {
         if value.get("method").is_none() {
+            if self
+                .pending_info
+                .is_some_and(|(id, _)| value["id"].as_u64() == Some(id))
+            {
+                let (_, generation) = self.pending_info.take().unwrap();
+                let info = &value["result"]["result"]["value"];
+                if generation == self.info_generation && info.is_object() {
+                    let mut state = self.shared.lock().unwrap();
+                    state.info.title = info["title"]
+                        .as_str()
+                        .unwrap_or("")
+                        .chars()
+                        .take(512)
+                        .collect();
+                    state.info.editable = info["editable"].as_bool().unwrap_or(false);
+                    state.info.password = info["password"].as_bool().unwrap_or(false);
+                    state.info.http_status =
+                        info["status"].as_u64().and_then(|n| u16::try_from(n).ok());
+                    state.revision += 1;
+                }
+            }
             if self
                 .pending_navigation
                 .as_ref()
@@ -566,6 +592,7 @@ impl Session {
                 self.info_dirty = true;
             }
             "Page.frameNavigated" if p["frame"].get("parentId").is_none() => {
+                self.info_generation = self.info_generation.wrapping_add(1);
                 if let Some(id) = p["frame"]["id"].as_str() {
                     self.main_frame = id.into();
                 }
@@ -608,10 +635,15 @@ impl Session {
         match action {
             Action::Navigate(url) => {
                 let url = address(&url)?;
+                self.info_generation = self.info_generation.wrapping_add(1);
                 {
                     let mut s = self.shared.lock().unwrap();
                     s.info.loading = true;
                     s.info.error = None;
+                    s.info.http_status = None;
+                    s.info.title.clear();
+                    s.info.editable = false;
+                    s.info.password = false;
                     s.revision += 1;
                 }
                 let id = self.send("Page.navigate", json!({"url":url}))?;
@@ -680,6 +712,21 @@ impl Session {
                     return Err("Text entry is too long.".into());
                 }
                 self.call("Input.insertText", json!({"text":text}))?;
+            }
+            Action::ReplaceText(text) => {
+                if text.len() > 8192 {
+                    return Err("Text entry is too long.".into());
+                }
+                // Browser editing command, not a script assignment: native
+                // input/beforeinput handlers keep working and passwords are
+                // never copied from the page into the controller UI.
+                self.call("Input.dispatchKeyEvent",json!({"type":"rawKeyDown","key":"a","code":"KeyA","windowsVirtualKeyCode":65,"commands":["selectAll"]}))?;
+                self.call(
+                    "Input.dispatchKeyEvent",
+                    json!({"type":"keyUp","key":"a","code":"KeyA","windowsVirtualKeyCode":65}),
+                )?;
+                self.call("Input.insertText", json!({"text":text}))?;
+                self.info_dirty = true;
             }
             Action::FrameRate(fps) => {
                 self.frame_interval = Duration::from_secs_f64(1.0 / fps.clamp(1, 30) as f64);

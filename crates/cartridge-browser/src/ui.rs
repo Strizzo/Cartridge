@@ -27,6 +27,7 @@ pub struct Options {
     pub engine: Option<PathBuf>,
     pub profile: Option<PathBuf>,
     pub capture: Option<PathBuf>,
+    pub capture_after: Option<f64>,
     pub seconds: Option<f64>,
     pub hidden: bool,
 }
@@ -117,7 +118,7 @@ impl Ui {
         self.entry = entry;
         self.keyboard.show(match entry {
             Entry::Address => "Address or search",
-            Entry::Field => "Type in field / R2 inserts and sends Enter",
+            Entry::Field => "Replace field text / R2 also sends Enter",
         });
         self.keyboard.masked = matches!(entry, Entry::Field) && self.info.password;
         self.keyboard.max_len = match entry {
@@ -130,7 +131,7 @@ impl Ui {
     fn submit(&mut self, engine: &BrowserEngine, text: String) {
         match self.entry {
             Entry::Address => self.navigate(engine, &text),
-            Entry::Field => self.send(engine, Action::Text(text)),
+            Entry::Field => self.send(engine, Action::ReplaceText(text)),
         }
     }
     fn entries(&self) -> &[Bookmark] {
@@ -377,15 +378,14 @@ impl Ui {
         let t = s.theme;
         s.clear(Some(t.bg));
         s.draw_display_text("BROWSER", 18, 14, t.text, 36);
-        s.draw_text(
-            if self.info.loading { "LOADING" } else { "WEB" },
-            560,
-            25,
-            Some(t.accent),
-            14,
-            true,
-            Some(140),
-        );
+        let status = if self.info.loading {
+            "LOADING".to_string()
+        } else if let Some(code) = self.info.http_status.filter(|s| *s >= 400) {
+            format!("HTTP {code}")
+        } else {
+            "WEB".to_string()
+        };
+        s.draw_text(&status, 560, 25, Some(t.accent), 14, true, Some(140));
         s.fill(Rect::new(18, 62, 684, 30), t.card_bg);
         s.draw_text(
             if self.info.url.starts_with("http") {
@@ -835,7 +835,7 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
             && !captured
             && has_frame
             && !ui.info.loading
-            && start.elapsed() > Duration::from_secs(2)
+            && start.elapsed().as_secs_f64() >= options.capture_after.unwrap_or(2.0)
         {
             pending_capture = true;
         }
@@ -860,7 +860,7 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
                     && options.capture.is_some()
                     && has_frame
                     && !ui.info.loading
-                    && start.elapsed() > Duration::from_secs(2))
+                    && start.elapsed().as_secs_f64() >= options.capture_after.unwrap_or(2.0))
             {
                 let path = options
                     .capture

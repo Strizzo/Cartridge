@@ -109,13 +109,25 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
         &mut s,
         "location.protocol.startsWith('http') && document.readyState==='complete'",
     )?;
-    let inspect=s.evaluate("({title:document.title,url:location.href,buttons:[...document.querySelectorAll('button,[role=button]')].map(e=>e.innerText).filter(Boolean).slice(0,60),frames:[...document.querySelectorAll('iframe')].map(e=>({title:e.title,src:e.src})).slice(0,15),links:[...document.querySelectorAll('a[href]')].filter(e=>e.innerText.trim().length>30).slice(0,20).map(e=>({text:e.innerText.slice(0,180),url:e.href}))})")?;
+    let inspect=s.evaluate("({title:document.title,url:location.href,status:performance.getEntriesByType('navigation')[0]?.responseStatus,body:document.body.innerText.slice(0,500),buttons:[...document.querySelectorAll('button,[role=button]')].map(e=>e.innerText).filter(Boolean).slice(0,60),frames:[...document.querySelectorAll('iframe')].map(e=>({title:e.title,src:e.src})).slice(0,15),links:[...document.querySelectorAll('a[href]')].filter(e=>e.innerText.trim().length>30).slice(0,20).map(e=>({text:e.innerText.slice(0,180),url:e.href}))})")?;
     std::fs::write(
         out.join("initial.json"),
         serde_json::to_vec_pretty(&inspect).unwrap(),
     )
     .map_err(|e| e.to_string())?;
     capture(&mut s, &out, "initial")?;
+    if inspect["status"].as_u64().is_some_and(|s| s >= 400) {
+        return Err(format!(
+            "The site returned HTTP {}: {}",
+            inspect["status"],
+            inspect["body"]
+                .as_str()
+                .unwrap_or("")
+                .chars()
+                .take(100)
+                .collect::<String>()
+        ));
+    }
     let controls=s.evaluate("[...document.querySelectorAll('a[title],button[title],button[aria-label]')].map(e=>({text:e.innerText,title:e.title,aria:e.getAttribute('aria-label'),class:e.className})).slice(0,100)")?;
     std::fs::write(
         out.join("controls.json"),

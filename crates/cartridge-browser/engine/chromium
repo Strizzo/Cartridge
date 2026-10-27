@@ -8,6 +8,7 @@ namespace and Chromium's own namespace/seccomp sandbox remain enabled.
 import os
 from pathlib import Path
 import platform
+import stat
 import sys
 
 
@@ -31,21 +32,24 @@ def main():
             args.append('--user-data-dir=/profile')
         elif any(arg == denied or arg.startswith(denied + '=') for denied in (
             '--no-sandbox', '--disable-web-security', '--ignore-certificate-errors',
-            '--remote-debugging-port', '--remote-debugging-address', '--single-process')):
+            '--remote-debugging-port', '--remote-debugging-address', '--single-process',
+            '--disable-namespace-sandbox', '--disable-seccomp-filter-sandbox', '--disable-gpu-sandbox')):
             raise RuntimeError('Unsafe engine option refused: ' + arg.split('=', 1)[0])
         else:
             args.append(arg)
     if profile is None or not profile.is_dir():
         raise RuntimeError('A private existing profile directory is required.')
     profile.chmod(0o700)
-    preserve = []
     if '--remote-debugging-pipe' in args:
-        os.fstat(3)
-        os.fstat(4)
-        preserve = ['--preserve-fds', '2']
+        # bubblewrap passes inherited descriptors to COMMAND by default. Its
+        # reaper closes only its own copies after forking the command.
+        for descriptor in (3, 4):
+            if not stat.S_ISFIFO(os.fstat(descriptor).st_mode):
+                raise RuntimeError('The browser transport requires private pipes.')
+            os.set_inheritable(descriptor, True)
     command = [str(sandbox), '--die-with-parent', '--new-session',
         '--unshare-user', '--unshare-pid', '--unshare-ipc', '--unshare-uts',
-        '--uid', '1000', '--gid', '1000', *preserve,
+        '--uid', '1000', '--gid', '1000',
         '--ro-bind', str(root), '/', '--proc', '/proc', '--dev', '/dev',
         '--tmpfs', '/tmp', '--tmpfs', '/run', '--tmpfs', '/dev/shm',
         '--bind', str(profile), '/profile',
