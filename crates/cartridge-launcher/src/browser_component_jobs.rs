@@ -11,8 +11,7 @@ use std::time::Instant;
 
 /// Fixed official channel. Custom registries and environment URLs cannot replace
 /// this endpoint or the production verifier's pinned signing key.
-pub(crate) const MANIFEST_URL: &str =
-    "https://github.com/Strizzo/Cartridge/releases/latest/download/browser-component.json";
+pub(crate) const MANIFEST_URL: &str = "https://github.com/Strizzo/Cartridge/releases/download/browser-engine-stable/browser-component.json";
 
 #[derive(Clone, Debug)]
 pub(crate) struct EngineRelease {
@@ -225,6 +224,9 @@ impl BrowserComponentJobs {
         self.start(Operation::Rollback)
     }
     pub fn error(&mut self, message: impl Into<String>) {
+        // A preflight refusal is a persistent result too. Reopening Tools must
+        // not replace it with an automatically scheduled status verification.
+        self.initialized = true;
         self.message = bounded(message.into());
         self.is_error = true;
         self.revision = self.revision.wrapping_add(1);
@@ -529,8 +531,40 @@ mod tests {
         );
         assert_eq!(
             MANIFEST_URL,
-            "https://github.com/Strizzo/Cartridge/releases/latest/download/browser-component.json"
+            "https://github.com/Strizzo/Cartridge/releases/download/browser-engine-stable/browser-component.json"
         );
+    }
+    struct RecordingBackend {
+        calls: mpsc::SyncSender<Operation>,
+    }
+    impl Backend for RecordingBackend {
+        fn status(&self) -> Result<LocalStatus, String> {
+            Err("Test backend has no installed engine".into())
+        }
+        fn check(&self) -> Result<EngineRelease, String> {
+            Err("Test backend has no release".into())
+        }
+        fn install(&self, _: &mut dyn FnMut(String)) -> Result<EngineRelease, String> {
+            self.calls.send(Operation::Install).unwrap();
+            Err("Test backend refused installation".into())
+        }
+        fn rollback(&self) -> Result<EngineRelease, String> {
+            self.calls.send(Operation::Rollback).unwrap();
+            Err("Test backend refused rollback".into())
+        }
+        fn pointers(&self) -> Result<ComponentStatus, String> {
+            Ok(ComponentStatus::default())
+        }
+    }
+    pub(crate) fn recording_for_test() -> (BrowserComponentJobs, Receiver<Operation>) {
+        let (calls, receiver) = mpsc::sync_channel(4);
+        let mut jobs = ready_for_test();
+        jobs.factory = Arc::new(move || {
+            Box::new(RecordingBackend {
+                calls: calls.clone(),
+            })
+        });
+        (jobs, receiver)
     }
     pub(crate) fn ready_for_test() -> BrowserComponentJobs {
         let mut jobs = BrowserComponentJobs::default();
@@ -576,4 +610,4 @@ mod tests {
     }
 }
 #[cfg(test)]
-pub(crate) use tests::{blocked_for_test, ready_for_test};
+pub(crate) use tests::{blocked_for_test, ready_for_test, recording_for_test};
