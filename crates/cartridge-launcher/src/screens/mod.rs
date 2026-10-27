@@ -6,6 +6,7 @@ pub mod settings;
 pub mod overlay;
 pub mod wifi;
 pub mod system_update;
+pub mod browser_tools;
 pub mod remote_access;
 
 use cartridge_core::input::InputEvent;
@@ -40,6 +41,7 @@ pub enum ScreenId {
     Settings,
     WiFi,
     SystemUpdate,
+    BrowserTools,
     RemoteAccess,
 }
 
@@ -60,6 +62,7 @@ pub struct ScreenContext {
     pub(crate) local_apps: LocalApps,
     pub(crate) store_jobs: StoreJobs,
     pub(crate) system_update_jobs: crate::system_update_jobs::SystemUpdateJobs,
+    pub(crate) browser_component_jobs: crate::browser_component_jobs::BrowserComponentJobs,
     pub registry_revision: u64,
     pub(crate) invalidated_textures: Vec<String>,
     pub(crate) notice_pages: usize,
@@ -126,6 +129,10 @@ impl ScreenContext {
     pub fn sync_installed_from_disk(&mut self) { self.start_store_job(StoreOperation::Sync); }
 
     pub(crate) fn start_store_job(&mut self, operation: StoreOperation) {
+        if self.browser_component_jobs.is_changing() {
+            self.store_jobs.error("Wait for the browser engine change before starting a Store task.");
+            return;
+        }
         if self.system_update_jobs.is_staging() {
             self.store_jobs.error("System update staging is in progress. Store tasks can resume when it finishes.");
             return;
@@ -161,12 +168,40 @@ impl ScreenContext {
     }
 
     pub(crate) fn stage_system_update(&mut self, release: std::sync::Arc<cartridge_net::system_update::Release>) -> bool {
+        if self.browser_component_jobs.is_changing() {
+            self.store_jobs.error("Wait for the browser engine change before downloading a system update.");
+            return false;
+        }
         if self.store_jobs.is_busy() {
             self.store_jobs.error("Wait for the current Store task before downloading a system update.");
             return false;
         }
         let battery = u8::try_from(self.sysinfo.battery_percent).ok().filter(|percent| *percent <= 100);
         self.system_update_jobs.stage(release, battery, self.sysinfo.battery_charging)
+    }
+
+    pub(crate) fn install_browser_component(&mut self, release: std::sync::Arc<crate::browser_component_jobs::EngineRelease>) -> bool {
+        if !self.browser_change_ready() { return false; }
+        self.browser_component_jobs.install(release)
+    }
+
+    pub(crate) fn rollback_browser_component(&mut self, previous: &str) -> bool {
+        if !self.browser_change_ready() { return false; }
+        self.browser_component_jobs.rollback(previous)
+    }
+
+    fn browser_change_ready(&mut self) -> bool {
+        if self.system_update_jobs.is_staging() || self.store_jobs.is_busy() {
+            self.browser_component_jobs.error("Wait for the current Store or System Update task before changing the browser engine.");
+            return false;
+        }
+        true
+    }
+
+    pub(crate) fn poll_browser_component_jobs(&mut self) -> bool {
+        let (changed, notice) = self.browser_component_jobs.poll();
+        if let Some(notice) = notice { self.store_jobs.notify(notice); }
+        changed
     }
 
     pub(crate) fn system_update_power_ready(&self) -> bool {
@@ -180,7 +215,7 @@ impl ScreenContext {
     }
 
     pub(crate) fn has_background_notice(&self) -> bool {
-        self.system_update_jobs.progress.is_some() || self.store_jobs.progress.is_some()
+        self.browser_component_jobs.progress.is_some() || self.system_update_jobs.progress.is_some() || self.store_jobs.progress.is_some()
             || !self.store_jobs.notices.is_empty()
     }
 
@@ -238,7 +273,7 @@ pub(crate) fn test_context() -> ScreenContext {
     let root = std::env::temp_dir().join(format!("cartridge-context-{}-{}", std::process::id(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
     ScreenContext {
         registry: crate::data::Registry::empty(), bundled_app_ids: vec![], installed: Default::default(), local_apps: Default::default(),
-        store_jobs: Default::default(), system_update_jobs: Default::default(), registry_revision: 0, invalidated_textures: vec![], notice_pages: 0, automatic_store_refresh: true,
+        store_jobs: Default::default(), system_update_jobs: Default::default(), browser_component_jobs: Default::default(), registry_revision: 0, invalidated_textures: vec![], notice_pages: 0, automatic_store_refresh: true,
         settings: crate::data::LauncherSettings { auto_refresh: false, ..Default::default() }, recents: vec![],
         storage: cartridge_core::storage::AppStorage::at_root("launcher", root), registry_client: None, installer: None,
         sysinfo: Default::default(),

@@ -80,6 +80,7 @@ impl LauncherApp {
             local_apps: Default::default(),
             store_jobs: Default::default(),
             system_update_jobs: Default::default(),
+            browser_component_jobs: Default::default(),
             registry_revision: 0,
             invalidated_textures: Vec::new(),
             notice_pages: 0,
@@ -114,7 +115,7 @@ impl LauncherApp {
     }
 
     pub fn is_loading(&self) -> bool {
-        self.ctx.store_jobs.is_busy() || self.ctx.system_update_jobs.is_busy() || self.screen_stack.last().map(|s| s.is_loading()).unwrap_or(false)
+        self.ctx.store_jobs.is_busy() || self.ctx.browser_component_jobs.is_busy() || self.ctx.system_update_jobs.is_busy() || self.screen_stack.last().map(|s| s.is_loading()).unwrap_or(false)
     }
 
     pub fn show_games(&mut self, resume: Option<crate::games::GameRequest>) {
@@ -133,6 +134,11 @@ impl LauncherApp {
                     return false;
                 }
                 OverlayResult::SwitchToES => {
+                    if self.ctx.browser_component_jobs.is_changing() {
+                        self.ctx.store_jobs.error("Wait for the browser engine change before leaving the launcher or launching an app/game.");
+                        self.overlay = None;
+                        return false;
+                    }
                     if self.ctx.system_update_jobs.is_staging() {
                         self.ctx.store_jobs.error("Wait for system update staging before opening EmulationStation.");
                         self.overlay = None;
@@ -156,7 +162,7 @@ impl LauncherApp {
 
         // R2 pages/dismisses persistent background outcomes on every screen.
         let filtered_events: Vec<_> = events.iter().copied().filter(|event| {
-            if event.button == cartridge_core::input::Button::R2 && self.ctx.system_update_jobs.progress.is_none() && self.ctx.store_jobs.progress.is_none() && !self.ctx.store_jobs.notices.is_empty() {
+            if event.button == cartridge_core::input::Button::R2 && self.ctx.browser_component_jobs.progress.is_none() && self.ctx.system_update_jobs.progress.is_none() && self.ctx.store_jobs.progress.is_none() && !self.ctx.store_jobs.notices.is_empty() {
                 if event.action == cartridge_core::input::InputAction::Press && self.ctx.store_jobs.can_page_notice() {
                     self.ctx.store_jobs.advance_notice_page();
                     if self.ctx.store_jobs.notice_page >= self.ctx.notice_pages.max(1) {
@@ -185,6 +191,11 @@ impl LauncherApp {
                     self.overlay = Some(BootOverlay::new());
                 }
                 ScreenAction::LaunchGame(game) => {
+                    if self.ctx.browser_component_jobs.is_changing() {
+                        self.ctx.store_jobs.error("Wait for the browser engine change before leaving the launcher or launching an app/game.");
+                        self.overlay = None;
+                        return false;
+                    }
                     if self.ctx.system_update_jobs.is_staging() {
                         self.ctx.store_jobs.error("Wait for system update staging before launching an app or game.");
                         return false;
@@ -194,6 +205,11 @@ impl LauncherApp {
                     return true;
                 }
                 ScreenAction::LaunchApp(app_id) => {
+                    if self.ctx.browser_component_jobs.is_changing() {
+                        self.ctx.store_jobs.error("Wait for the browser engine change before leaving the launcher or launching an app/game.");
+                        self.overlay = None;
+                        return false;
+                    }
                     if self.ctx.system_update_jobs.is_staging() {
                         self.ctx.store_jobs.error("Wait for system update staging before launching an app or game.");
                         return false;
@@ -216,6 +232,10 @@ impl LauncherApp {
     }
 
     fn restart_for_update(&mut self, battery: i32, charging: bool) -> bool {
+        if self.ctx.browser_component_jobs.is_changing() {
+            self.ctx.store_jobs.error("Wait for the browser engine change before restarting CartridgeOS.");
+            return false;
+        }
         if self.ctx.store_jobs.is_busy() {
             self.ctx.store_jobs.error("Wait for the Store task to finish before restarting CartridgeOS.");
             return false;
@@ -236,8 +256,9 @@ impl LauncherApp {
         let changed = self.ctx.sysinfo.refresh();
         let store_changed = self.ctx.poll_store_jobs();
         let update_changed = self.ctx.poll_system_update_jobs();
+        let browser_changed = self.ctx.poll_browser_component_jobs();
         let screen_changed = self.screen_stack.last_mut().map(|s| s.update(&mut self.ctx)).unwrap_or(false);
-        changed || screen_changed || store_changed || update_changed
+        changed || screen_changed || store_changed || update_changed || browser_changed
     }
 
     /// Read the user's currently selected theme id.
@@ -295,10 +316,18 @@ impl LauncherApp {
         let y = if crate::neo::is_neo(theme) { crate::neo::FOOTER_Y - 104 } else { 580 };
         screen.fill(Rect::new(8, y, 704, 100), theme.card_bg);
         screen.draw_outline(Rect::new(8, y, 704, 100), theme.border, 1);
+        let browser_progress = if self.ctx.system_update_jobs.is_staging() { None } else { self.ctx.browser_component_jobs.progress.as_deref() };
         let update_progress = self.ctx.system_update_jobs.progress.as_deref();
-        let title = if update_progress.is_some() { "System Update" } else { jobs.progress.as_deref().unwrap_or("Background result") };
+        let title = if browser_progress.is_some(){"Browser Tools"} else if update_progress.is_some() { "System Update" } else { jobs.progress.as_deref().unwrap_or("Background result") };
         screen.draw_text(title, 18, y + 7, Some(theme.text), 12, true, Some(680));
-        if let Some(progress) = update_progress {
+        if let Some(progress) = browser_progress {
+            let lines = crate::screens::system_update::wrap_text(progress, 680, |s| screen.get_text_width(s, 12, false));
+            for (index, line) in lines.iter().take(2).enumerate() {
+                screen.draw_text(line, 18, y + 26 + index as i32 * 16, Some(theme.text), 12, false, Some(680));
+            }
+            screen.draw_text(&format!("{}s elapsed. Settings > Browser Tools for details.", self.ctx.browser_component_jobs.elapsed()),
+                18, y + 79, Some(theme.text_dim), 11, false, Some(680));
+        } else if let Some(progress) = update_progress {
             let lines = crate::screens::system_update::wrap_text(progress, 680, |s| screen.get_text_width(s, 12, false));
             for (index, line) in lines.iter().take(2).enumerate() {
                 screen.draw_text(line, 18, y + 26 + index as i32 * 16, Some(theme.text), 12, false, Some(680));
@@ -367,6 +396,7 @@ fn create_screen(id: ScreenId) -> Box<dyn LauncherScreen> {
         ScreenId::Settings => Box::new(SettingsScreen::new()),
         ScreenId::WiFi => Box::new(WifiScreen::new()),
         ScreenId::SystemUpdate => Box::new(SystemUpdateScreen::new()),
+        ScreenId::BrowserTools => Box::new(crate::screens::browser_tools::BrowserToolsScreen::new()),
         ScreenId::RemoteAccess => Box::new(crate::screens::remote_access::RemoteAccessScreen::new()),
     }
 }
@@ -806,5 +836,279 @@ mod store_feedback_visual_tests {
             std::fs::read(output.join("error-1.png")).unwrap());
         std::fs::remove_dir_all(scratch).unwrap();
         println!("Store feedback fixtures: {}", output.display());
+    }
+}
+
+#[cfg(test)]
+mod browser_component_navigation_tests {
+    use super::*;
+    use crate::browser_component_jobs;
+    use crate::screens::browser_tools::BrowserToolsScreen;
+    use cartridge_core::input::{Button, InputAction};
+
+    fn press(button: Button) -> InputEvent {
+        InputEvent {
+            button,
+            action: InputAction::Press,
+        }
+    }
+    fn make_app(ctx: ScreenContext, screen: impl LauncherScreen + 'static) -> LauncherApp {
+        LauncherApp {
+            screen_stack: vec![Box::new(HomeScreen::new()), Box::new(screen)],
+            ctx,
+            overlay: None,
+            pending_launch: None,
+            pending_exit: None,
+        }
+    }
+    fn cleanup(app: &LauncherApp) {
+        std::fs::remove_dir_all(app.ctx.storage.data_dir.parent().unwrap().parent().unwrap())
+            .unwrap();
+    }
+    #[test]
+    fn component_job_survives_back_and_completion_is_visible_from_home() {
+        let mut ctx = crate::screens::test_context();
+        let (jobs, done) = browser_component_jobs::blocked_for_test(false);
+        ctx.browser_component_jobs = jobs;
+        let mut app = make_app(ctx, BrowserToolsScreen::new());
+        assert!(!app.handle_input(&[press(Button::B)]));
+        assert_eq!(app.screen_stack.len(), 1);
+        let started = std::time::Instant::now();
+        for _ in 0..20 {
+            app.refresh_sysinfo();
+            assert!(app.is_loading());
+        }
+        assert!(started.elapsed() < std::time::Duration::from_millis(100));
+        done.send(()).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while app.is_loading() {
+            app.refresh_sysinfo();
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert!(
+            app.ctx
+                .store_jobs
+                .notices
+                .front()
+                .unwrap()
+                .message
+                .contains("Test status failure")
+        );
+        app.screen_stack.push(Box::new(BrowserToolsScreen::new()));
+        app.refresh_sysinfo();
+        assert!(!app.is_loading());
+        cleanup(&app);
+    }
+    struct Launch(bool);
+    impl LauncherScreen for Launch {
+        fn handle_input(&mut self, _: &[InputEvent], _: &mut ScreenContext) -> ScreenAction {
+            if self.0 {
+                ScreenAction::LaunchApp("test.browser".into())
+            } else {
+                ScreenAction::LaunchGame(crate::games::GameRequest::default())
+            }
+        }
+        fn render(&mut self, _: &mut Screen, _: &ScreenContext) {}
+    }
+    #[test]
+    fn changing_components_blocks_launches_store_and_system_staging() {
+        for app_launch in [true, false] {
+            let mut ctx = crate::screens::test_context();
+            ctx.installed.install("test.browser");
+            let (jobs, done) = browser_component_jobs::blocked_for_test(true);
+            ctx.browser_component_jobs = jobs;
+            ctx.start_store_job(crate::store_jobs::StoreOperation::Refresh { ttl_seconds: 0 });
+            assert!(!ctx.store_jobs.is_busy());
+            ctx.system_update_jobs = crate::system_update_jobs::SystemUpdateJobs::ready_for_test();
+            let release = ctx.system_update_jobs.release.as_ref().unwrap().clone();
+            assert!(!ctx.stage_system_update(release));
+            assert!(!ctx.system_update_jobs.is_busy());
+            let mut app = make_app(ctx, Launch(app_launch));
+            assert!(!app.handle_input(&[press(Button::A)]));
+            assert!(app.pending_launch.is_none());
+            assert!(app.pending_exit.is_none());
+            assert!(!app.restart_for_update(100, true));
+            done.send(()).unwrap();
+            cleanup(&app);
+        }
+    }
+    #[test]
+    fn read_only_component_checks_allow_launches_and_power_menu_stays_responsive() {
+        let mut ctx = crate::screens::test_context();
+        ctx.installed.install("test.browser");
+        let (jobs, done) = browser_component_jobs::blocked_for_test(false);
+        ctx.browser_component_jobs = jobs;
+        let mut app = make_app(ctx, Launch(true));
+        assert!(app.handle_input(&[press(Button::A)]));
+        assert_eq!(app.pending_launch(), Some("test.browser"));
+        done.send(()).unwrap();
+        cleanup(&app);
+        let mut ctx = crate::screens::test_context();
+        let (jobs, done) = browser_component_jobs::blocked_for_test(true);
+        ctx.browser_component_jobs = jobs;
+        let mut app = make_app(ctx, BrowserToolsScreen::new());
+        app.handle_input(&[press(Button::Select)]);
+        assert!(app.overlay.is_some());
+        app.handle_input(&[press(Button::DpadUp)]);
+        assert!(!app.handle_input(&[press(Button::A)]));
+        assert!(app.overlay.is_none());
+        assert!(app.pending_exit.is_none());
+        done.send(()).unwrap();
+        cleanup(&app);
+    }
+    #[test]
+    fn store_and_system_staging_block_component_mutations() {
+        let mut ctx = crate::screens::test_context();
+        ctx.browser_component_jobs = browser_component_jobs::ready_for_test();
+        let (tx, rx) = std::sync::mpsc::channel();
+        ctx.store_jobs.simulate(rx);
+        let release = ctx.browser_component_jobs.release.as_ref().unwrap().clone();
+        assert!(!ctx.install_browser_component(release));
+        assert!(!ctx.rollback_browser_component(&"b".repeat(64)));
+        assert!(!ctx.browser_component_jobs.is_busy());
+        tx.send(crate::store_jobs::Completion {
+            local: Default::default(),
+            installer: None,
+            registry: None,
+            outcome: Ok(None),
+        })
+        .unwrap();
+        ctx.poll_store_jobs();
+        let (jobs, done) = crate::system_update_jobs::SystemUpdateJobs::blocked_for_test(true);
+        ctx.system_update_jobs = jobs;
+        let release = ctx.browser_component_jobs.release.as_ref().unwrap().clone();
+        assert!(!ctx.install_browser_component(release));
+        assert!(!ctx.browser_component_jobs.is_busy());
+        done.send(()).unwrap();
+        let app = make_app(ctx, BrowserToolsScreen::new());
+        cleanup(&app);
+    }
+}
+
+#[cfg(test)]
+mod browser_component_visual_tests {
+    use super::*;
+    use crate::screens::browser_tools::BrowserToolsScreen;
+    use cartridge_core::{
+        font::FontCache,
+        image_cache::ImageCache,
+        input::{Button, InputAction},
+        text_cache::TextCache,
+        theme::Theme,
+    };
+    #[test]
+    #[ignore = "visual QA: SDL_VIDEODRIVER=dummy, --ignored --test-threads=1 --nocapture"]
+    fn browser_tools_visual_fixtures() {
+        assert_eq!(std::env::var("SDL_VIDEODRIVER").as_deref(), Ok("dummy"));
+        let sdl = sdl2::init().unwrap();
+        let video = sdl.video().unwrap();
+        let window = video
+            .window("Browser Tools visual fixtures", 720, 720)
+            .hidden()
+            .build()
+            .unwrap();
+        let mut canvas = window.into_canvas().software().build().unwrap();
+        let creator = canvas.texture_creator();
+        let assets = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let output = std::env::temp_dir().join(format!(
+            "cartridge-browser-tools-visual-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&output).unwrap();
+        for theme_id in ["neo", "midnight"] {
+            let mut theme = Theme::by_id(theme_id);
+            theme.atmosphere = false;
+            let mut fonts = FontCache::new(&assets).unwrap();
+            fonts.set_family(theme.font_regular, theme.font_bold);
+            fonts.set_display(theme.font_display);
+            let mut images = ImageCache::new(&creator).unwrap();
+            let mut cache = TextCache::new(&creator);
+            let mut atmosphere = Atmosphere::new();
+            atmosphere.precompose(&mut canvas, &creator, &mut images, &theme);
+            for fixture in [
+                "available",
+                "install-confirm",
+                "rollback-confirm",
+                "unavailable",
+                "long-error",
+                "busy",
+            ] {
+                let mut ctx = crate::screens::test_context();
+                ctx.settings.theme_id = theme_id.into();
+                ctx.settings.animations_enabled = false;
+                ctx.browser_component_jobs = crate::browser_component_jobs::ready_for_test();
+                ctx.browser_component_jobs.message =
+                    "A signed release is available. A reviews installation.".into();
+                let mut done = None;
+                if fixture == "unavailable" {
+                    ctx.browser_component_jobs.release = None;
+                    ctx.browser_component_jobs.message="No signed browser engine release is published on the official channel yet. Y checks again later.".into();
+                } else if fixture == "long-error" {
+                    ctx.browser_component_jobs.release = None;
+                    ctx.browser_component_jobs.error(format!("Signature verification refused this component. {} R1 refreshes local status.","untrusted-input-detail/".repeat(35)));
+                } else if fixture == "busy" {
+                    let (mut jobs, finish) = crate::browser_component_jobs::blocked_for_test(true);
+                    jobs.progress=Some("Streaming and verifying 24000 engine entries. Installed files stay active until verification completes.".into());
+                    ctx.browser_component_jobs = jobs;
+                    done = Some(finish);
+                }
+                let scratch = ctx
+                    .storage
+                    .data_dir
+                    .parent()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .to_path_buf();
+                let mut app = LauncherApp {
+                    screen_stack: vec![Box::new(BrowserToolsScreen::new())],
+                    ctx,
+                    overlay: None,
+                    pending_launch: None,
+                    pending_exit: None,
+                };
+                if fixture == "install-confirm" || fixture == "rollback-confirm" {
+                    app.handle_input(&[InputEvent {
+                        button: if fixture == "install-confirm" {
+                            Button::A
+                        } else {
+                            Button::X
+                        },
+                        action: InputAction::Press,
+                    }]);
+                }
+                for capture in 0..2 {
+                    if capture == 1 {
+                        for _ in 0..80 {
+                            app.handle_input(&[InputEvent {
+                                button: Button::DpadDown,
+                                action: InputAction::Press,
+                            }]);
+                        }
+                    }
+                    let mut screen = Screen {
+                        canvas: &mut canvas,
+                        theme: &theme,
+                        fonts: &mut fonts,
+                        images: &mut images,
+                        text_cache: &mut cache,
+                        texture_creator: &creator,
+                    };
+                    app.render(&mut screen, &atmosphere);
+                    crate::capture_frame_to_png(
+                        &canvas,
+                        &output.join(format!("{theme_id}-{fixture}-{capture}.png")),
+                    )
+                    .unwrap();
+                    canvas.present();
+                }
+                if let Some(done) = done {
+                    done.send(()).unwrap();
+                }
+                std::fs::remove_dir_all(scratch).unwrap();
+            }
+        }
+        println!("Browser Tools fixtures: {}", output.display());
     }
 }
