@@ -6,6 +6,13 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     match args.get(1).map(|s| s.as_str()) {
+        Some("browser-engine") => {
+            // Forward every trailing argument unchanged, including hyphenated flags.
+            if let Err(error) = cartridge_net::browser_component_cli::run(args.iter().skip(2).cloned()) {
+                eprintln!("Browser engine: {error}");
+                std::process::exit(1);
+            }
+        }
         Some("system-verify") => {
             let result = if args.len() == 4 && args[2] == "--path" {
                 cartridge_net::system_update::verify_release_dir(std::path::Path::new(&args[3]))
@@ -135,6 +142,7 @@ fn print_usage() {
     eprintln!("  (default)          Launch the CartridgeOS home screen");
     eprintln!("  run --path <dir>   Run a cartridge app");
     eprintln!("  demo               Run the built-in demo screen");
+    eprintln!("  browser-engine ... Inspect, verify, adopt, install or roll back the browser engine");
     eprintln!("  --version          Print the version and exit");
     eprintln!("  help               Show this help message");
 }
