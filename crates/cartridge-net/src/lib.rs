@@ -11,3 +11,5 @@ pub use registry::{AppPackage, Registry, RegistryApp, RegistryClient};
 pub use ssh::SshTunnel;
 pub use wifi::WifiManager;
 pub mod system_update;
+
+pub mod browser_component;
