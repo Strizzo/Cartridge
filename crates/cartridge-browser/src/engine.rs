@@ -64,6 +64,24 @@ pub enum Action {
     Quit,
 }
 
+// Preserve every click/key boundary, but do not replay stale continuous motion
+// after a heavy page stalls the renderer. A batch never exceeds the channel cap.
+fn queue_action(batch: &mut Vec<Action>, action: Action) {
+    match (batch.last_mut(), action) {
+        (Some(Action::Pointer(px, py)), Action::Pointer(x, y)) => {
+            *px = x;
+            *py = y;
+        }
+        (Some(Action::Scroll(px, py, pdx, pdy)), Action::Scroll(x, y, dx, dy)) => {
+            *px = x;
+            *py = y;
+            *pdx = (*pdx + dx).clamp(-2048.0, 2048.0);
+            *pdy = (*pdy + dy).clamp(-2048.0, 2048.0);
+        }
+        (_, action) => batch.push(action),
+    }
+}
+
 pub fn discover(override_path: Option<PathBuf>) -> Result<PathBuf, String> {
     if let Some(path) =
         override_path.or_else(|| std::env::var_os("CARTRIDGE_BROWSER_ENGINE").map(PathBuf::from))
@@ -124,6 +142,7 @@ pub struct Session {
     next_id: u64,
     session: Option<String>,
     target: String,
+    main_frame: String,
     popups: HashMap<String, Instant>,
     closing_popups: HashSet<String>,
     pub shared: Shared,
@@ -134,6 +153,7 @@ pub struct Session {
     frame_acks: VecDeque<u64>,
     next_ack: Instant,
     frame_interval: Duration,
+    pending_navigation: Option<(u64, Instant)>,
 }
 impl Session {
     pub fn start(executable: &Path, profile: &Path, shared: Shared) -> Result<Self, String> {
@@ -234,6 +254,7 @@ impl Session {
             next_id: 0,
             session: None,
             target: String::new(),
+            main_frame: String::new(),
             popups: HashMap::new(),
             closing_popups: HashSet::new(),
             shared,
@@ -244,6 +265,7 @@ impl Session {
             frame_acks: VecDeque::new(),
             next_ack: Instant::now(),
             frame_interval: Duration::from_millis(40),
+            pending_navigation: None,
         };
         let version = s.call("Browser.getVersion", json!({}))?;
         s.shared.lock().unwrap().info.engine_version =
@@ -272,6 +294,11 @@ impl Session {
         );
         s.call("Target.setDiscoverTargets", json!({"discover":true}))?;
         s.call("Page.enable", json!({}))?;
+        let tree = s.call("Page.getFrameTree", json!({}))?;
+        s.main_frame = tree["frameTree"]["frame"]["id"]
+            .as_str()
+            .ok_or("Missing main page frame")?
+            .into();
         s.call("Runtime.enable", json!({}))?;
         s.call(
             "Emulation.setDeviceMetricsOverride",
@@ -343,6 +370,17 @@ impl Session {
     }
     pub fn pump(&mut self, timeout: Duration) -> Result<(), String> {
         self.receive(timeout)?;
+        if self
+            .pending_navigation
+            .is_some_and(|(_, start)| start.elapsed() > Duration::from_secs(45))
+        {
+            self.pending_navigation = None;
+            self.send("Page.stopLoading", json!({}))?;
+            let mut state = self.shared.lock().unwrap();
+            state.info.loading = false;
+            state.info.error = Some("This page took too long to connect. Reload to retry.".into());
+            state.revision += 1;
+        }
         let expired = self
             .popups
             .iter()
@@ -413,6 +451,22 @@ impl Session {
     }
     fn event(&mut self, value: &Value) -> Result<(), String> {
         if value.get("method").is_none() {
+            if self
+                .pending_navigation
+                .as_ref()
+                .is_some_and(|(id, _)| value["id"].as_u64() == Some(*id))
+            {
+                self.pending_navigation = None;
+                if let Some(error) = value["result"]["errorText"]
+                    .as_str()
+                    .or_else(|| value["error"]["message"].as_str())
+                {
+                    let mut state = self.shared.lock().unwrap();
+                    state.info.loading = false;
+                    state.info.error = Some(format!("Page load failed: {error}"));
+                    state.revision += 1;
+                }
+            }
             return Ok(());
         }
         let method = value["method"].as_str().unwrap_or("");
@@ -486,26 +540,42 @@ impl Session {
                     }
                 }
             }
-            "Page.frameStartedLoading" => {
+            "Page.frameStartedLoading" if p["frameId"].as_str() == Some(&self.main_frame) => {
                 let mut s = self.shared.lock().unwrap();
                 s.info.loading = true;
                 s.revision += 1;
             }
-            "Page.loadEventFired" | "Page.frameStoppedLoading" => {
+            "Page.loadEventFired" | "Page.frameStoppedLoading"
+                if p.get("frameId").is_none()
+                    || p["frameId"].as_str() == Some(&self.main_frame) =>
+            {
                 let mut s = self.shared.lock().unwrap();
                 s.info.loading = false;
                 s.revision += 1;
                 self.info_dirty = true;
             }
-            "Page.navigatedWithinDocument" => {
+            "Page.navigatedWithinDocument" if p["frameId"].as_str() == Some(&self.main_frame) => {
                 let mut s = self.shared.lock().unwrap();
-                s.info.url = p["url"].as_str().unwrap_or("").into();
+                s.info.url = p["url"]
+                    .as_str()
+                    .unwrap_or("")
+                    .chars()
+                    .take(crate::model::MAX_URL)
+                    .collect();
                 s.revision += 1;
                 self.info_dirty = true;
             }
             "Page.frameNavigated" if p["frame"].get("parentId").is_none() => {
+                if let Some(id) = p["frame"]["id"].as_str() {
+                    self.main_frame = id.into();
+                }
                 let mut s = self.shared.lock().unwrap();
-                s.info.url = p["frame"]["url"].as_str().unwrap_or("").into();
+                s.info.url = p["frame"]["url"]
+                    .as_str()
+                    .unwrap_or("")
+                    .chars()
+                    .take(crate::model::MAX_URL)
+                    .collect();
                 s.info.error = None;
                 s.revision += 1;
                 self.info_dirty = true;
@@ -544,10 +614,8 @@ impl Session {
                     s.info.error = None;
                     s.revision += 1;
                 }
-                let result = self.call("Page.navigate", json!({"url":url}))?;
-                if let Some(error) = result["errorText"].as_str() {
-                    return Err(format!("Page load failed: {error}"));
-                }
+                let id = self.send("Page.navigate", json!({"url":url}))?;
+                self.pending_navigation = Some((id, Instant::now()));
             }
             Action::Back | Action::Forward => {
                 let delta = if matches!(action, Action::Back) {
@@ -571,6 +639,7 @@ impl Session {
                 self.call("Page.reload", json!({}))?;
             }
             Action::Stop => {
+                self.pending_navigation = None;
                 self.call("Page.stopLoading", json!({}))?;
                 self.shared.lock().unwrap().info.loading = false;
             }
@@ -706,20 +775,25 @@ impl BrowserEngine {
                 if let Some(url) = initial {
                     session.action(Action::Navigate(url))?;
                 }
+                let mut batch = Vec::with_capacity(64);
                 while !stop.load(Ordering::Relaxed) {
-                    for _ in 0..8 {
+                    for _ in 0..64 {
                         match rx.try_recv() {
                             Ok(Action::Quit) => return Ok(()),
-                            Ok(action) => {
-                                if let Err(e) = session.action(action) {
-                                    let mut s = state.lock().unwrap();
-                                    s.info.error = Some(e);
-                                    s.info.loading = false;
-                                    s.revision += 1;
-                                }
-                            }
+                            Ok(action) => queue_action(&mut batch, action),
                             Err(mpsc::TryRecvError::Disconnected) => return Ok(()),
                             Err(mpsc::TryRecvError::Empty) => break,
+                        }
+                    }
+                    for action in batch.drain(..) {
+                        if stop.load(Ordering::Relaxed) {
+                            return Ok(());
+                        }
+                        if let Err(e) = session.action(action) {
+                            let mut s = state.lock().unwrap();
+                            s.info.error = Some(e);
+                            s.info.loading = false;
+                            s.revision += 1;
                         }
                     }
                     session.pump(Duration::from_millis(20))?;
@@ -763,5 +837,36 @@ impl Drop for BrowserEngine {
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn stale_motion_is_coalesced_without_losing_click_order() {
+        let mut batch = vec![];
+        for action in [
+            Action::Pointer(1.0, 2.0),
+            Action::Pointer(4.0, 5.0),
+            Action::Button(4.0, 5.0, true),
+            Action::Pointer(8.0, 9.0),
+            Action::Pointer(10.0, 11.0),
+            Action::Button(10.0, 11.0, false),
+            Action::Scroll(1.0, 1.0, 0.0, 130.0),
+            Action::Scroll(2.0, 3.0, 0.0, 130.0),
+        ] {
+            queue_action(&mut batch, action);
+        }
+        assert!(matches!(
+            batch.as_slice(),
+            [
+                Action::Pointer(4.0, 5.0),
+                Action::Button(4.0, 5.0, true),
+                Action::Pointer(10.0, 11.0),
+                Action::Button(10.0, 11.0, false),
+                Action::Scroll(2.0, 3.0, 0.0, 260.0)
+            ]
+        ));
     }
 }

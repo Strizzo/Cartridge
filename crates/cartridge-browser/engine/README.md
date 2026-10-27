@@ -43,3 +43,8 @@ Host-independent packaging invariants:
 ```sh
 python3 -m unittest discover -s crates/cartridge-browser/engine -p 'test_*.py'
 ```
+
+Before copying an engine to a handheld, `python3 preflight.py` reports its kernel,
+RAM, free profile storage and unprivileged namespace support without changing
+system configuration. Run it as the actual Cartridge user. A VM report is marked
+as a simulation. A successful preflight is not a device performance result.

@@ -41,6 +41,8 @@ History and up to 64 bookmarks are stored separately from the engine profile.
 History writes are coalesced; map fragment changes do not fill the history list.
 Engine page capture stops behind native menus; animated-page frame transfer is
 backpressured to 24 frames/second during interaction and 8 while idle. Static browser chrome has no animation.
+Navigation is asynchronous, so a slow connection does not hold the input worker.
+Queued continuous motion is coalesced while preserving click/key boundaries.
 Reduced-motion preferences are sent to sites. A website can still consume CPU on
 its own, and the Mac cannot establish handheld CPU, power or memory performance.
 
@@ -55,8 +57,10 @@ CARTRIDGE_BROWSER_TEST_OUT=/tmp/browser-check \
 The real-engine check serves a loopback-only fixture and verifies actual CSS grid
 layout and pixels, JavaScript, cookies, a mouse link, Back/Forward, native text
 insertion, form submission, zoom, JavaScript dialogs and new-window link routing. It uses throwaway profile storage. Real Mac
-captures of the acceptance sites were checked at 720x720; Slashdot's consent dialog
-is part of that site, not a browser error.
+captures use a 720x720 UI. The live-site checks have opened articles and returned
+with Back on Slashdot and CNN, and dragged, zoomed and searched on OpenStreetMap.
+They use 75% page zoom to fit desktop layouts and consent dialogs in the viewport;
+normal browsing starts at 100% and L2/R2 change it.
 
 ## ARM engine component — work in progress
 
@@ -76,7 +80,8 @@ old-kernel compatibility and performance are still being verified. The engine co
 not part of the normal runtime OTA payload or signed Store catalogue yet. Do not
 install random Chromium packages over the working handheld's Linux libraries.
 Downloads, file upload UI, multiple simultaneous tabs, and site-permission prompts
-are not implemented in this development build. This is not a release-ready claim.
+are not implemented in this development build. Handheld audio output is not wired
+through the private engine yet; it must be checked separately from rendered video. This is not a release-ready claim.
 
 The component build recipe and isolation details are in [engine/README.md](engine/README.md).
 A persistent component can live at

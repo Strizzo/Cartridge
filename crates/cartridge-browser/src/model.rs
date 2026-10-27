@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::io::Read;
 use std::path::Path;
 use url::Url;
 
@@ -48,7 +49,12 @@ pub struct Library {
 }
 impl Library {
     pub fn load(path: &Path) -> Self {
-        let mut library: Self = std::fs::read(path)
+        let mut library: Self = std::fs::File::open(path)
+            .and_then(|file| {
+                let mut bytes = Vec::new();
+                file.take(1024 * 1024 + 1).read_to_end(&mut bytes)?;
+                Ok(bytes)
+            })
             .ok()
             .filter(|b| b.len() < 1024 * 1024)
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())

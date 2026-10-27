@@ -30,7 +30,7 @@ fn capture(s: &mut Session, out: &Path, name: &str) -> Result<(), String> {
 }
 fn click_selector(s: &mut Session, selector: &str) -> Result<(), String> {
     let selector = serde_json::to_string(selector).unwrap();
-    let point=s.evaluate(&format!("(()=>{{const e=[...document.querySelectorAll({selector})].find(e=>{{const r=e.getBoundingClientRect();return r.width>1&&r.height>1}}); if(!e)return null; e.scrollIntoView({{block:'center',behavior:'instant'}});const r=e.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]}})()"))?;
+    let point=s.evaluate(&format!("(()=>{{const e=[...document.querySelectorAll({selector})].find(e=>{{const r=e.getBoundingClientRect();return r.width>1&&r.height>1}}); if(!e)return null; e.scrollIntoView({{block:'center',behavior:'instant'}});const r=[...e.getClientRects()].find(r=>r.width>1&&r.height>1);return r?[r.x+r.width/2,r.y+r.height/2]:null}})()"))?;
     let scale = 720.0
         / s.evaluate("innerWidth")?
             .as_f64()
@@ -39,6 +39,56 @@ fn click_selector(s: &mut Session, selector: &str) -> Result<(), String> {
         point[0].as_f64().ok_or("Missing clickable element")? * scale,
         point[1].as_f64().ok_or("Missing clickable element")? * scale,
     ))
+}
+/// Find rendered text through the browser DOM API, including consent shadow
+/// trees. Only send a real click to a visible control; never remove overlays.
+fn click_text(s: &mut Session, label: &str) -> Result<bool, String> {
+    s.call("DOM.getDocument", json!({"depth":0,"pierce":true}))?;
+    let found = s.call(
+        "DOM.performSearch",
+        json!({"query":label,"includeUserAgentShadowDOM":true}),
+    )?;
+    let id = found["searchId"].as_str().ok_or("Missing DOM search")?;
+    let count = found["resultCount"].as_u64().unwrap_or(0).min(64);
+    if count == 0 {
+        s.call("DOM.discardSearchResults", json!({"searchId":id}))?;
+        return Ok(false);
+    }
+    let nodes = s.call(
+        "DOM.getSearchResults",
+        json!({"searchId":id,"fromIndex":0,"toIndex":count}),
+    )?;
+    s.call("DOM.discardSearchResults", json!({"searchId":id}))?;
+    let width = s.evaluate("innerWidth")?.as_f64().unwrap_or(720.0);
+    let height = s.evaluate("innerHeight")?.as_f64().unwrap_or(576.0);
+    for node in nodes["nodeIds"].as_array().ok_or("Missing DOM nodes")? {
+        let Ok(model) = s.call("DOM.getBoxModel", json!({"nodeId":node})) else {
+            continue;
+        };
+        let Some(quad) = model["model"]["content"].as_array() else {
+            continue;
+        };
+        if quad.len() != 8 {
+            continue;
+        }
+        let x = (0..4)
+            .map(|i| quad[i * 2].as_f64().unwrap_or(-10000.0))
+            .sum::<f64>()
+            / 4.0;
+        let y = (0..4)
+            .map(|i| quad[i * 2 + 1].as_f64().unwrap_or(-10000.0))
+            .sum::<f64>()
+            / 4.0;
+        if x > 0.0 && x < width && y > 0.0 && y < height {
+            s.action(Action::Click(x * 720.0 / width, y * 720.0 / width))?;
+            let until = Instant::now() + Duration::from_millis(500);
+            while Instant::now() < until {
+                s.pump(Duration::from_millis(30))?;
+            }
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
     let out = out.join(site);
@@ -55,7 +105,10 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
     };
     s.action(Action::Navigate(url.into()))?;
     s.action(Action::Zoom(0.75))?;
-    wait(&mut s, "document.readyState==='complete'")?;
+    wait(
+        &mut s,
+        "location.protocol.startsWith('http') && document.readyState==='complete'",
+    )?;
     let inspect=s.evaluate("({title:document.title,url:location.href,buttons:[...document.querySelectorAll('button,[role=button]')].map(e=>e.innerText).filter(Boolean).slice(0,60),frames:[...document.querySelectorAll('iframe')].map(e=>({title:e.title,src:e.src})).slice(0,15),links:[...document.querySelectorAll('a[href]')].filter(e=>e.innerText.trim().length>30).slice(0,20).map(e=>({text:e.innerText.slice(0,180),url:e.href}))})")?;
     std::fs::write(
         out.join("initial.json"),
@@ -87,9 +140,12 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
         s.action(Action::Button(494.0, 352.0, false))?;
         wait(&mut s, &format!("location.hash!=={}", before))?;
         checks.push("map panned with pointer drag");
-        let before = s.evaluate("location.hash")?;
+        let before = s.evaluate("location.hash.match(/map=(\\d+)/)?.[1]")?;
         s.action(Action::Scroll(350.0, 320.0, 0.0, -320.0))?;
-        wait(&mut s, &format!("location.hash!=={}", before))?;
+        wait(
+            &mut s,
+            &format!("location.hash.match(/map=(\\d+)/)?.[1]!=={}", before),
+        )?;
         checks.push("map wheel zoom changed map position");
         capture(&mut s, &out, "map-pan-zoom")?;
         click_selector(&mut s, "#query")?;
@@ -99,12 +155,24 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
         checks.push("map search returned results");
         capture(&mut s, &out, "map-search")?;
     } else {
-        // Honour a visible reject-consent control if the site offers one.
-        let reject=s.evaluate("(()=>{const docs=[[document,0,0]];for(const f of document.querySelectorAll('iframe')){try{if(f.contentDocument){let r=f.getBoundingClientRect();docs.push([f.contentDocument,r.x,r.y])}}catch{}} for(const [doc,ox,oy] of docs){const e=[...doc.querySelectorAll('button,[role=button],input[type=button],a')].find(e=>/^(reject all|reject|do not consent|disagree|essential cookies only|i do not accept)$/i.test((e.innerText||e.value||'').trim()));if(e){e.scrollIntoView({block:'center',behavior:'instant'});const r=e.getBoundingClientRect();if(r.width&&r.height)return [ox+r.x+r.width/2,oy+r.y+r.height/2]}}return null})()")?;
-        if let (Some(x), Some(y)) = (reject[0].as_f64(), reject[1].as_f64()) {
-            s.action(Action::Click(x * 0.75, y * 0.75))?;
-            checks.push("rejected optional consent through site control");
+        // Use the site's visible consent buttons, including shadow DOM.
+        for _ in 0..3 {
+            let mut rejected = false;
+            for label in ["Essential Cookies Only", "I DO NOT ACCEPT", "Reject All"] {
+                if click_text(&mut s, label)? {
+                    rejected = true;
+                    break;
+                }
+            }
+            if rejected {
+                checks.push("rejected optional consent through site control");
+                break;
+            }
+            if !click_text(&mut s, "Show Purposes")? {
+                break;
+            }
         }
+        capture(&mut s, &out, "after-consent")?;
         let selector = if site == "slashdot" {
             "a[href*='/story/']"
         } else {

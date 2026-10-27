@@ -47,7 +47,10 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
             let request = String::from_utf8_lossy(&request[..count]);
             let path = request.split_whitespace().nth(1).unwrap_or("/");
             log::debug!("Fixture request: {path} ({count} bytes)");
-            let page = if path == "/second" {
+            let page = if path.starts_with("/frame") {
+                "<body>SUBFRAME<script>history.replaceState({},'', '/frame?ad-frame');</script>"
+                    .to_string()
+            } else if path == "/second" {
                 "<title>Second page</title><h1>LINK WORKED</h1>".to_string()
             } else if path.starts_with("/search?") {
                 format!("<title>Form result</title><h1>{path}</h1>")
@@ -57,6 +60,7 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
 <style>body{{margin:0;background:rgb(17,51,170);color:white;font:24px sans-serif}}main{{display:grid;grid-template-columns:1fr 1fr;gap:20px;padding:28px}}input,button{{font:24px sans-serif}}a{{color:white}}</style>
 <main><h1>Actual HTML + CSS</h1><span id="js">PENDING</span><a id="next" href="{serve}/second">Next page</a>
 <a id="popup" href="{serve}/second" target="_blank">Open new window</a><button id="dialog" onclick="document.body.dataset.dialogResult=String(confirm('Continue?'))">Dialog</button><form action="/search"><input id="query" name="q"><button>Search</button></form></main>
+<iframe src="{serve}/frame" style="position:absolute;width:1px;height:1px;top:0"></iframe>
 <script>document.getElementById('js').textContent='JAVASCRIPT WORKED';</script>"#
                 )
             };
@@ -83,6 +87,18 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
     wait(
         &mut session,
         "document.getElementById('js')?.textContent==='JAVASCRIPT WORKED'",
+    );
+    wait(
+        &mut session,
+        "document.querySelector('iframe')?.contentWindow.location.search==='?ad-frame'",
+    );
+    for _ in 0..5 {
+        session.pump(Duration::from_millis(20)).unwrap();
+    }
+    assert_eq!(
+        shared.lock().unwrap().info.url,
+        format!("{base}/"),
+        "subframe navigation changed the main address"
     );
     assert_eq!(
         session
