@@ -87,7 +87,7 @@ namespace/seccomp sandbox report in the ARM VM. Full ARM frontend tests, physica
 old-kernel compatibility and performance are still being verified. The engine component is
 not part of the normal runtime OTA payload or signed Store catalogue yet. Do not
 install random Chromium packages over the working handheld's Linux libraries.
-Downloads, file upload UI, multiple simultaneous tabs, and site-permission prompts
+Downloads, file upload UI, multiple simultaneous tabs, JavaScript prompt text entry, and site-permission prompts
 are not implemented in this development build. Handheld audio output is not wired
 through the private engine yet; it must be checked separately from rendered video.
 GPU/WebGL acceleration is also not enabled in the private headless engine. This is not a release-ready claim.
