@@ -2,7 +2,8 @@
 
 This is the 0.8 development branch, not a public stable release. Main and the
 released 0.7 runtime remain unchanged. The handheld has permanent, reboot-verified
-0.8.0 (`a38d5cedcfe935f01585bd5087895ba1a9a5f0e3`), built from `edcce76`.
+0.8.1 (`bdb28e4f934c974a9bf97a8be447f63cb3268d52`), with stable 0.7 retained as
+the direct rollback release. The next 0.8.2 candidate changes Linux browser startup.
 
 The final screenshot-safe candidate is **0.8.1**, source
 `4cafb388f1bad52f42d1cc6dd527c9dfdc7d1977`, CI merge
@@ -13,13 +14,14 @@ passes native and ARM jobs on its second attempt. The first attempt timed out
 waiting 15 seconds for CI Chrome's initial reply; the fresh-runner retry passed
 without disabling any sandbox. Mac real-Chrome checks also pass.
 
-**The final patch is not installed yet.** The power guard refused staging at
-28% and discharging; the last successful power read was 23% and discharging.
-The 28 October SSH check timed out, so activation is still pending. Installed
-0.8 was last verified healthy, with 0.7 as previous and no pending/trial state.
-Reconnect charging and Wi-Fi, then use the already prepared signed kit. Until
-0.8.1 is installed, avoid device F12/SIGUSR1 captures: the older screenshot path
-writes into the signed release.
+**0.8.1 is installed and reboot-verified.** After the user reconnected Wi-Fi
+and charging (34%), the installed bootstrap authenticated the signed candidate.
+The original supervisor promoted it after first-frame health, with verified
+0.7 retained as previous and no pending/trial state. A real SIGUSR1 screenshot
+landed in `/home/ark/.cartridges/screenshots`; the entire signed release still
+verified afterwards. A full reboot changed the boot ID and returned to the exact
+signed 0.8.1 binary, permanent engine and existing browser profile. Bootstrap
+and supervisor hashes remain unchanged. The earlier low-power hold is resolved.
 
 ## Automated behaviour
 
@@ -86,8 +88,22 @@ The actual CNN response redirects to `edition.cnn.com`, then returns HTTP 200
 with a 13-byte `text/plain` body, `Unknown Error`, over HTTP/2. CDP reports a
 Varnish CDN cache hit, no service worker and no disk-cache response. Separate curl
 requests on the same handheld obtain the full HTML. This remains a failing
-browser compatibility case; no identity, certificate, consent or access bypass
-has been added to hide it.
+browser compatibility case for installed 0.8.1.
+
+A controlled follow-up reproduced the 13-byte response with the engine's actual
+HeadlessChrome request identity, while ordinary HTTP returned full HTML. Running
+the same signed Chromium in normal browser mode with its documented
+[Ozone offscreen display backend](https://chromium.googlesource.com/chromium/src/+/HEAD/docs/ozone_overview.md)
+then rendered CNN on both ARM VM and handheld. No user-agent override, automation
+concealment, consent bypass or security relaxation was used; `webdriver` remains
+true. The VM also passed CNN/Slashdot article and Back, map drag/zoom/search and
+namespace/seccomp/TSYNC diagnostics through this backend. On the handheld, three
+bounded CNN navigations produced actual page captures and about 483 links, with
+at least 510,548 KiB available in one live sample. Heavy page resources had not
+finished loading at the 20-second observation limit, although content rendered.
+The 0.8.2 source integrates this Linux-only backend; macOS keeps its existing
+headless startup. A rebuilt ARM runtime and final integration test are still
+required before claiming the production path fixed.
 
 A 126.5-second native map session exited normally and restored the launcher,
 keeping at least 557,632 KiB (about 545 MiB) of system memory available. The SoC
@@ -154,15 +170,16 @@ to user storage and adds a native-screenshot-plus-signature regression.
 
 The 0.8.1 ARM VM additionally captured a real native frame into user storage and
 then reverified the entire signed release successfully, followed by crash,
-interrupted-trial and tamper recovery. The final device activation/reboot awaits
-charging; no SD-card swap is needed.
+interrupted-trial and tamper recovery. These screenshot/signature checks and a
+full reboot have now also passed on the actual handheld over Wi-Fi, without an
+SD-card swap.
 
 The installed engine also passes its sandbox report after migration in the ARM
 VM. Its AppArmor allowance names only the verified helper's exact installed path;
 global namespace policy remains unchanged. The VM is stopped after testing.
 
-Keep the PR and blog unpublished pending review. Wider-device compatibility,
-the CNN failure, hardware web graphics,
+Keep the browser PR in draft and blog additions unpublished pending review.
+Wider-device compatibility, final 0.8.2 integration, hardware web graphics,
 long battery/thermal testing and public engine/source distribution remain explicit
 limitations. Camera/microphone devices are not exposed; blob/data downloads,
 pause/resume and a general file manager are not implemented. Permission approval
