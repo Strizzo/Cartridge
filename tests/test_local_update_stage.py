@@ -121,7 +121,8 @@ class LocalUpdateStageTests(unittest.TestCase):
         cls.keys.cleanup()
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='local-update-stage-test-')
+        # Production state must remain on the user's Linux home filesystem.
+        self.tmp = tempfile.TemporaryDirectory(prefix='.cartridge-local-update-test-', dir=Path.home())
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name).resolve()
         self.app, self.state, self.games = self.root / 'app', self.root / 'state', self.root / 'games'

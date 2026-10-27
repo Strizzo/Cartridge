@@ -103,6 +103,7 @@ Build `cargo build --release --bin browser-component`. Read-only artifact
 inspection and verification work on macOS; persistence requires local Linux
 ext4/XFS/Btrfs/overlay semantics, not exFAT/FAT, network storage or tmpfs.
 
+The same commands are embedded in the signed runtime as `cartridge browser-engine`.
 Run persistent commands as the owning Cartridge user and stop the browser first.
 `USER_HOME` must already exist and be owned by that effective user; storage is
 always `<USER_HOME>/.cartridges/components/browser-engine`. The default is

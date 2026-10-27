@@ -49,12 +49,35 @@ Queued continuous motion is coalesced while preserving click/key boundaries.
 Reduced-motion preferences are sent to sites. A website can still consume CPU on
 its own, and the Mac cannot establish handheld CPU, power or memory performance.
 
+## Tabs, files and site permissions
+
+Start > Tabs opens a maximum of two tabs. Inactive tabs are frozen to reduce CPU
+use; their timers and audio pause. Opening the native tools menu preserves audio
+in the active page. Start also provides JavaScript prompt entry, downloads and
+origin-labelled site-permission review. Permissions reset on navigation/tab switch;
+approve explicitly, then retry the site's request. Approval cannot provide camera
+or microphone devices that the private engine does not expose.
+
+Downloads require confirmation and support HTTP document attachments, one at a
+time, at most 32 MiB each with a 64 MiB folder quota. Blob/data downloads,
+pause/resume and a general file manager are not implemented. The upload picker
+starts on Cancel and selects only regular files from
+`<home>/.cartridges/dev.cartridge.browser/profile/files`, up to eight files and
+32 MiB total. Host OS files, symlinks and arbitrary paths are excluded.
+
+Cookies, localStorage and IndexedDB have passed separate-process persistence
+checks. Library saves are atomic and retried after failure; damaged library JSON
+is preserved. The engine gets up to five seconds to flush on exit. On Linux,
+sustained available memory below 220,000 KiB (or a single sample below 190,000 KiB)
+closes this browser engine and reports the problem while retaining saved data.
+
 ## Checks
 
 ```sh
 cargo test -p cartridge-browser --lib
 CARTRIDGE_BROWSER_TEST_OUT=/tmp/browser-check \
   cargo test -p cartridge-browser --test real_engine -- --ignored --nocapture
+SDL_VIDEODRIVER=dummy cargo test -p cartridge-browser --test capabilities -- --ignored --test-threads=1
 ```
 
 The real-engine check serves a loopback-only fixture and verifies actual CSS grid
@@ -68,7 +91,7 @@ They use 75% page zoom to fit desktop layouts and consent dialogs in the viewpor
 normal browsing now starts at 100% and L2/R2 change it. The old 150% starting
 view squeezed legacy desktop columns too narrowly on sites such as Slashdot.
 
-## ARM engine component — work in progress
+## Private ARM engine component
 
 `engine/chromium` launches a private ARM64 Linux userspace through a static
 bubblewrap helper. The private root has modern browser dependencies without
@@ -85,16 +108,25 @@ ARM interaction checks have passed for Slashdot article/Back and map drag/zoom/s
 CNN has returned a 13-byte HTTP 200 “Unknown Error” response from its CDN in
 ARM trials and remains an open compatibility issue, even though its Mac
 interaction check passes. This is recorded as a failing acceptance case.
-The portable helper and finalized private component also pass Chromium's internal
-namespace/seccomp sandbox report in the ARM VM. The actual handheld’s Linux 4.4.189 also passes the namespace/helper checks,
-and the native frontend has rendered through KMSDRM in a bounded trial. Physical
-controller behaviour and sustained performance are still being verified. The engine component is
-not part of the normal runtime OTA payload or signed Store catalogue yet. Do not
-install random Chromium packages over the working handheld's Linux libraries.
-Downloads, file upload UI, multiple simultaneous tabs, JavaScript prompt text entry, and site-permission prompts
-are not implemented in this development build. Handheld audio output is not wired
-through the private engine yet; it must be checked separately from rendered video.
-GPU/WebGL acceleration is also not enabled in the private headless engine. This is not a release-ready claim.
+The private component passes Chromium's namespace, PID/network namespace and
+seccomp-BPF report on both the ARM VM and the actual Linux 4.4.189 handheld.
+The user has opened Slashdot with the physical controller, returned to Cartridge
+and accepted the improved 100% reading baseline.
+
+The RK817 engine exposes playback/control/timer nodes, with a private ALSA mixer
+at 48 kHz. Actual handheld checks exercised WebAudio and HTML audio at both
+44.1/48 kHz. Microphone capture and sequencer devices remain outside the sandbox.
+The SDL interface uses the accelerated KMSDRM renderer. Web rendering uses software;
+the vendor driver lacks eight GBM APIs required by this Chromium, so hardware
+GPU/WebGL acceleration is not enabled. See [the measured ABI result](engine/gpu/README.md).
+
+The engine is independently signed and stored on the Linux home filesystem,
+separate from runtime OTA and the Store catalogue. Settings > Browser Tools can
+verify it, check the dedicated engine channel, install and roll back in the
+background. Public engine artifacts have not been published yet; an unavailable
+channel is reported as an error. Do not install arbitrary Chromium packages over
+the handheld's working Linux libraries. See [delivery](../../docs/browser-component-delivery.md)
+and [corresponding sources](engine/sources.md).
 
 The component build recipe and isolation details are in [engine/README.md](engine/README.md).
 A persistent component can live at
