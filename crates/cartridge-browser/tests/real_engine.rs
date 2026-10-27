@@ -66,7 +66,9 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
                         std::thread::sleep(Duration::from_millis(10));
                     }
                 }
-                let page = if path.starts_with("/frame") {
+                let page = if path == "/server-error" {
+                    "<title>Service unavailable</title><h1>Upstream server error</h1>".to_string()
+                } else if path.starts_with("/frame") {
                     "<body>SUBFRAME<script>history.replaceState({},'', '/frame?ad-frame');</script>"
                         .to_string()
                 } else if path == "/second" {
@@ -76,15 +78,20 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
                 } else {
                     format!(
                         r#"<!doctype html><title>Browser acceptance</title>
-<style>body{{margin:0;background:rgb(17,51,170);color:white;font:24px sans-serif}}main{{display:grid;grid-template-columns:1fr 1fr;gap:20px;padding:28px}}input,button{{font:24px sans-serif}}a{{color:white}}</style>
+<style>body{{margin:0;background:rgb(17,51,170);color:white;font:24px sans-serif}}main{{display:grid;grid-template-columns:1fr 1fr;gap:20px;padding:28px}}input,button{{font:24px sans-serif}}a{{color:white}}@media(max-width:500px){{body{{background:rgb(170,30,20)}}}}</style>
 <main><h1>Actual HTML + CSS</h1><span id="js">PENDING</span><a id="next" href="{serve}/second">Next page</a>
 <a id="popup" href="{serve}/second" target="_blank">Open new window</a><button id="dialog" onclick="document.body.dataset.dialogResult=String(confirm('Continue?'))">Dialog</button><form action="/search"><input id="query" name="q"><button>Search</button></form></main>
 <iframe src="{serve}/frame" style="position:absolute;width:1px;height:1px;top:0"></iframe>
 <script>document.getElementById('js').textContent='JAVASCRIPT WORKED';</script>"#
                     )
                 };
+                let status = if path == "/server-error" {
+                    "503 Service Unavailable"
+                } else {
+                    "200 OK"
+                };
                 let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nSet-Cookie: test_cookie=stored; SameSite=Lax\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
+                    "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nSet-Cookie: test_cookie=stored; SameSite=Lax\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
                     page.len()
                 );
                 let _ = stream.write_all(response.as_bytes());
@@ -164,20 +171,40 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
     .unwrap();
     session.action(Action::Zoom(1.5)).unwrap();
     assert_eq!(session.evaluate("innerWidth").unwrap(), 480);
-    session.action(Action::Zoom(0.75)).unwrap();
-    assert_eq!(session.evaluate("innerWidth").unwrap(), 960);
-    session.action(Action::Zoom(1.0)).unwrap();
-    assert_eq!(session.evaluate("innerWidth").unwrap(), 720);
+    let deadline = Instant::now() + Duration::from_secs(4);
+    loop {
+        session.pump(Duration::from_millis(20)).unwrap();
+        let red = shared.lock().unwrap().frame.as_ref().is_some_and(|f| {
+            assert_eq!(
+                (f.width, f.height),
+                (720, 576),
+                "zoom lost native resolution"
+            );
+            let pixel = &f.rgb[f.rgb.len() - 3..];
+            pixel[0] > 140 && pixel[1] < 70 && pixel[2] < 60
+        });
+        if red {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "zoom changed layout but never delivered updated page pixels"
+        );
+    }
     let point=session.evaluate("(()=>{let r=document.getElementById('next').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()").unwrap();
     session
         .action(Action::Click(
-            point[0].as_f64().unwrap(),
-            point[1].as_f64().unwrap(),
+            point[0].as_f64().unwrap() * 1.5,
+            point[1].as_f64().unwrap() * 1.5,
         ))
         .unwrap();
     wait(&mut session, "document.title==='Second page'");
     session.action(Action::Back).unwrap();
     wait(&mut session, "document.title==='Browser acceptance'");
+    session.action(Action::Zoom(0.75)).unwrap();
+    assert_eq!(session.evaluate("innerWidth").unwrap(), 960);
+    session.action(Action::Zoom(1.0)).unwrap();
+    assert_eq!(session.evaluate("innerWidth").unwrap(), 720);
     let point=session.evaluate("(()=>{let r=document.getElementById('popup').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()").unwrap();
     session
         .action(Action::Click(
@@ -238,6 +265,18 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
     wait(&mut session, "document.title==='Browser acceptance'");
     session.action(Action::Forward).unwrap();
     wait(&mut session, "document.title==='Form result'");
+    session
+        .action(Action::Navigate(format!("{base}/server-error")))
+        .unwrap();
+    wait(&mut session, "document.title==='Service unavailable'");
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while shared.lock().unwrap().info.http_status != Some(503) {
+        session.pump(Duration::from_millis(20)).unwrap();
+        assert!(
+            Instant::now() < deadline,
+            "server error status was not reflected in browser metadata"
+        );
+    }
     let before = Instant::now();
     session
         .action(Action::Navigate(format!("{base}/slow")))

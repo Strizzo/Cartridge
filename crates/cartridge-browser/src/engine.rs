@@ -5,7 +5,7 @@ use base64::Engine as _;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{Cursor, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
@@ -221,7 +221,6 @@ impl Session {
                 "--remote-debugging-pipe",
                 "--no-first-run",
                 "--no-default-browser-check",
-                "--disable-background-networking",
                 "--disable-extensions",
                 "--disable-sync",
                 "--disable-gpu",
@@ -549,15 +548,28 @@ impl Session {
                 }
                 if let Some(data) = p["data"].as_str().filter(|s| s.len() < 2 * 1024 * 1024) {
                     if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data) {
-                        if let Ok(decoded) =
-                            image::load_from_memory_with_format(&bytes, image::ImageFormat::Jpeg)
-                        {
+                        let mut reader = image::ImageReader::with_format(
+                            Cursor::new(bytes),
+                            image::ImageFormat::Jpeg,
+                        );
+                        let mut limits = image::Limits::default();
+                        limits.max_image_width = Some(VIEW_WIDTH);
+                        limits.max_image_height = Some(VIEW_HEIGHT);
+                        limits.max_alloc = Some(16 * 1024 * 1024);
+                        reader.limits(limits);
+                        if let Ok(decoded) = reader.decode() {
+                            log::trace!(
+                                "Web frame {}x{} at zoom {}",
+                                decoded.width(),
+                                decoded.height(),
+                                self.zoom
+                            );
                             if decoded.width() == VIEW_WIDTH && decoded.height() == VIEW_HEIGHT {
                                 let mut state = self.shared.lock().unwrap();
                                 state.frame = Some(Frame {
                                     width: VIEW_WIDTH,
                                     height: VIEW_HEIGHT,
-                                    rgb: decoded.to_rgb8().into_raw(),
+                                    rgb: decoded.into_rgb8().into_raw(),
                                 });
                                 state.frame_count += 1;
                                 state.revision += 1;
@@ -675,24 +687,32 @@ impl Session {
                 self.call("Page.stopLoading", json!({}))?;
                 self.shared.lock().unwrap().info.loading = false;
             }
+            // Positions use the native view's pixels. Chromium applies the
+            // emulated view scale; dividing here a second time misplaces clicks.
             Action::Pointer(x, y) => {
-                self.call("Input.dispatchMouseEvent",json!({"type":"mouseMoved","x":x/self.zoom,"y":y/self.zoom,"buttons":if self.mouse_down{1}else{0}}))?;
+                self.call(
+                    "Input.dispatchMouseEvent",
+                    json!({"type":"mouseMoved","x":x,"y":y,"buttons":if self.mouse_down{1}else{0}}),
+                )?;
             }
             Action::Button(x, y, down) => {
                 self.mouse_down = down;
-                self.call("Input.dispatchMouseEvent",json!({"type":if down{"mousePressed"}else{"mouseReleased"},"x":x/self.zoom,"y":y/self.zoom,"button":"left","buttons":if down{1}else{0},"clickCount":1}))?;
+                self.call("Input.dispatchMouseEvent",json!({"type":if down{"mousePressed"}else{"mouseReleased"},"x":x,"y":y,"button":"left","buttons":if down{1}else{0},"clickCount":1}))?;
                 if !down {
                     self.info_dirty = true;
                 }
             }
             Action::Click(x, y) => {
                 for kind in ["mousePressed", "mouseReleased"] {
-                    self.call("Input.dispatchMouseEvent",json!({"type":kind,"x":x/self.zoom,"y":y/self.zoom,"button":"left","clickCount":1}))?;
+                    self.call(
+                        "Input.dispatchMouseEvent",
+                        json!({"type":kind,"x":x,"y":y,"button":"left","clickCount":1}),
+                    )?;
                 }
                 self.info_dirty = true;
             }
             Action::Scroll(x, y, dx, dy) => {
-                self.call("Input.dispatchMouseEvent",json!({"type":"mouseWheel","x":x/self.zoom,"y":y/self.zoom,"deltaX":dx/self.zoom,"deltaY":dy/self.zoom}))?;
+                self.call("Input.dispatchMouseEvent",json!({"type":"mouseWheel","x":x,"y":y,"deltaX":dx/self.zoom,"deltaY":dy/self.zoom}))?;
             }
             Action::Key(key, shift) => {
                 let code = match key.as_str() {
@@ -748,7 +768,14 @@ impl Session {
                     .iter()
                     .min_by(|a, b| (**a - zoom).abs().total_cmp(&(**b - zoom).abs()))
                     .unwrap();
-                self.call("Emulation.setDeviceMetricsOverride",json!({"width":(VIEW_WIDTH as f64/self.zoom).round() as u32,"height":(VIEW_HEIGHT as f64/self.zoom).round() as u32,"deviceScaleFactor":self.zoom,"mobile":false}))?;
+                // Keep the compositor at native resolution while reflowing the
+                // layout. Otherwise screencast shrinks to CSS dimensions and
+                // the UI either freezes or has to upscale blurry text.
+                self.call("Emulation.setDeviceMetricsOverride",json!({"width":(VIEW_WIDTH as f64/self.zoom).round() as u32,"height":(VIEW_HEIGHT as f64/self.zoom).round() as u32,"deviceScaleFactor":self.zoom,"mobile":false,"scale":self.zoom,"dontSetVisibleSize":true}))?;
+                self.call(
+                    "Emulation.setVisibleSize",
+                    json!({"width":VIEW_WIDTH,"height":VIEW_HEIGHT}),
+                )?;
             }
             Action::Dialog(accept) => {
                 self.call("Page.handleJavaScriptDialog", json!({"accept":accept}))?;

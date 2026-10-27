@@ -116,6 +116,16 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
     capture(&mut s, &out, "initial")?;
+    if site == "cnn"
+        && inspect["body"]
+            .as_str()
+            .is_some_and(|s| s.trim() == "Unknown Error")
+    {
+        return Err(format!(
+            "CNN returned HTTP {} with a literal Unknown Error body; see initial.json/png",
+            inspect["status"]
+        ));
+    }
     if inspect["status"].as_u64().is_some_and(|s| s >= 400) {
         return Err(format!(
             "The site returned HTTP {}: {}",

@@ -58,11 +58,12 @@ CARTRIDGE_BROWSER_TEST_OUT=/tmp/browser-check \
 The real-engine check serves a loopback-only fixture and verifies actual CSS grid
 layout and pixels, JavaScript, cookies, a mouse link, Back/Forward, native text
 insertion, form submission, zoom, JavaScript dialogs, new-window link routing,
-main-frame address tracking, and cancellation while a server stalls. It uses throwaway profile storage. Real Mac
+main-frame address tracking, HTTP error status, full-resolution zoomed pixels
+and click coordinates, and cancellation while a server stalls. It uses throwaway profile storage. Real Mac
 captures use a 720x720 UI. The live-site checks have opened articles and returned
 with Back on Slashdot and CNN, and dragged, zoomed and searched on OpenStreetMap.
 They use 75% page zoom to fit desktop layouts and consent dialogs in the viewport;
-normal browsing starts at 100% and L2/R2 change it.
+normal browsing starts at 150% for the small panel and L2/R2 change it.
 
 ## ARM engine component — work in progress
 
@@ -78,8 +79,9 @@ security bypass flags. There is no unsafe fallback when namespaces are unavailab
 The ARM VM has executed Chromium 156.0.8078.47 and real JavaScript in this setup.
 The native ARM frontend also renders OpenStreetMap through the private pipes.
 ARM interaction checks have passed for Slashdot article/Back and map drag/zoom/search.
-CNN has returned an “Unknown Error” page in an ARM trial and remains an open
-compatibility issue, even though its Mac interaction check passes.
+CNN has returned a 13-byte HTTP 200 “Unknown Error” response from its CDN in
+ARM trials and remains an open compatibility issue, even though its Mac
+interaction check passes. This is recorded as a failing acceptance case.
 The portable helper and finalized private component also pass Chromium's internal
 namespace/seccomp sandbox report in the ARM VM. Full ARM frontend tests, physical
 old-kernel compatibility and performance are still being verified. The engine component is

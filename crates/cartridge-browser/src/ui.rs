@@ -93,7 +93,7 @@ impl Ui {
             pointer: [360.0, 240.0],
             pointer_mode: false,
             dragging: false,
-            zoom: 1.0,
+            zoom: 1.5,
             left: [0.0; 2],
             right: [0.0; 2],
             pending_field: None,
@@ -385,7 +385,8 @@ impl Ui {
         } else {
             "WEB".to_string()
         };
-        s.draw_text(&status, 560, 25, Some(t.accent), 14, true, Some(140));
+        let status = format!("{}%  {status}", (self.zoom * 100.0).round() as u32);
+        s.draw_text(&status, 546, 25, Some(t.accent), 13, true, Some(160));
         s.fill(Rect::new(18, 62, 684, 30), t.card_bg);
         s.draw_text(
             if self.info.url.starts_with("http") {
@@ -545,7 +546,28 @@ impl Ui {
             Mode::Menu => "D-pad Choose   A Select   B Back   Select Exit",
             Mode::Library => "A Open  B Back  L1/R1 View  X Remove  Select Exit",
         };
-        s.draw_text(hints, 18, 692, Some(t.text), 13, false, Some(690));
+        if self.mode == Mode::Page {
+            s.draw_text(
+                "A Open/click   B Back   L2/R2 Page zoom   Select Exit",
+                18,
+                683,
+                Some(t.text),
+                13,
+                false,
+                Some(690),
+            );
+            s.draw_text(
+                "Left stick Point  Right stick Scroll  X Address  Y Saved  Start Tools",
+                18,
+                703,
+                Some(t.text_dim),
+                12,
+                false,
+                Some(690),
+            );
+        } else {
+            s.draw_text(hints, 18, 692, Some(t.text), 13, false, Some(690));
+        }
         if self.info.dialog.is_some() || self.info.error.is_some() || self.message.is_some() {
             s.fill(Rect::new(12, 460, 696, 202), t.bg);
             s.draw_outline(Rect::new(12, 460, 696, 202), t.accent, 2);
@@ -635,6 +657,7 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
     let mut pump = sdl.event_pump()?;
     let mut inbox = cartridge_core::event_wait::EventInbox::default();
     let mut ui = Ui::new(&data);
+    ui.send(&engine, Action::Zoom(ui.zoom));
     if options.initial.is_some() {
         ui.mode = Mode::Page;
     }
@@ -833,7 +856,7 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
         }
         if options.capture.is_some()
             && !captured
-            && has_frame
+            && (has_frame || ui.mode != Mode::Page)
             && !ui.info.loading
             && start.elapsed().as_secs_f64() >= options.capture_after.unwrap_or(2.0)
         {
@@ -858,7 +881,7 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
             if pending_capture
                 || (!captured
                     && options.capture.is_some()
-                    && has_frame
+                    && (has_frame || ui.mode != Mode::Page)
                     && !ui.info.loading
                     && start.elapsed().as_secs_f64() >= options.capture_after.unwrap_or(2.0))
             {
