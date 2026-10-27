@@ -35,6 +35,7 @@ jobs:
         run: |
           export CARTRIDGE_BROWSER_ENGINE="$(command -v google-chrome)"
           cargo test -p cartridge-browser --test real_engine -- --ignored --nocapture
+          cargo test -p cartridge-browser --test capabilities -- --ignored --nocapture
 
       - name: Upload browser render diagnostics
         if: always()
@@ -106,6 +107,7 @@ jobs:
           cp target/aarch64-unknown-linux-gnu/release/store-check bundle/Cartridge/dev/
           cp target/aarch64-unknown-linux-gnu/release/cartridge-browser bundle/Cartridge/dev/
           cp target/aarch64-unknown-linux-gnu/release/browser-check bundle/Cartridge/dev/
+          cp target/aarch64-unknown-linux-gnu/release/browser-component bundle/Cartridge/dev/
           printf '%s\n' "$GITHUB_SHA" > bundle/Cartridge/dev/build-revision
 
           # Boot scripts

@@ -119,6 +119,9 @@ def main():
         target.write_text('')
     packages = subprocess.check_output(['chroot', str(root), 'dpkg-query', '-W',
         '-f=${binary:Package}\t${Version}\n'], text=True)
+    sources = subprocess.check_output(['chroot', str(root), 'dpkg-query', '-W',
+        '-f=${source:Package}\t${source:Version}\n'], text=True)
+    (component / 'source-packages.tsv').write_text(''.join(line + '\n' for line in sorted(set(sources.splitlines()))))
     clear_runtime_devices(root)
     normalize(root)
     (component / 'packages.tsv').write_text(packages)

@@ -12,6 +12,20 @@ import stat
 import sys
 
 
+def playback_nodes():
+    """Expose this board's playback only; microphone/seq/timer stay outside."""
+    try:
+        if Path('/sys/class/sound/card0/id').read_text().strip() != 'rockchiprk817co':
+            return []
+        nodes = [Path('/dev/snd/controlC0'), Path('/dev/snd/pcmC0D0p')]
+        if all(stat.S_ISCHR(node.stat().st_mode) and os.access(str(node), os.R_OK | os.W_OK)
+               for node in nodes):
+            return nodes
+    except OSError:
+        pass
+    return []
+
+
 def main():
     if platform.system() != 'Linux' or platform.machine() not in ('aarch64', 'arm64'):
         raise RuntimeError('This browser engine component is for ARM64 Linux.')
@@ -47,11 +61,20 @@ def main():
             if not stat.S_ISFIFO(os.fstat(descriptor).st_mode):
                 raise RuntimeError('The browser transport requires private pipes.')
             os.set_inheritable(descriptor, True)
+    audio_nodes = playback_nodes()
+    audio_mounts = ['--dir', '/dev/snd'] if audio_nodes else []
+    for node in audio_nodes:
+        audio_mounts.extend(['--dev-bind', str(node), str(node)])
+    if audio_nodes:
+        # ALSA plug performs sample-rate conversion for the RK817 codec. No
+        # capture node or host sound server is exposed to the private userspace.
+        args.append('--alsa-output-device=plughw:CARD=rockchiprk817co,DEV=0')
     command = [str(sandbox), '--die-with-parent', '--new-session',
         '--unshare-user', '--unshare-pid', '--unshare-ipc', '--unshare-uts',
         '--uid', '1000', '--gid', '1000',
         '--ro-bind', str(root), '/', '--proc', '/proc', '--dev', '/dev',
         '--tmpfs', '/tmp', '--tmpfs', '/run', '--tmpfs', '/dev/shm',
+        *audio_mounts,
         '--bind', str(profile), '/profile',
         '--ro-bind', str(Path('/etc/resolv.conf').resolve()), '/etc/resolv.conf',
         '--ro-bind', str(Path('/etc/hosts').resolve()), '/etc/hosts',

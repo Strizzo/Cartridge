@@ -52,7 +52,7 @@ class ComponentTests(unittest.TestCase):
             self.assertEqual(component.inventory(root)[0]["size"], 14)
 
 class WrapperTests(unittest.TestCase):
-    def invoke(self, args, pipe=True):
+    def invoke(self, args, pipe=True, audio=False):
         wrapper_path=Path(__file__).with_name("chromium")
         spec=importlib.util.spec_from_loader("engine_wrapper",SourceFileLoader("engine_wrapper",str(wrapper_path)))
         wrapper=importlib.util.module_from_spec(spec)
@@ -70,6 +70,7 @@ class WrapperTests(unittest.TestCase):
                 patch.object(wrapper.sys,"argv",["chromium","--user-data-dir="+str(root / "profile"),*args]), \
                 patch.object(wrapper.os,"fstat",return_value=SimpleNamespace(st_mode=stat.S_IFIFO if pipe else stat.S_IFREG)), \
                 patch.object(wrapper.os,"set_inheritable") as inherited, \
+                patch.object(wrapper,"playback_nodes",return_value=[Path("/dev/snd/controlC0"),Path("/dev/snd/pcmC0D0p")] if audio else []), \
                 patch.object(wrapper.os,"execv") as execute:
                 wrapper.main()
                 return execute.call_args.args[1],inherited.call_args_list
@@ -81,6 +82,17 @@ class WrapperTests(unittest.TestCase):
         self.assertIn("--unshare-pid",command)
         self.assertIn("--remote-debugging-pipe",command)
         self.assertEqual([c.args for c in inherited],[(3,True),(4,True)])
+
+    def test_playback_uses_only_explicit_codec_nodes_with_sandbox_intact(self):
+        command,_=self.invoke(["--remote-debugging-pipe"],audio=True)
+        self.assertIn("--alsa-output-device=plughw:CARD=rockchiprk817co,DEV=0",command)
+        self.assertIn("--unshare-user",command)
+        self.assertIn("--unshare-ipc",command)
+        binds=[command[i+1:i+3] for i,value in enumerate(command) if value == "--dev-bind"]
+        self.assertEqual(binds,[["/dev/snd/controlC0"]*2,["/dev/snd/pcmC0D0p"]*2])
+        self.assertFalse(any("pcmC0D0c" in value for value in command))
+        plain,_=self.invoke(["--remote-debugging-pipe"])
+        self.assertNotIn("--dev-bind",plain)
 
     def test_sandbox_bypass_and_nonpipe_transport_are_refused(self):
         for flag in ["--no-sandbox","--disable-seccomp-filter-sandbox","--disable-namespace-sandbox", "--remote-debugging-port=9222"]:
