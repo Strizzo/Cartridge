@@ -1,0 +1,70 @@
+#!/usr/bin/python3
+"""Run the browser component's private userspace. Never upgrade the host OS.
+
+The component supplies rootfs/ and a statically linked bubblewrap. The optional
+BWRAP override is for development in the isolated ARM VM. Both the outer user
+namespace and Chromium's own namespace/seccomp sandbox remain enabled.
+"""
+import os
+from pathlib import Path
+import platform
+import sys
+
+
+def main():
+    if platform.system() != 'Linux' or platform.machine() not in ('aarch64', 'arm64'):
+        raise RuntimeError('This browser engine component is for ARM64 Linux.')
+    if os.geteuid() == 0:
+        raise RuntimeError('Run Browser as the regular Cartridge user, not root.')
+    base = Path(__file__).resolve().parent
+    root = base / 'rootfs'
+    sandbox = Path(os.environ.get('CARTRIDGE_BROWSER_BWRAP', str(base / 'bubblewrap')))
+    if not (root / 'usr/lib/chromium/chromium').is_file() or not sandbox.is_file():
+        raise RuntimeError('The private Chromium engine component is incomplete.')
+    args = []
+    profile = None
+    for arg in sys.argv[1:]:
+        if arg.startswith('--user-data-dir='):
+            if profile is not None:
+                raise RuntimeError('Multiple browser profiles were supplied.')
+            profile = Path(arg.split('=', 1)[1]).resolve()
+            args.append('--user-data-dir=/profile')
+        elif any(arg == denied or arg.startswith(denied + '=') for denied in (
+            '--no-sandbox', '--disable-web-security', '--ignore-certificate-errors',
+            '--remote-debugging-port', '--remote-debugging-address', '--single-process')):
+            raise RuntimeError('Unsafe engine option refused: ' + arg.split('=', 1)[0])
+        else:
+            args.append(arg)
+    if profile is None or not profile.is_dir():
+        raise RuntimeError('A private existing profile directory is required.')
+    profile.chmod(0o700)
+    preserve = []
+    if '--remote-debugging-pipe' in args:
+        os.fstat(3)
+        os.fstat(4)
+        preserve = ['--preserve-fds', '2']
+    command = [str(sandbox), '--die-with-parent', '--new-session',
+        '--unshare-user', '--unshare-pid', '--unshare-ipc', '--unshare-uts',
+        '--uid', '1000', '--gid', '1000', *preserve,
+        '--ro-bind', str(root), '/', '--proc', '/proc', '--dev', '/dev',
+        '--tmpfs', '/tmp', '--tmpfs', '/run', '--tmpfs', '/dev/shm',
+        '--bind', str(profile), '/profile',
+        '--ro-bind', str(Path('/etc/resolv.conf').resolve()), '/etc/resolv.conf',
+        '--ro-bind', str(Path('/etc/hosts').resolve()), '/etc/hosts',
+        '--clearenv', '--setenv', 'HOME', '/profile',
+        '--setenv', 'XDG_CONFIG_HOME', '/profile/config',
+        '--setenv', 'XDG_CACHE_HOME', '/profile/cache',
+        '--setenv', 'LANG', 'C.UTF-8', '--setenv', 'PATH', '/usr/bin:/bin',
+        '--chdir', '/profile', '--', '/usr/lib/chromium/chromium',
+        # The component uses unprivileged user namespaces, not the legacy
+        # root-owned setuid helper (which also cannot live on exFAT).
+        '--disable-setuid-sandbox', *args]
+    os.execv(command[0], command)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, RuntimeError) as error:
+        print('Browser engine: ' + str(error), file=sys.stderr)
+        sys.exit(1)

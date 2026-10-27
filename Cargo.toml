@@ -10,7 +10,7 @@ codegen-units = 1
 opt-level = 3
 
 [workspace.package]
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
 
 [workspace.dependencies]
@@ -36,6 +36,7 @@ path = "src/main.rs"
 [dependencies]
 sdl2.workspace = true
 cartridge-core = { path = "crates/cartridge-core" }
+cartridge-browser = { path = "crates/cartridge-browser" }
 cartridge-net = { path = "crates/cartridge-net" }
 cartridge-runner = { path = "crates/cartridge-runner" }
 cartridge-lua = { path = "crates/cartridge-lua" }

@@ -27,10 +27,19 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
+      - name: Real browser engine regression (private pipe, isolated profile)
+        env:
+          SDL_VIDEODRIVER: dummy
+          CARTRIDGE_BROWSER_TEST_OUT: ${{ runner.temp }}/cartridge-browser-check
+        run: |
+          export CARTRIDGE_BROWSER_ENGINE="$(command -v google-chrome)"
+          cargo test -p cartridge-browser --test real_engine -- --ignored --nocapture
+
       - name: Test manual launcher
         run: |
           bash -n deploy/tools/Cartridge.sh
           python3 -m unittest discover -s tests -p 'test_*.py'
+          python3 -m unittest discover -s crates/cartridge-browser/engine -p 'test_*.py'
 
       - name: Simulator smoke (software renderer, no host hardware access)
         env:
@@ -87,6 +96,8 @@ jobs:
           cp target/aarch64-unknown-linux-gnu/release/sim-check bundle/Cartridge/dev/
           cp target/aarch64-unknown-linux-gnu/release/app-check bundle/Cartridge/dev/
           cp target/aarch64-unknown-linux-gnu/release/store-check bundle/Cartridge/dev/
+          cp target/aarch64-unknown-linux-gnu/release/cartridge-browser bundle/Cartridge/dev/
+          cp target/aarch64-unknown-linux-gnu/release/browser-check bundle/Cartridge/dev/
           printf '%s\n' "$GITHUB_SHA" > bundle/Cartridge/dev/build-revision
 
           # Boot scripts
