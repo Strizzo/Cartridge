@@ -24,7 +24,12 @@ impl Drop for Fixture {
 }
 impl Fixture {
     fn new() -> Self {
-        let root = std::env::temp_dir().join(format!(
+        // /tmp is tmpfs on some Linux runners; exercise the real persistent-
+        // filesystem policy on the checkout volume instead of weakening it.
+        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/browser-component-fixtures");
+        fs::create_dir_all(&base).unwrap();
+        let root = base.join(format!(
             "browser-component-test-{}-{}",
             std::process::id(),
             SERIAL.fetch_add(1, Ordering::SeqCst)

@@ -36,6 +36,7 @@ meson setup "$work_dir/build" "$work_dir/bubblewrap-0.13.1" \
 meson compile -C "$work_dir/build"
 install -m 755 "$work_dir/build/bwrap" "$component_dir/bubblewrap"
 install -m 755 "$source_dir/chromium" "$component_dir/chromium"
+install -m 644 "$source_dir/asound.conf" "$component_dir/rootfs/etc/asound.conf"
 mkdir "$component_dir/notices"
 cp "$work_dir/bubblewrap-0.13.1/COPYING" "$component_dir/notices/bubblewrap.txt"
 cp /usr/share/doc/libc6/copyright "$component_dir/notices/static-libc.txt"

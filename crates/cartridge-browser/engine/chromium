@@ -13,11 +13,11 @@ import sys
 
 
 def playback_nodes():
-    """Expose this board's playback only; microphone/seq/timer stay outside."""
+    """Expose this board's playback only; microphone and sequencer stay outside."""
     try:
         if Path('/sys/class/sound/card0/id').read_text().strip() != 'rockchiprk817co':
             return []
-        nodes = [Path('/dev/snd/controlC0'), Path('/dev/snd/pcmC0D0p')]
+        nodes = [Path('/dev/snd/controlC0'), Path('/dev/snd/pcmC0D0p'), Path('/dev/snd/timer')]
         if all(stat.S_ISCHR(node.stat().st_mode) and os.access(str(node), os.R_OK | os.W_OK)
                for node in nodes):
             return nodes
@@ -66,9 +66,9 @@ def main():
     for node in audio_nodes:
         audio_mounts.extend(['--dev-bind', str(node), str(node)])
     if audio_nodes:
-        # ALSA plug performs sample-rate conversion for the RK817 codec. No
+        # The private ALSA mixer owns one hardware stream at 48 kHz. No
         # capture node or host sound server is exposed to the private userspace.
-        args.append('--alsa-output-device=plughw:CARD=rockchiprk817co,DEV=0')
+        args.append('--alsa-output-device=cartridge')
     command = [str(sandbox), '--die-with-parent', '--new-session',
         '--unshare-user', '--unshare-pid', '--unshare-ipc', '--unshare-uts',
         '--uid', '1000', '--gid', '1000',

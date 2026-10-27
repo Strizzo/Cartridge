@@ -70,7 +70,7 @@ class WrapperTests(unittest.TestCase):
                 patch.object(wrapper.sys,"argv",["chromium","--user-data-dir="+str(root / "profile"),*args]), \
                 patch.object(wrapper.os,"fstat",return_value=SimpleNamespace(st_mode=stat.S_IFIFO if pipe else stat.S_IFREG)), \
                 patch.object(wrapper.os,"set_inheritable") as inherited, \
-                patch.object(wrapper,"playback_nodes",return_value=[Path("/dev/snd/controlC0"),Path("/dev/snd/pcmC0D0p")] if audio else []), \
+                patch.object(wrapper,"playback_nodes",return_value=[Path("/dev/snd/controlC0"),Path("/dev/snd/pcmC0D0p"),Path("/dev/snd/timer")] if audio else []), \
                 patch.object(wrapper.os,"execv") as execute:
                 wrapper.main()
                 return execute.call_args.args[1],inherited.call_args_list
@@ -85,11 +85,11 @@ class WrapperTests(unittest.TestCase):
 
     def test_playback_uses_only_explicit_codec_nodes_with_sandbox_intact(self):
         command,_=self.invoke(["--remote-debugging-pipe"],audio=True)
-        self.assertIn("--alsa-output-device=plughw:CARD=rockchiprk817co,DEV=0",command)
+        self.assertIn("--alsa-output-device=cartridge",command)
         self.assertIn("--unshare-user",command)
         self.assertIn("--unshare-ipc",command)
         binds=[command[i+1:i+3] for i,value in enumerate(command) if value == "--dev-bind"]
-        self.assertEqual(binds,[["/dev/snd/controlC0"]*2,["/dev/snd/pcmC0D0p"]*2])
+        self.assertEqual(binds,[["/dev/snd/controlC0"]*2,["/dev/snd/pcmC0D0p"]*2,["/dev/snd/timer"]*2])
         self.assertFalse(any("pcmC0D0c" in value for value in command))
         plain,_=self.invoke(["--remote-debugging-pipe"])
         self.assertNotIn("--dev-bind",plain)
