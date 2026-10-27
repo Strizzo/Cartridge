@@ -37,7 +37,7 @@ Everything after `--` is passed through to the binary.
 arrows = D-pad   Z = A   X = B   C = X   V = Y
 A = L1   S = R1   Q = L2   W = R2
 Enter = Start    Space = Select    Esc = quit
-F12 = screenshot -> screenshots/
+F12 = screenshot -> <CARTRIDGE_HOME>/.cartridges/screenshots/
 ```
 
 The same line is printed to stderr on startup when `CARTRIDGE_SIM=1`. A USB
@@ -75,7 +75,9 @@ the process, so the Settings sliders actually move.
 
 ## Screenshots
 
-F12 (or `kill -USR1 <pid>`) writes `screenshots/<timestamp>.png`. Frame
+F12 (or `kill -USR1 <pid>`) writes `<CARTRIDGE_HOME>/.cartridges/screenshots/<timestamp>.png`
+(`.sim/home/.cartridges/screenshots` by default). Captures stay outside signed
+runtime releases, so taking a screenshot cannot invalidate the next boot. Frame
 read-back is exact on the software renderer; on the accelerated renderer it is
 usually right but can come back empty depending on the driver, so pass
 `--software` when a screenshot has to be pixel-accurate.
