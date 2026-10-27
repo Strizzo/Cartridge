@@ -4,6 +4,10 @@ An experimental app platform developed and tested on an R36S Plus. Turn a retro 
 
 Built in Rust with SDL2. Apps are scripted in Lua.
 
+**[Build your first Cartridge app](docs/app-development.md)** — start on your
+Mac with the v0.7.0 runtime, a runnable Lua counter, and the desktop simulator.
+The runtime repository and its Lua APIs are the SDK.
+
 > **Experimental software — back up your card before installing.** CartridgeOS is
 > provided as-is, without warranty. Installation and boot changes can cause data
 > loss or leave the card unbootable. Keep an independent backup of your working
