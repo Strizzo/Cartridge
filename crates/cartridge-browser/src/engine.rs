@@ -268,9 +268,15 @@ impl Session {
                 command.env(name, value);
             }
         }
+        // Linux uses the normal browser with Ozone's offscreen software display.
+        // Keep Chromium's default browser identity and the existing CDP pipe;
+        // no host display server is needed. macOS retains its headless mode.
+        #[cfg(target_os = "linux")]
+        command.arg("--ozone-platform=headless");
+        #[cfg(not(target_os = "linux"))]
+        command.arg("--headless=new");
         command
             .args([
-                "--headless=new",
                 "--remote-debugging-pipe",
                 "--no-first-run",
                 "--no-default-browser-check",

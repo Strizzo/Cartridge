@@ -110,6 +110,16 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
     let shared = Arc::new(Mutex::new(Snapshot::default()));
     let mut session = Session::start(&discover(None).unwrap(), &profile, shared.clone()).unwrap();
     println!("Engine: {}", shared.lock().unwrap().info.engine_version);
+    #[cfg(target_os = "linux")]
+    {
+        // Offscreen display must retain the normal browser identity without
+        // hiding the automation exposed by our inherited DevTools pipe.
+        let identity = session
+            .evaluate("({agent:navigator.userAgent,webdriver:navigator.webdriver})")
+            .unwrap();
+        assert!(!identity["agent"].as_str().unwrap().contains("HeadlessChrome"));
+        assert_eq!(identity["webdriver"], true);
+    }
     session.action(Action::Navigate(base.clone())).unwrap();
     wait(
         &mut session,
