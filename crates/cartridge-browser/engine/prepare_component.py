@@ -14,6 +14,7 @@ from pathlib import Path
 import platform
 import posixpath
 import stat
+import shutil
 import struct
 import subprocess
 
@@ -80,6 +81,19 @@ def normalize(root):
             target = path.resolve(strict=False)
             if os.path.commonpath([str(root), str(target)]) != str(root):
                 raise ValueError('Symlink escapes component: ' + str(path.relative_to(root)))
+    # USTAR has a fixed 100-byte link field. A few Debian CA aliases exceed
+    # it; retain their exact certificate bytes as small regular files instead.
+    # This avoids archive extensions and preserves all certificate trust data.
+    for path in entries:
+        if path.is_symlink() and len(os.readlink(path).encode('utf-8')) > 100:
+            target = path.resolve(strict=True)
+            if not target.is_file() or target.stat().st_size > 16 * 1024 * 1024:
+                raise ValueError('Long link is not a small regular file: ' + str(path.relative_to(root)))
+            mode = stat.S_IMODE(target.stat().st_mode) & ~0o6000
+            path.unlink()
+            with target.open('rb') as source, path.open('xb') as output:
+                shutil.copyfileobj(source, output)
+            path.chmod(mode)
 
 
 def inventory(root):

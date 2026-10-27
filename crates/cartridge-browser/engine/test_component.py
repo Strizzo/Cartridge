@@ -29,6 +29,20 @@ class ComponentTests(unittest.TestCase):
                 self.assertFalse(os.readlink(path).startswith("/"))
                 self.assertTrue(path.resolve().is_relative_to(root.resolve()))
 
+    def test_long_certificate_alias_keeps_exact_trust_bytes_without_tar_extensions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / 'usr/share/ca-certificates/mozilla' / ('Authority_' + 'x'*65 + '.crt')
+            target.parent.mkdir(parents=True)
+            target.write_bytes(b'certificate bytes remain identical')
+            alias = root / 'etc/ssl/certs/authority.pem'
+            alias.parent.mkdir(parents=True)
+            alias.symlink_to('../../../' + target.relative_to(root).as_posix())
+            self.assertGreater(len(os.readlink(alias).encode()), 100)
+            component.normalize(root)
+            self.assertFalse(alias.is_symlink())
+            self.assertEqual(alias.read_bytes(), target.read_bytes())
+
     def test_runtime_devices_are_removed_and_special_files_elsewhere_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

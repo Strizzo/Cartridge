@@ -66,7 +66,11 @@ sources separately before claiming that obligation is fulfilled.
 
 ## Build and sign (parent-owned signer)
 
-After the parent updates the wrapper and regenerates `component.json`:
+Build/package on a case-sensitive Linux filesystem. Default Mac filesystems
+cannot represent Debian's case-distinct paths (for example Perl `sys`/`Sys`).
+The finalizer materializes the few CA aliases with link targets over 100 bytes as
+regular files with identical certificate bytes; USTAR extensions remain refused.
+After updating the wrapper and regenerating `component.json`:
 
 ```sh
 python3 scripts/package_browser_engine.py \
