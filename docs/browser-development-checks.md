@@ -102,3 +102,19 @@ development browser.
 
 See [browser development usage](../crates/cartridge-browser/README.md) and the
 [private component build](../crates/cartridge-browser/engine/README.md).
+
+## Readability follow-up
+
+The user confirmed opening Slashdot through the physical preview. The first
+visual comparison reproduced its article column shrinking to roughly 120 CSS
+pixels at the old 150% default, versus roughly 333 at 100%. The development
+browser now starts new sites at 100%, provides finer 60–200% zoom steps and
+remembers the chosen level for each origin (bounded to 128 sites). Back/Forward
+and redirects restore the destination site's preference; old library files keep
+their bookmarks/history. JPEG transport quality rises from 75 to 90 without
+raising the frame-rate caps. SIGUSR1/F12 captures now work in the browser loop.
+
+A Mac native-resolution capture and real-engine checks cover the new baseline.
+The new transport quality and preferences still need a handheld preview check;
+this follow-up is not yet installed on the device. The original site layout is
+retained, including its sidebar and consent controls.

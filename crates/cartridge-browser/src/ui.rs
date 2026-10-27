@@ -1,6 +1,9 @@
 use crate::{
     engine::{Action, BrowserEngine, PageInfo, discover},
-    model::{Bookmark, Library, VIEW_HEIGHT, VIEW_WIDTH, VIEW_Y, address},
+    model::{
+        Bookmark, DEFAULT_ZOOM, Library, VIEW_HEIGHT, VIEW_WIDTH, VIEW_Y, ZOOM_LEVELS, address,
+        site_key,
+    },
 };
 use cartridge_core::{
     font::FontCache,
@@ -65,6 +68,8 @@ struct Ui {
     pointer_mode: bool,
     dragging: bool,
     zoom: f64,
+    zoom_site: Option<String>,
+    library_dirty: bool,
     left: [f32; 2],
     right: [f32; 2],
     pending_focus: Option<FocusRequest>,
@@ -103,7 +108,9 @@ impl Ui {
             pointer: [360.0, 240.0],
             pointer_mode: false,
             dragging: false,
-            zoom: 1.5,
+            zoom: f64::from(DEFAULT_ZOOM) / 100.0,
+            zoom_site: None,
+            library_dirty: false,
             left: [0.0; 2],
             right: [0.0; 2],
             pending_focus: None,
@@ -115,10 +122,26 @@ impl Ui {
             self.message = Some(e);
         }
     }
+    fn apply_site_zoom(&mut self, engine: &BrowserEngine, url: &str) {
+        let key = site_key(url);
+        if key.is_some() && key != self.zoom_site {
+            self.zoom_site = key;
+            self.zoom = f64::from(self.library.zoom_for(url)) / 100.0;
+            self.send(engine, Action::Zoom(self.zoom));
+        }
+    }
+    fn set_zoom(&mut self, engine: &BrowserEngine, percent: u16) {
+        self.zoom = f64::from(percent) / 100.0;
+        self.send(engine, Action::Zoom(self.zoom));
+        // The requested origin is already known before navigation metadata arrives.
+        let url = self.zoom_site.as_deref().unwrap_or(&self.info.url);
+        self.library_dirty |= self.library.remember_zoom(url, percent);
+    }
     fn navigate(&mut self, engine: &BrowserEngine, input: &str) {
         self.pending_focus = None;
         match address(input) {
             Ok(url) => {
+                self.apply_site_zoom(engine, &url);
                 self.send(engine, Action::Navigate(url));
                 self.mode = Mode::Page;
                 self.message = None;
@@ -282,15 +305,17 @@ impl Ui {
                 Button::B | Button::L1 => self.send(engine, Action::Back),
                 Button::R1 => self.send(engine, Action::Forward),
                 Button::L2 | Button::R2 => {
-                    let values = [0.75, 0.9, 1.0, 1.2, 1.5, 1.8, 2.0];
-                    let index = values.iter().position(|z| *z == self.zoom).unwrap_or(2);
+                    let values = ZOOM_LEVELS;
+                    let index = values
+                        .iter()
+                        .position(|z| f64::from(*z) / 100.0 == self.zoom)
+                        .unwrap_or(3);
                     let index = if button == Button::R2 {
                         (index + 1).min(values.len() - 1)
                     } else {
                         index.saturating_sub(1)
                     };
-                    self.zoom = values[index];
-                    self.send(engine, Action::Zoom(self.zoom));
+                    self.set_zoom(engine, values[index]);
                 }
                 Button::X => self.open_keyboard(Entry::Address),
                 Button::Y => {
@@ -712,7 +737,11 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
     let mut pump = sdl.event_pump()?;
     let mut inbox = cartridge_core::event_wait::EventInbox::default();
     let mut ui = Ui::new(&data);
-    ui.send(&engine, Action::Zoom(ui.zoom));
+    if let Some(url) = &options.initial {
+        ui.apply_site_zoom(&engine, url);
+    } else {
+        ui.send(&engine, Action::Zoom(ui.zoom));
+    }
     if options.initial.is_some() {
         ui.mode = Mode::Page;
     }
@@ -727,6 +756,7 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
     let start = Instant::now();
     let mut last = Instant::now();
     let mut last_history = String::new();
+    let mut last_zoom_url = String::new();
     let mut history_dirty = false;
     let mut history_saved = Instant::now();
     let mut page_visible = true;
@@ -737,6 +767,7 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
         let dt = now.duration_since(last).as_secs_f64().min(0.05);
         last = now;
         let events = inbox.collect(&mut pump).to_vec();
+        pending_capture |= cartridge_core::screenshot::requested(&events);
         if !events.is_empty() {
             last_active = Instant::now();
             dirty = true;
@@ -876,6 +907,7 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
             ui.send(&engine, Action::FrameRate(fps));
             frame_rate = fps;
         }
+        let mut navigation_finished = false;
         {
             let mut state = engine.shared.lock().unwrap();
             if state.revision != revision {
@@ -883,6 +915,7 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
                 if ui.info.url != state.info.url {
                     ui.pending_focus = None;
                 }
+                navigation_finished = ui.info.loading && !state.info.loading;
                 ui.info = state.info.clone();
                 dirty = true;
             }
@@ -894,6 +927,11 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
                 dirty = true;
             }
         }
+        if ui.info.url != last_zoom_url || navigation_finished {
+            last_zoom_url = ui.info.url.clone();
+            ui.apply_site_zoom(&engine, &last_zoom_url);
+        }
+        history_dirty |= std::mem::take(&mut ui.library_dirty);
         let visible = ui.mode == Mode::Page && !ui.keyboard.visible;
         if visible != page_visible {
             ui.send(&engine, Action::Visible(visible));
@@ -982,7 +1020,7 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
     if options.capture.is_some() && !captured {
         return Err("No rendered webpage was available for capture.".into());
     }
-    if history_dirty {
+    if history_dirty || ui.library_dirty {
         ui.library.save(&ui.library_path)?;
     }
     drop(engine);
@@ -994,6 +1032,25 @@ mod tests {
     use super::*;
     fn ui() -> Ui {
         Ui::new(&std::env::temp_dir().join(format!("browser-input-test-{}", std::process::id())))
+    }
+    #[test]
+    fn site_zoom_survives_navigation_and_held_shoulders_do_not_repeat() {
+        let engine = BrowserEngine::unavailable("control test".into());
+        let mut ui = ui();
+        ui.library.remember_zoom("https://a.example/", 130);
+        ui.library.remember_zoom("https://b.example/", 90);
+        ui.navigate(&engine, "https://a.example/article");
+        assert_eq!(ui.zoom, 1.3);
+        ui.press(&engine, Button::R2, InputAction::Press);
+        ui.press(&engine, Button::R2, InputAction::Repeat);
+        assert_eq!(ui.zoom, 1.4);
+        assert_eq!(ui.library.zoom_for("https://a.example/next"), 140);
+        ui.navigate(&engine, "https://b.example/next");
+        assert_eq!(ui.zoom, 0.9);
+        // Back/redirect metadata selects the destination's preference.
+        ui.apply_site_zoom(&engine, "https://a.example/article");
+        assert_eq!(ui.zoom, 1.4);
+        assert!(ui.library_dirty);
     }
     #[test]
     fn opening_keyboard_does_not_type_until_trigger_is_released() {

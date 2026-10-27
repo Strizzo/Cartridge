@@ -1,6 +1,6 @@
 //! Chromium DevTools transport over two inherited pipes. No listening socket,
 //! browser extensions, page privileged bridge, shell invocation or sandbox bypass.
-use crate::model::{VIEW_HEIGHT, VIEW_WIDTH, address};
+use crate::model::{VIEW_HEIGHT, VIEW_WIDTH, ZOOM_LEVELS, address};
 use base64::Engine as _;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -20,6 +20,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 const MAX_MESSAGE: usize = 8 * 1024 * 1024;
+const FRAME_QUALITY: u8 = 90;
 #[derive(Clone, Debug, Default)]
 pub struct PageInfo {
     pub url: String,
@@ -319,7 +320,7 @@ impl Session {
         )?;
         // Downloads require a dedicated user-confirmed UI; deny them in this version.
         s.call("Browser.setDownloadBehavior", json!({"behavior":"deny"}))?;
-        s.call("Page.startScreencast",json!({"format":"jpeg","quality":75,"maxWidth":VIEW_WIDTH,"maxHeight":VIEW_HEIGHT,"everyNthFrame":1}))?;
+        s.call("Page.startScreencast",json!({"format":"jpeg","quality":FRAME_QUALITY,"maxWidth":VIEW_WIDTH,"maxHeight":VIEW_HEIGHT,"everyNthFrame":1}))?;
         Ok(s)
     }
     fn send(&mut self, method: &str, params: Value) -> Result<u64, String> {
@@ -764,20 +765,24 @@ impl Session {
             Action::Visible(visible) => {
                 self.frame_acks.clear();
                 if visible {
-                    self.call("Page.startScreencast",json!({"format":"jpeg","quality":75,"maxWidth":VIEW_WIDTH,"maxHeight":VIEW_HEIGHT,"everyNthFrame":1}))?;
+                    self.call("Page.startScreencast",json!({"format":"jpeg","quality":FRAME_QUALITY,"maxWidth":VIEW_WIDTH,"maxHeight":VIEW_HEIGHT,"everyNthFrame":1}))?;
                 } else {
                     self.call("Page.stopScreencast", json!({}))?;
                 }
             }
             Action::Zoom(zoom) => {
-                let allowed = [0.75_f64, 0.9, 1.0, 1.2, 1.5, 1.8, 2.0];
                 if !zoom.is_finite() {
                     return Err("Invalid zoom".into());
                 }
-                self.zoom = *allowed
+                let percent = ZOOM_LEVELS
                     .iter()
-                    .min_by(|a, b| (**a - zoom).abs().total_cmp(&(**b - zoom).abs()))
+                    .min_by(|a, b| {
+                        (f64::from(**a) / 100.0 - zoom)
+                            .abs()
+                            .total_cmp(&(f64::from(**b) / 100.0 - zoom).abs())
+                    })
                     .unwrap();
+                self.zoom = f64::from(*percent) / 100.0;
                 // Keep the compositor at native resolution while reflowing the
                 // layout. Otherwise screencast shrinks to CSS dimensions and
                 // the UI either freezes or has to upscale blurry text.

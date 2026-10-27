@@ -28,7 +28,9 @@ listed in the 0.8 launcher. The normal simulator provides isolated state under
 - Left stick: pointer. A: click; hold A and move to drag.
 - Right stick: scroll in either direction. D-pad Up/Down: scroll vertically.
 - D-pad Left/Right: previous/next keyboard-focusable link or control. A activates it.
-- B or L1: Back. R1: Forward. L2/R2: page zoom out/in.
+- B or L1: Back. R1: Forward. L2/R2: page zoom out/in (60–200%, with finer steps).
+  New sites start at 100%; the browser remembers your chosen zoom for each site.
+  Bookmarks/history from earlier development builds are preserved.
 - X: address/search. Y: bookmarks/history. Start: page tools. Select: leave Browser.
 - The native on-screen keyboard uses the same controls as the rest of Cartridge.
   A focused text field can open it; Start > Type also works for embedded fields.
@@ -63,7 +65,8 @@ and click coordinates, and cancellation while a server stalls. It uses throwaway
 captures use a 720x720 UI. The live-site checks have opened articles and returned
 with Back on Slashdot and CNN, and dragged, zoomed and searched on OpenStreetMap.
 They use 75% page zoom to fit desktop layouts and consent dialogs in the viewport;
-normal browsing starts at 150% for the small panel and L2/R2 change it.
+normal browsing now starts at 100% and L2/R2 change it. The old 150% starting
+view squeezed legacy desktop columns too narrowly on sites such as Slashdot.
 
 ## ARM engine component — work in progress
 
@@ -118,3 +121,7 @@ lazy map tiles/images finish loading; it does not change normal browsing.
 For a fixed internal Chromium sandbox diagnostic, run `browser-check --site sandbox
 --out /tmp/new-sandbox-check --engine /path/to/chromium`. This checks the engine
 report; it does not relax the sandbox or expose internal addresses in normal browsing.
+
+The web surface still renders at native 720×576 resolution. JPEG frame quality is
+90 for clearer text, with the same 8/24-fps backpressure limits. F12 and SIGUSR1
+request native UI screenshots so a running handheld page can be inspected remotely.

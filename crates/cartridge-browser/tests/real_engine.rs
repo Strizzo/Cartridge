@@ -223,6 +223,8 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
     wait(&mut session, "document.title==='Browser acceptance'");
     session.action(Action::Zoom(0.75)).unwrap();
     assert_eq!(session.evaluate("innerWidth").unwrap(), 960);
+    session.action(Action::Zoom(1.3)).unwrap();
+    assert_eq!(session.evaluate("innerWidth").unwrap(), 554);
     session.action(Action::Zoom(1.0)).unwrap();
     assert_eq!(session.evaluate("innerWidth").unwrap(), 720);
     let point=session.evaluate("(()=>{let r=document.getElementById('popup').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()").unwrap();

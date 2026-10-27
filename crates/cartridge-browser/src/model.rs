@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::Path;
 use url::Url;
@@ -7,6 +8,18 @@ pub const VIEW_WIDTH: u32 = 720;
 pub const VIEW_HEIGHT: u32 = 576;
 pub const VIEW_Y: i32 = 100;
 pub const MAX_URL: usize = 4096;
+pub const ZOOM_LEVELS: &[u16] = &[60, 75, 90, 100, 110, 120, 130, 140, 150, 160, 175, 200];
+pub const DEFAULT_ZOOM: u16 = 100;
+const MAX_SITE_VIEWS: usize = 128;
+
+pub fn site_key(address: &str) -> Option<String> {
+    let url = Url::parse(address).ok()?;
+    (matches!(url.scheme(), "http" | "https")
+        && url.host_str().is_some()
+        && url.username().is_empty()
+        && url.password().is_none())
+    .then(|| url.origin().ascii_serialization())
+}
 
 pub fn address(input: &str) -> Result<String, String> {
     let input = input.trim();
@@ -46,6 +59,8 @@ pub struct Bookmark {
 pub struct Library {
     pub bookmarks: Vec<Bookmark>,
     pub history: Vec<Bookmark>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub site_zoom: BTreeMap<String, u16>,
 }
 impl Library {
     pub fn load(path: &Path) -> Self {
@@ -63,7 +78,31 @@ impl Library {
         library.history.retain(|b| address(&b.url).is_ok());
         library.bookmarks.truncate(64);
         library.history.truncate(100);
+        library.site_zoom.retain(|origin, zoom| {
+            site_key(origin).as_deref() == Some(origin.as_str()) && ZOOM_LEVELS.contains(zoom)
+        });
+        while library.site_zoom.len() > MAX_SITE_VIEWS {
+            library.site_zoom.pop_first();
+        }
         library
+    }
+    pub fn zoom_for(&self, url: &str) -> u16 {
+        site_key(url)
+            .and_then(|key| self.site_zoom.get(&key).copied())
+            .unwrap_or(DEFAULT_ZOOM)
+    }
+    pub fn remember_zoom(&mut self, url: &str, zoom: u16) -> bool {
+        let Some(key) = site_key(url).filter(|_| ZOOM_LEVELS.contains(&zoom)) else {
+            return false;
+        };
+        if self.site_zoom.get(&key) == Some(&zoom) {
+            return false;
+        }
+        if self.site_zoom.len() >= MAX_SITE_VIEWS && !self.site_zoom.contains_key(&key) {
+            self.site_zoom.pop_first();
+        }
+        self.site_zoom.insert(key, zoom);
+        true
     }
     pub fn remember(&mut self, title: &str, url: &str) {
         if address(url).is_err() {
@@ -107,6 +146,28 @@ impl Library {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn zoom_is_per_origin_and_old_libraries_keep_bookmarks() {
+        let mut library: Library = serde_json::from_str(
+            r#"{"bookmarks":[{"title":"saved","url":"https://example.org/a"}],"history":[]}"#,
+        )
+        .unwrap();
+        assert_eq!(library.bookmarks.len(), 1);
+        assert_eq!(library.zoom_for("https://example.org/a"), 100);
+        assert!(library.remember_zoom("https://example.org/a?q=x#y", 130));
+        assert_eq!(library.zoom_for("https://example.org/other"), 130);
+        assert_eq!(library.zoom_for("http://example.org/"), 100);
+        assert_eq!(library.zoom_for("https://example.org:444/"), 100);
+        assert!(!library.remember_zoom("file:///private", 130));
+        assert!(!library.remember_zoom("https://example.org/", 999));
+        let saved = serde_json::to_string(&library).unwrap();
+        let restored: Library = serde_json::from_str(&saved).unwrap();
+        assert_eq!(restored.zoom_for("https://example.org/"), 130);
+        for index in 0..200 {
+            library.remember_zoom(&format!("https://s{index}.example.org/"), 110);
+        }
+        assert_eq!(library.site_zoom.len(), MAX_SITE_VIEWS);
+    }
     #[test]
     fn url_and_search_are_distinct() {
         assert_eq!(
