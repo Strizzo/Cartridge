@@ -1,0 +1,12 @@
+{
+  "id": "dev.example.hello-cartridge",
+  "name": "Hello, Cartridge",
+  "version": "0.1.0",
+  "author": "Your Name",
+  "description": "A first Lua app: press A to count, B to reset, and keep your count locally.",
+  "category": "tools",
+  "tags": ["example", "tutorial"],
+  "permissions": ["storage"],
+  "min_runtime": "0.7.0",
+  "entry": "main.lua"
+}
