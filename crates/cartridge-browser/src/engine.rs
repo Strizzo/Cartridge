@@ -31,6 +31,7 @@ pub struct PageInfo {
     pub dialog: Option<String>,
     pub engine_version: String,
     pub http_status: Option<u16>,
+    pub focus_serial: u64,
 }
 pub struct Frame {
     pub width: u32,
@@ -59,6 +60,7 @@ pub enum Action {
     Key(String, bool),
     Text(String),
     ReplaceText(String),
+    FocusInfo(u64),
     Zoom(f64),
     Visible(bool),
     FrameRate(u8),
@@ -158,6 +160,7 @@ pub struct Session {
     pending_navigation: Option<(u64, Instant)>,
     pending_info: Option<(u64, u64)>,
     info_generation: u64,
+    focus_serial: u64,
 }
 impl Session {
     pub fn start(executable: &Path, profile: &Path, shared: Shared) -> Result<Self, String> {
@@ -271,6 +274,7 @@ impl Session {
             pending_navigation: None,
             pending_info: None,
             info_generation: 0,
+            focus_serial: 0,
         };
         let version = s.call("Browser.getVersion", json!({}))?;
         s.shared.lock().unwrap().info.engine_version =
@@ -471,6 +475,7 @@ impl Session {
                         .collect();
                     state.info.editable = info["editable"].as_bool().unwrap_or(false);
                     state.info.password = info["password"].as_bool().unwrap_or(false);
+                    state.info.focus_serial = self.focus_serial;
                     state.info.http_status =
                         info["status"].as_u64().and_then(|n| u16::try_from(n).ok());
                     state.revision += 1;
@@ -746,6 +751,11 @@ impl Session {
                     json!({"type":"keyUp","key":"a","code":"KeyA","windowsVirtualKeyCode":65}),
                 )?;
                 self.call("Input.insertText", json!({"text":text}))?;
+                self.info_dirty = true;
+            }
+            Action::FocusInfo(serial) => {
+                self.focus_serial = serial;
+                self.info_generation = self.info_generation.wrapping_add(1);
                 self.info_dirty = true;
             }
             Action::FrameRate(fps) => {

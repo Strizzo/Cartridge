@@ -31,9 +31,18 @@ jobs:
         env:
           SDL_VIDEODRIVER: dummy
           CARTRIDGE_BROWSER_TEST_OUT: ${{ runner.temp }}/cartridge-browser-check
+          RUST_LOG: cartridge_browser=trace
         run: |
           export CARTRIDGE_BROWSER_ENGINE="$(command -v google-chrome)"
           cargo test -p cartridge-browser --test real_engine -- --ignored --nocapture
+
+      - name: Upload browser render diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-render-check
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/cartridge-browser-check/*.png
 
       - name: Test manual launcher
         run: |
@@ -60,7 +69,6 @@ jobs:
 
   cross-compile:
     runs-on: ubuntu-latest
-    needs: build
 
     steps:
       - uses: actions/checkout@v4

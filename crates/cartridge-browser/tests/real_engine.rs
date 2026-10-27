@@ -171,7 +171,13 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
     .unwrap();
     session.action(Action::Zoom(1.5)).unwrap();
     assert_eq!(session.evaluate("innerWidth").unwrap(), 480);
-    let deadline = Instant::now() + Duration::from_secs(4);
+    assert_eq!(
+        session
+            .evaluate("getComputedStyle(document.body).backgroundColor")
+            .unwrap(),
+        "rgb(170, 30, 20)"
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         session.pump(Duration::from_millis(20)).unwrap();
         let red = shared.lock().unwrap().frame.as_ref().is_some_and(|f| {
@@ -180,16 +186,30 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
                 (720, 576),
                 "zoom lost native resolution"
             );
-            let pixel = &f.rgb[f.rgb.len() - 3..];
+            // The bottom-right corner is a classic scrollbar on Linux. Probe
+            // an unobstructed body margin, which is red at this viewport width.
+            let offset = ((f.height as usize - 40) * f.width as usize + 10) * 3;
+            let pixel = &f.rgb[offset..offset + 3];
             pixel[0] > 140 && pixel[1] < 70 && pixel[2] < 60
         });
         if red {
             break;
         }
-        assert!(
-            Instant::now() < deadline,
-            "zoom changed layout but never delivered updated page pixels"
-        );
+        if Instant::now() >= deadline {
+            if let Some(frame) = shared.lock().unwrap().frame.take() {
+                image::save_buffer(
+                    output.join("zoom-failed.png"),
+                    &frame.rgb,
+                    frame.width,
+                    frame.height,
+                    image::ColorType::Rgb8,
+                )
+                .unwrap();
+            }
+            panic!(
+                "zoom changed layout but never delivered updated page pixels; see zoom-failed.png"
+            );
+        }
     }
     let point=session.evaluate("(()=>{let r=document.getElementById('next').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()").unwrap();
     session
@@ -241,6 +261,17 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
     session
         .evaluate("document.getElementById('query').focus();true")
         .unwrap();
+    session.action(Action::FocusInfo(42)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while shared.lock().unwrap().info.focus_serial != 42 {
+        session.pump(Duration::from_millis(20)).unwrap();
+        assert!(
+            Instant::now() < deadline,
+            "fresh focus result was not returned"
+        );
+    }
+    assert!(shared.lock().unwrap().info.editable);
+    assert!(!shared.lock().unwrap().info.password);
     session.action(Action::Text("old query".into())).unwrap();
     session
         .action(Action::ReplaceText("hello world".into()))

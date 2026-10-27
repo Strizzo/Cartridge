@@ -43,11 +43,19 @@ enum Entry {
     Address,
     Field,
 }
+#[derive(Clone, Copy)]
+struct FocusRequest {
+    since: Instant,
+    serial: u64,
+    activate: bool,
+    trigger_held: bool,
+}
 struct Ui {
     mode: Mode,
     selected: usize,
     history: bool,
     keyboard: TextInput,
+    keyboard_trigger: Option<Button>,
     entry: Entry,
     library: Library,
     library_path: PathBuf,
@@ -59,7 +67,8 @@ struct Ui {
     zoom: f64,
     left: [f32; 2],
     right: [f32; 2],
-    pending_field: Option<Instant>,
+    pending_focus: Option<FocusRequest>,
+    focus_serial: u64,
 }
 const QUICK: [(&str, &str); 4] = [
     ("SLASHDOT", "https://slashdot.org/"),
@@ -85,6 +94,7 @@ impl Ui {
             selected: 0,
             history: false,
             keyboard: TextInput::new("Address or search"),
+            keyboard_trigger: None,
             entry: Entry::Address,
             library: Library::load(&library_path),
             library_path,
@@ -96,7 +106,8 @@ impl Ui {
             zoom: 1.5,
             left: [0.0; 2],
             right: [0.0; 2],
-            pending_field: None,
+            pending_focus: None,
+            focus_serial: 0,
         }
     }
     fn send(&mut self, engine: &BrowserEngine, action: Action) {
@@ -105,6 +116,7 @@ impl Ui {
         }
     }
     fn navigate(&mut self, engine: &BrowserEngine, input: &str) {
+        self.pending_focus = None;
         match address(input) {
             Ok(url) => {
                 self.send(engine, Action::Navigate(url));
@@ -116,17 +128,30 @@ impl Ui {
     }
     fn open_keyboard(&mut self, entry: Entry) {
         self.entry = entry;
+        self.pending_focus = None;
+        self.keyboard_trigger = None;
         self.keyboard.show(match entry {
             Entry::Address => "Address or search",
             Entry::Field => "Replace field text / R2 also sends Enter",
         });
-        self.keyboard.masked = matches!(entry, Entry::Field) && self.info.password;
+        self.keyboard.masked =
+            matches!(entry, Entry::Field) && (self.info.password || !self.info.editable);
         self.keyboard.max_len = match entry {
             Entry::Address => 4096,
             Entry::Field => 2048,
         };
         self.left = [0.0; 2];
         self.right = [0.0; 2];
+    }
+    fn request_focus(&mut self, engine: &BrowserEngine, activate: bool) {
+        self.focus_serial = self.focus_serial.wrapping_add(1).max(1);
+        self.pending_focus = Some(FocusRequest {
+            since: Instant::now(),
+            serial: self.focus_serial,
+            activate,
+            trigger_held: activate,
+        });
+        self.send(engine, Action::FocusInfo(self.focus_serial));
     }
     fn submit(&mut self, engine: &BrowserEngine, text: String) {
         match self.entry {
@@ -142,7 +167,26 @@ impl Ui {
         }
     }
     fn press(&mut self, engine: &BrowserEngine, button: Button, action: InputAction) -> bool {
+        if button == Button::A && action == InputAction::Release {
+            if let Some(request) = &mut self.pending_focus {
+                request.trigger_held = false;
+            }
+        }
+        if !self.keyboard.visible && action == InputAction::Press && button != Button::A {
+            self.pending_focus = None;
+        }
         if self.keyboard.visible {
+            if self.keyboard_trigger == Some(button) {
+                if action == InputAction::Release {
+                    self.keyboard_trigger = None;
+                }
+                return false;
+            }
+            if action == InputAction::Repeat
+                && matches!(button, Button::Start | Button::Select | Button::X)
+            {
+                return false;
+            }
             if self.entry == Entry::Field && button == Button::R2 && action == InputAction::Press {
                 let text = self.keyboard.text.clone();
                 self.keyboard.visible = false;
@@ -157,6 +201,14 @@ impl Ui {
                 TextInputResult::Submitted(s) => self.submit(engine, s),
                 _ => {}
             }
+            return false;
+        }
+        if action == InputAction::Repeat
+            && !matches!(
+                button,
+                Button::DpadUp | Button::DpadDown | Button::DpadLeft | Button::DpadRight
+            )
+        {
             return false;
         }
         if button == Button::Select && action == InputAction::Press {
@@ -176,7 +228,7 @@ impl Ui {
                     Action::Button(self.pointer[0], self.pointer[1], self.dragging),
                 );
                 if !self.dragging {
-                    self.pending_field = Some(Instant::now());
+                    self.request_focus(engine, false);
                 }
             }
             return false;
@@ -226,13 +278,7 @@ impl Ui {
                         Action::Key("Tab".into(), button == Button::DpadLeft),
                     );
                 }
-                Button::A => {
-                    if self.info.editable {
-                        self.open_keyboard(Entry::Field);
-                    } else {
-                        self.send(engine, Action::Key("Enter".into(), false));
-                    }
-                }
+                Button::A => self.request_focus(engine, true),
                 Button::B | Button::L1 => self.send(engine, Action::Back),
                 Button::R1 => self.send(engine, Action::Forward),
                 Button::L2 | Button::R2 => {
@@ -335,6 +381,9 @@ impl Ui {
                 _ => {}
             },
         }
+        if self.keyboard.visible {
+            self.keyboard_trigger = Some(button);
+        }
         false
     }
     fn update(&mut self, engine: &BrowserEngine, dt: f64) -> bool {
@@ -363,13 +412,19 @@ impl Ui {
             );
             dirty = true;
         }
-        if let Some(start) = self.pending_field {
-            if self.info.editable {
-                self.pending_field = None;
-                self.open_keyboard(Entry::Field);
-                dirty = true;
-            } else if start.elapsed() > Duration::from_millis(500) {
-                self.pending_field = None;
+        if let Some(request) = self.pending_focus {
+            if self.info.focus_serial == request.serial {
+                self.pending_focus = None;
+                if self.info.editable {
+                    self.open_keyboard(Entry::Field);
+                    self.keyboard_trigger = request.trigger_held.then_some(Button::A);
+                    dirty = true;
+                } else if request.activate {
+                    self.send(engine, Action::Key("Enter".into(), false));
+                    dirty = true;
+                }
+            } else if request.since.elapsed() > Duration::from_secs(2) {
+                self.pending_focus = None;
             }
         }
         dirty
@@ -703,6 +758,7 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
                 }
                 Event::KeyDown {
                     keycode: Some(Keycode::Escape),
+                    repeat: false,
                     ..
                 } => {
                     if ui.keyboard.visible {
@@ -715,10 +771,12 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
                 }
                 Event::KeyDown {
                     keycode: Some(Keycode::F12),
+                    repeat: false,
                     ..
                 } => pending_capture = true,
                 Event::KeyDown {
                     keycode: Some(Keycode::F2),
+                    repeat: false,
                     ..
                 } => ui.open_keyboard(Entry::Address),
                 Event::TextInput { text, .. } if ui.keyboard.visible => {
@@ -770,7 +828,7 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
                 } if ui.dragging => {
                     ui.dragging = false;
                     ui.send(&engine, Action::Button(ui.pointer[0], ui.pointer[1], false));
-                    ui.pending_field = Some(Instant::now());
+                    ui.request_focus(&engine, false);
                 }
                 Event::MouseWheel { x, y, .. } if ui.mode == Mode::Page && !ui.keyboard.visible => {
                     ui.send(
@@ -822,6 +880,9 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
             let mut state = engine.shared.lock().unwrap();
             if state.revision != revision {
                 revision = state.revision;
+                if ui.info.url != state.info.url {
+                    ui.pending_focus = None;
+                }
                 ui.info = state.info.clone();
                 dirty = true;
             }
@@ -926,4 +987,65 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
     }
     drop(engine);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn ui() -> Ui {
+        Ui::new(&std::env::temp_dir().join(format!("browser-input-test-{}", std::process::id())))
+    }
+    #[test]
+    fn opening_keyboard_does_not_type_until_trigger_is_released() {
+        let engine = BrowserEngine::unavailable("not needed by this control test".into());
+        let mut ui = ui();
+        ui.mode = Mode::Page;
+        ui.info.editable = true;
+        ui.press(&engine, Button::A, InputAction::Press);
+        ui.info.focus_serial = ui.focus_serial;
+        ui.update(&engine, 0.0);
+        assert!(ui.keyboard.visible);
+        ui.press(&engine, Button::A, InputAction::Repeat);
+        assert!(ui.keyboard.text.is_empty());
+        ui.press(&engine, Button::A, InputAction::Release);
+        ui.press(&engine, Button::A, InputAction::Press);
+        assert_eq!(ui.keyboard.text.chars().count(), 1);
+        ui.press(&engine, Button::A, InputAction::Repeat);
+        assert_eq!(ui.keyboard.text.chars().count(), 2);
+    }
+    #[test]
+    fn stale_editable_state_does_not_open_keyboard_after_clicking_away() {
+        let engine = BrowserEngine::unavailable("not needed by this control test".into());
+        let mut ui = ui();
+        ui.mode = Mode::Page;
+        ui.info.editable = true;
+        ui.request_focus(&engine, false);
+        ui.update(&engine, 0.0);
+        assert!(!ui.keyboard.visible);
+        ui.info.focus_serial = ui.focus_serial;
+        ui.info.editable = false;
+        ui.update(&engine, 0.0);
+        assert!(!ui.keyboard.visible);
+        assert!(ui.pending_focus.is_none());
+    }
+    #[test]
+    fn held_buttons_do_not_reopen_tools_or_flicker_library_tabs() {
+        let engine = BrowserEngine::unavailable("not needed by this control test".into());
+        let mut ui = ui();
+        ui.mode = Mode::Page;
+        ui.open_keyboard(Entry::Field);
+        ui.keyboard.set_text("query");
+        ui.press(&engine, Button::Start, InputAction::Press);
+        assert!(!ui.keyboard.visible);
+        ui.press(&engine, Button::Start, InputAction::Repeat);
+        assert!(ui.mode == Mode::Page);
+        ui.press(&engine, Button::Start, InputAction::Release);
+        ui.press(&engine, Button::Start, InputAction::Press);
+        assert!(ui.mode == Mode::Menu);
+        ui.mode = Mode::Library;
+        ui.history = false;
+        ui.press(&engine, Button::R1, InputAction::Press);
+        ui.press(&engine, Button::R1, InputAction::Repeat);
+        assert!(ui.history);
+    }
 }
