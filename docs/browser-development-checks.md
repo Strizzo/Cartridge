@@ -1,4 +1,4 @@
-# Browser development checks — 27 October 2026
+# Browser development checks — 27–28 October 2026
 
 This is the 0.8 development branch, not a public stable release. Main and the
 released 0.7 runtime remain unchanged. The handheld has permanent, reboot-verified
@@ -13,11 +13,13 @@ passes native and ARM jobs on its second attempt. The first attempt timed out
 waiting 15 seconds for CI Chrome's initial reply; the fresh-runner retry passed
 without disabling any sandbox. Mac real-Chrome checks also pass.
 
-**The final patch is not installed yet.** The handheld reports 28% and discharging,
-so the existing power guard refused preparation/staging. Installed 0.8 remains
-healthy, with 0.7 as previous and no pending/trial state. Reconnect charging, then
-use the already prepared signed kit. Until 0.8.1 is installed, avoid device
-F12/SIGUSR1 captures: the older screenshot path writes into the signed release.
+**The final patch is not installed yet.** The power guard refused staging at
+28% and discharging; the last successful power read was 23% and discharging.
+The 28 October SSH check timed out, so activation is still pending. Installed
+0.8 was last verified healthy, with 0.7 as previous and no pending/trial state.
+Reconnect charging and Wi-Fi, then use the already prepared signed kit. Until
+0.8.1 is installed, avoid device F12/SIGUSR1 captures: the older screenshot path
+writes into the signed release.
 
 ## Automated behaviour
 
@@ -42,6 +44,23 @@ filesystem. The fixture-only correction passes all 25 tests on ARM Linux.
 [The final rerun](https://github.com/Strizzo/Cartridge/actions/runs/40587335141)
 passed both native and ARM jobs, including that correction, the four real-browser
 fixtures, 201 Python tests and the simulator smoke scenarios.
+
+## Follow-up Mac startup checks — 28 October
+
+Two native UI captures stalled at the initial `Browser.getVersion` command with
+Chrome 156.0.8078.48. The unchanged source then passed three native runs with the
+installed Chrome 156.0.8078.73: two Slashdot captures and one Wikipedia capture,
+each 720×720, exiting normally with an initial reply after roughly 1–2 seconds.
+One run used `./sim.sh browser` with the parent checkout's isolated home; another
+used the direct browser binary. A separate restricted-tool attempt failed before
+engine startup because SDL had no display, which is a different failure.
+
+The earlier successful baseline also used Chrome .48, so the version change does
+not establish the cause of the intermittent stalls. No startup fix is claimed,
+and neither the timeouts nor Chromium safeguards changed. The current captures
+establish that native startup works again; they do not prove the earlier failure
+cannot recur. Blog images use genuine earlier successful captures and distinguish
+the Mac simulator from the handheld.
 
 ## Actual handheld
 
