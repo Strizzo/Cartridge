@@ -83,8 +83,9 @@ CNN has returned a 13-byte HTTP 200 “Unknown Error” response from its CDN in
 ARM trials and remains an open compatibility issue, even though its Mac
 interaction check passes. This is recorded as a failing acceptance case.
 The portable helper and finalized private component also pass Chromium's internal
-namespace/seccomp sandbox report in the ARM VM. Full ARM frontend tests, physical
-old-kernel compatibility and performance are still being verified. The engine component is
+namespace/seccomp sandbox report in the ARM VM. The actual handheld’s Linux 4.4.189 also passes the namespace/helper checks,
+and the native frontend has rendered through KMSDRM in a bounded trial. Physical
+controller behaviour and sustained performance are still being verified. The engine component is
 not part of the normal runtime OTA payload or signed Store catalogue yet. Do not
 install random Chromium packages over the working handheld's Linux libraries.
 Downloads, file upload UI, multiple simultaneous tabs, JavaScript prompt text entry, and site-permission prompts
@@ -113,3 +114,7 @@ bypass consent, authentication, certificates or site access restrictions.
 For repeatable UI captures, add `--capture /tmp/browser.png --capture-after 8
 --seconds 10 --hidden` after the simulator's `--` separator. Delayed capture lets
 lazy map tiles/images finish loading; it does not change normal browsing.
+
+For a fixed internal Chromium sandbox diagnostic, run `browser-check --site sandbox
+--out /tmp/new-sandbox-check --engine /path/to/chromium`. This checks the engine
+report; it does not relax the sandbox or expose internal addresses in normal browsing.

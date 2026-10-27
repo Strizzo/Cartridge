@@ -44,14 +44,45 @@ Debian ARM Chromium 156.0.8078.47. Chromium's own `chrome://sandbox` report in t
 private ARM component shows namespace, PID/network namespace and seccomp-BPF
 sandboxes active. The scoped VM helper permission does not relax global AppArmor.
 
+## Handheld trial
+
+On the actual R36S Plus, Linux 4.4.189/aarch64 and the normal `ark` user passed
+both the unprivileged namespace probe and the exact static bubblewrap helper
+probe. The engine archive and all 16,664 regular-file hashes were verified in a
+new private directory under the user's cache. The trial did not replace system
+libraries, the installed runtime, boot files or games.
+
+The same ARM frontend/engine code as the VM trial passed the real Slashdot
+article/Back check in about 22 seconds including cold startup, and OpenStreetMap
+drag/zoom/search in about 21 seconds. CNN again returned the literal HTTP 200
+`Unknown Error` body. These are automated engine interactions, not a claim that
+the physical gamepad has been tested.
+
+A separate 35-second native UI trial rendered the actual 720×720 surface through
+KMSDRM with the accelerated SDL renderer at the default 150% page zoom. The capture
+includes the real site consent dialog. It exited normally and restored the
+installed Cartridge launcher. This native trial kept at least 567,136 KiB of
+system memory available; the map engine check kept at least 513,116 KiB available.
+These short samples do not establish long-session memory, latency or battery use.
+The kernel has no memory cgroup controller, so trials used a time limit and a
+180,000 KiB available-memory guard. The SDL build lacks the dummy video driver;
+headless engine checks work, but native UI tests need a brief display handoff.
+
+Cartridge Settings now includes Remote Access in the development source: service
+status, login/address, explicit enable/start and disable/stop confirmation, startup
+persistence and background command execution. It uses the existing SSH unit and
+existing service-management permissions. Its Mac simulator views and crate tests
+pass; the feature is not yet installed on the handheld. Stable v0.7.0 is unchanged.
+
 ## Gates before a handheld/browser release
 
-- Run the read-only [preflight](../crates/cartridge-browser/engine/preflight.py)
-  as the real Cartridge user on the handheld. Confirm its kernel supports the
-  required unprivileged namespaces, with enough storage for the private engine.
-- Test actual display/input, leaving and reopening Browser, cold startup,
+- Repeat the read-only [preflight](../crates/cartridge-browser/engine/preflight.py)
+  for other devices/cards. The checked handheld passes; this is not generic
+  compatibility evidence for every R36S variant. Verify Chromium’s own sandbox
+  report on the handheld as well as the namespace helper.
+- Complete the physical-controller trial, leaving/reopening Browser, and measure
   memory pressure, interaction latency, battery and thermal behaviour on RK3326.
-  The Mac and ARM VM results do not establish these.
+  Short native trials and the Mac/ARM VM results do not establish these.
 - Resolve the ARM CNN response or retain it as a clearly identified open issue.
 - Provide verified engine installation/update delivery and corresponding-source
   distribution before publishing an engine download. The engine is not included
@@ -62,12 +93,12 @@ sandboxes active. The scoped VM helper permission does not relax global AppArmor
 
 The engine uses a separate private userspace, not replacements for handheld system
 libraries. It needs Linux symlink-capable storage; the exFAT games partition is
-unsuitable. All checks above used the Mac or disposable VM; no physical card,
-games, boot files or device configuration was written during this browser work.
+unsuitable. The private handheld trial changes only its dedicated cache directory. Installed
+Cartridge files, boot configuration, system libraries and games remain unchanged.
 
-For the next physical trial, first use the handheld's existing Wi-Fi connection.
-Its address/SSH reachability is still needed. Do not change a working card's boot
-configuration merely to test this development browser.
+The handheld is now reachable over its existing Wi-Fi/SSH connection. Further
+trials can use that path; do not change working boot configuration to test this
+development browser.
 
 See [browser development usage](../crates/cartridge-browser/README.md) and the
 [private component build](../crates/cartridge-browser/engine/README.md).

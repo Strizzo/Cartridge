@@ -109,7 +109,9 @@ fn check_sandbox(engine: &Path, out: &Path) -> Result<(), String> {
         .join(" ")
         .to_ascii_lowercase();
     for expected in [
-        "namespace sandbox yes",
+        "layer 1 sandbox namespace",
+        "pid namespaces yes",
+        "network namespaces yes",
         "seccomp-bpf sandbox yes",
         "you are adequately sandboxed",
     ] {
