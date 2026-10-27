@@ -19,6 +19,13 @@ use std::sync::{
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+mod native;
+use native::{Download, Tab, Upload};
+pub use native::{
+    DownloadInfo, FileChoice, JavascriptDialog, MAX_FILE_BYTES, MAX_TABS, Permission,
+    PermissionPrompt, TabInfo, UploadPrompt,
+};
+
 const MAX_MESSAGE: usize = 8 * 1024 * 1024;
 const FRAME_QUALITY: u8 = 90;
 #[derive(Clone, Debug, Default)]
@@ -30,6 +37,12 @@ pub struct PageInfo {
     pub editable: bool,
     pub password: bool,
     pub dialog: Option<String>,
+    pub javascript_dialog: Option<JavascriptDialog>,
+    pub permission: Option<PermissionPrompt>,
+    pub upload: Option<UploadPrompt>,
+    pub download: Option<DownloadInfo>,
+    pub notice: Option<String>,
+    pub tabs: Vec<TabInfo>,
     pub engine_version: String,
     pub http_status: Option<u16>,
     pub focus_serial: u64,
@@ -66,6 +79,16 @@ pub enum Action {
     Visible(bool),
     FrameRate(u8),
     Dialog(bool),
+    Prompt { id: u64, text: Option<String> },
+    RequestPermission(Permission),
+    PermissionDecision { id: u64, allow: bool },
+    RevokePermissions,
+    Upload { id: u64, names: Vec<String> },
+    Download { id: u64, allow: bool },
+    DismissNotice,
+    NewTab,
+    SwitchTab(String),
+    CloseTab(String),
     Quit,
 }
 
@@ -162,6 +185,21 @@ pub struct Session {
     pending_info: Option<(u64, u64)>,
     info_generation: u64,
     focus_serial: u64,
+    native_serial: u64,
+    files_root: PathBuf,
+    frame_origins: HashMap<String, String>,
+    upload: Option<Upload>,
+    upload_staging: Vec<(String, PathBuf)>,
+    download: Option<Download>,
+    canceled_streams: HashSet<u64>,
+    tabs: Vec<Tab>,
+    creating_tab: bool,
+    visible: bool,
+    #[cfg(target_os = "linux")]
+    memory_check: Instant,
+    #[cfg(target_os = "linux")]
+    memory_low_samples: u8,
+    memory_pressure: bool,
 }
 impl Session {
     pub fn start(executable: &Path, profile: &Path, shared: Shared) -> Result<Self, String> {
@@ -228,6 +266,11 @@ impl Session {
                 "--disable-extensions",
                 "--disable-sync",
                 "--disable-gpu",
+                // Chromium147 CanLaunchOnDeviceModelService() ORs these two
+                // features. Disable only local-model launch, retaining general
+                // security/network component updates and the existing GPU path.
+                // https://github.com/chromium/chromium/blob/147.0.7727.0/components/optimization_guide/core/optimization_guide_features.cc
+                "--disable-features=OptimizationGuideOnDeviceModel,LogOnDeviceMetricsOnStartup",
                 "--disk-cache-size=33554432",
                 "--media-cache-size=8388608",
             ])
@@ -276,6 +319,24 @@ impl Session {
             pending_info: None,
             info_generation: 0,
             focus_serial: 0,
+            native_serial: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+            files_root: profile.join("files"),
+            frame_origins: HashMap::new(),
+            upload: None,
+            upload_staging: Vec::new(),
+            download: None,
+            canceled_streams: HashSet::new(),
+            tabs: Vec::new(),
+            creating_tab: false,
+            visible: true,
+            #[cfg(target_os = "linux")]
+            memory_check: Instant::now() - Duration::from_secs(1),
+            #[cfg(target_os = "linux")]
+            memory_low_samples: 0,
+            memory_pressure: false,
         };
         let version = s.call("Browser.getVersion", json!({}))?;
         s.shared.lock().unwrap().info.engine_version =
@@ -318,16 +379,28 @@ impl Session {
             "Emulation.setEmulatedMedia",
             json!({"features":[{"name":"prefers-reduced-motion","value":"reduce"}]}),
         )?;
-        // Downloads require a dedicated user-confirmed UI; deny them in this version.
-        s.call("Browser.setDownloadBehavior", json!({"behavior":"deny"}))?;
+        s.init_native()?;
+        // Keep Chromium disk downloads denied; native confirmed streams are bounded.
+        s.call(
+            "Browser.setDownloadBehavior",
+            json!({"behavior":"deny","eventsEnabled":true}),
+        )?;
         s.call("Page.startScreencast",json!({"format":"jpeg","quality":FRAME_QUALITY,"maxWidth":VIEW_WIDTH,"maxHeight":VIEW_HEIGHT,"everyNthFrame":1}))?;
         Ok(s)
     }
     fn send(&mut self, method: &str, params: Value) -> Result<u64, String> {
+        self.send_on(method, params, self.session.clone().as_deref())
+    }
+    fn send_on(
+        &mut self,
+        method: &str,
+        params: Value,
+        session: Option<&str>,
+    ) -> Result<u64, String> {
         self.next_id += 1;
         let mut message = json!({"id":self.next_id,"method":method,"params":params});
         if !(method.starts_with("Browser.") || method.starts_with("Target.")) {
-            if let Some(session) = &self.session {
+            if let Some(session) = session {
                 message["sessionId"] = json!(session);
             }
         }
@@ -340,12 +413,32 @@ impl Session {
     }
     pub fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
         let id = self.send(method, params)?;
+        self.wait_reply(id, method)
+    }
+    /// Host-side CDP inspection/control of a known tab; never exposed to pages.
+    pub fn call_tab(&mut self, target: &str, method: &str, params: Value) -> Result<Value, String> {
+        let session = self
+            .tabs
+            .iter()
+            .find(|t| t.target == target)
+            .ok_or("Unknown tab")?
+            .session
+            .clone();
+        let id = self.send_on(method, params, Some(&session))?;
+        self.wait_reply(id, method)
+    }
+    fn wait_reply(&mut self, id: u64, method: &str) -> Result<Value, String> {
         log::debug!("CDP call {id}: {method}");
         let deadline = Instant::now() + Duration::from_secs(12);
         while Instant::now() < deadline && !self.stopped.load(Ordering::Relaxed) {
             if let Some(v) = self.receive(Duration::from_millis(50))? {
                 if v["id"].as_u64() != Some(id)
-                    && self.shared.lock().unwrap().info.dialog.is_some()
+                    && {
+                        let s = self.shared.lock().unwrap();
+                        s.info.dialog.is_some()
+                            || s.info.upload.is_some()
+                            || s.info.download.as_ref().is_some_and(|d| d.pending)
+                    }
                     && (method.starts_with("Input.") || method == "Page.navigate")
                 {
                     // A page dialog may defer the input reply. Return control to
@@ -380,6 +473,7 @@ impl Session {
     }
     pub fn pump(&mut self, timeout: Duration) -> Result<(), String> {
         self.receive(timeout)?;
+        self.pump_native()?;
         if self
             .pending_navigation
             .is_some_and(|(_, start)| start.elapsed() > Duration::from_secs(45))
@@ -409,12 +503,13 @@ impl Session {
             self.info_dirty = false;
             // A provisional navigation can defer Runtime.evaluate until HTTP
             // responds. Never wait synchronously for metadata in the input loop.
-            let id=self.send("Runtime.evaluate",json!({"expression":"({title:document.title,status:performance.getEntriesByType('navigation')[0]?.responseStatus,password:document.activeElement?.type==='password',editable:!!(document.activeElement&&(document.activeElement.matches('input:not([type=button]):not([type=submit]),textarea')||document.activeElement.isContentEditable))})", "returnByValue":true}))?;
+            let id=self.send("Runtime.evaluate",json!({"expression":"(()=>{const e=document.activeElement;return {title:document.title,status:performance.getEntriesByType('navigation')[0]?.responseStatus,password:e?.type==='password',editable:!!(e&&!e.disabled&&!e.readOnly&&(e.isContentEditable||e.tagName==='TEXTAREA'||(e.tagName==='INPUT'&&['text','search','url','tel','email','password','number'].includes(e.type))))}})()", "returnByValue":true}))?;
             self.pending_info = Some((id, self.info_generation));
         }
         Ok(())
     }
     fn receive(&mut self, timeout: Duration) -> Result<Option<Value>, String> {
+        self.check_memory()?;
         // Backpressure animated pages to the frontend's active/idle frame budget.
         // Input replies continue to be handled while a frame acknowledgement waits.
         if Instant::now() >= self.next_ack {
@@ -460,6 +555,9 @@ impl Session {
     }
     fn event(&mut self, value: &Value) -> Result<(), String> {
         if value.get("method").is_none() {
+            if self.native_event(value)? {
+                return Ok(());
+            }
             if self
                 .pending_info
                 .is_some_and(|(id, _)| value["id"].as_u64() == Some(id))
@@ -480,6 +578,8 @@ impl Session {
                     state.info.http_status =
                         info["status"].as_u64().and_then(|n| u16::try_from(n).ok());
                     state.revision += 1;
+                    drop(state);
+                    self.publish_tabs();
                 }
             }
             if self
@@ -501,20 +601,40 @@ impl Session {
             return Ok(());
         }
         let method = value["method"].as_str().unwrap_or("");
+        if matches!(
+            method,
+            "Browser.downloadWillBegin" | "Page.downloadWillBegin"
+        ) {
+            self.notice("This download type is blocked. Use an HTTP attachment link; generated blob/data downloads are unsupported.");
+            return Ok(());
+        }
         if method == "Target.targetDestroyed" {
             if let Some(id) = value["params"]["targetId"].as_str() {
                 self.popups.remove(id);
                 self.closing_popups.remove(id);
+                if id == self.target && !self.stopped.load(Ordering::Relaxed) {
+                    return Err(
+                        "The active browser tab closed. Exit Browser and reopen to continue."
+                            .into(),
+                    );
+                }
+                if self.tabs.iter().any(|t| t.target == id) {
+                    self.clear_upload_staging(id);
+                    self.tabs.retain(|t| t.target != id);
+                    self.publish_tabs();
+                }
             }
             return Ok(());
         }
         if method == "Target.targetCreated" || method == "Target.targetInfoChanged" {
             let info = &value["params"]["targetInfo"];
             if info["type"] == "page" {
-                if let Some(id) = info["targetId"]
-                    .as_str()
-                    .filter(|id| *id != self.target && !self.closing_popups.contains(*id))
-                {
+                if let Some(id) = info["targetId"].as_str().filter(|id| {
+                    !self.creating_tab
+                        && *id != self.target
+                        && !self.tabs.iter().any(|t| t.target == *id)
+                        && !self.closing_popups.contains(*id)
+                }) {
                     let id = id.to_string();
                     let url = info["url"].as_str().unwrap_or("");
                     if let Some(url) = url
@@ -529,7 +649,7 @@ impl Session {
                         self.send("Target.closeTarget", json!({"targetId":id}))?;
                         self.popups.remove(&id);
                         self.closing_popups.insert(id);
-                    } else if self.popups.len() < 4 {
+                    } else if self.popups.is_empty() {
                         self.popups.entry(id).or_insert_with(Instant::now);
                     } else {
                         self.send("Target.closeTarget", json!({"targetId":id}))?;
@@ -540,10 +660,56 @@ impl Session {
         }
         if let Some(session) = &self.session {
             if value["sessionId"].as_str() != Some(session) {
+                // A frozen background page can still finish an in-flight response.
+                // Never leave it paused or present a background prompt.
+                if let Some(background) = value["sessionId"].as_str() {
+                    let reply = match method {
+                        "Page.screencastFrame" => Some((
+                            "Page.screencastFrameAck",
+                            json!({"sessionId":value["params"]["sessionId"]}),
+                        )),
+                        "Fetch.requestPaused" => Some((
+                            "Fetch.failRequest",
+                            json!({"requestId":value["params"]["requestId"],"errorReason":"Aborted"}),
+                        )),
+                        "Page.javascriptDialogOpening" => {
+                            Some(("Page.handleJavaScriptDialog", json!({"accept":false})))
+                        }
+
+                        _ => None,
+                    };
+                    if let Some((method, params)) = reply {
+                        self.send_on(method, params, Some(background))?;
+                    }
+                }
                 return Ok(());
             }
         }
+        if self.native_event(value)? {
+            return Ok(());
+        }
         let p = &value["params"];
+        if method == "Page.frameNavigated" {
+            if let Some(id) = p["frame"]["id"].as_str() {
+                if let Some(origin) =
+                    crate::model::site_key(p["frame"]["url"].as_str().unwrap_or(""))
+                {
+                    if self.frame_origins.len() < 128 {
+                        self.frame_origins.insert(id.into(), origin);
+                    }
+                } else {
+                    self.frame_origins.remove(id);
+                }
+                if self.upload.as_ref().is_some_and(|u| u.frame == id) {
+                    self.upload = None;
+                    self.shared.lock().unwrap().info.upload = None;
+                }
+            }
+        } else if method == "Page.frameDetached" {
+            if let Some(id) = p["frameId"].as_str() {
+                self.frame_origins.remove(id);
+            }
+        }
         match value["method"].as_str().unwrap_or("") {
             "Page.screencastFrame" => {
                 if let Some(id) = p["sessionId"].as_u64() {
@@ -610,6 +776,15 @@ impl Session {
                 self.info_dirty = true;
             }
             "Page.frameNavigated" if p["frame"].get("parentId").is_none() => {
+                self.send("Browser.resetPermissions", json!({}))?;
+                self.send("Browser.grantPermissions", json!({"permissions":[]}))?;
+                self.clear_upload_staging(&self.target.clone());
+                self.upload = None;
+                {
+                    let mut s = self.shared.lock().unwrap();
+                    s.info.permission = None;
+                    s.info.upload = None;
+                }
                 self.info_generation = self.info_generation.wrapping_add(1);
                 if let Some(id) = p["frame"]["id"].as_str() {
                     self.main_frame = id.into();
@@ -626,20 +801,34 @@ impl Session {
                 self.info_dirty = true;
             }
             "Page.javascriptDialogOpening" => {
-                let mut s = self.shared.lock().unwrap();
-                s.info.dialog = Some(
-                    p["message"]
+                self.native_serial += 1;
+                let dialog = JavascriptDialog {
+                    id: self.native_serial,
+                    origin: crate::model::site_key(p["url"].as_str().unwrap_or(""))
+                        .unwrap_or_else(|| "Opaque / local origin".into()),
+                    kind: p["type"].as_str().unwrap_or("alert").into(),
+                    message: p["message"]
                         .as_str()
                         .unwrap_or("Website dialog")
                         .chars()
                         .take(800)
                         .collect(),
-                );
+                    default_text: p["defaultPrompt"]
+                        .as_str()
+                        .unwrap_or("")
+                        .chars()
+                        .take(2048)
+                        .collect(),
+                };
+                let mut s = self.shared.lock().unwrap();
+                s.info.dialog = Some(dialog.message.clone());
+                s.info.javascript_dialog = Some(dialog);
                 s.revision += 1;
             }
             "Page.javascriptDialogClosed" => {
                 let mut s = self.shared.lock().unwrap();
                 s.info.dialog = None;
+                s.info.javascript_dialog = None;
                 s.revision += 1;
             }
             "Inspector.targetCrashed" => {
@@ -653,6 +842,7 @@ impl Session {
         match action {
             Action::Navigate(url) => {
                 let url = address(&url)?;
+                self.clear_native_prompts()?;
                 self.info_generation = self.info_generation.wrapping_add(1);
                 {
                     let mut s = self.shared.lock().unwrap();
@@ -763,6 +953,7 @@ impl Session {
                 self.frame_interval = Duration::from_secs_f64(1.0 / fps.clamp(1, 30) as f64);
             }
             Action::Visible(visible) => {
+                self.visible = visible;
                 self.frame_acks.clear();
                 if visible {
                     self.call("Page.startScreencast",json!({"format":"jpeg","quality":FRAME_QUALITY,"maxWidth":VIEW_WIDTH,"maxHeight":VIEW_HEIGHT,"everyNthFrame":1}))?;
@@ -796,8 +987,42 @@ impl Session {
                 self.call("Page.handleJavaScriptDialog", json!({"accept":accept}))?;
                 let mut s = self.shared.lock().unwrap();
                 s.info.dialog = None;
+                s.info.javascript_dialog = None;
                 s.revision += 1;
             }
+            Action::Prompt { id, text } => {
+                let prompt = self.shared.lock().unwrap().info.javascript_dialog.clone();
+                if prompt.is_some_and(|p| p.id == id) {
+                    if text.as_ref().is_some_and(|t| t.len() > 8192) {
+                        return Err("Prompt text is too long.".into());
+                    }
+                    self.call(
+                        "Page.handleJavaScriptDialog",
+                        json!({"accept":text.is_some(),"promptText":text.unwrap_or_default()}),
+                    )?;
+                    let mut s = self.shared.lock().unwrap();
+                    s.info.dialog = None;
+                    s.info.javascript_dialog = None;
+                    s.revision += 1;
+                }
+            }
+            Action::RequestPermission(permission) => self.request_permission(permission)?,
+            Action::PermissionDecision { id, allow } => self.permission_decision(id, allow)?,
+            Action::RevokePermissions => {
+                self.block_permissions()?;
+                self.notice("All site permissions blocked.");
+            }
+            Action::Upload { id, names } => self.upload_decision(id, names)?,
+            Action::Download { id, allow } => self.download_decision(id, allow)?,
+            Action::DismissNotice => {
+                let mut s = self.shared.lock().unwrap();
+                s.info.notice = None;
+                s.info.download = None;
+                s.revision += 1;
+            }
+            Action::NewTab => self.new_tab()?,
+            Action::SwitchTab(id) => self.switch_tab(&id)?,
+            Action::CloseTab(id) => self.close_tab(&id)?,
             Action::Quit => {
                 self.stopped.store(true, Ordering::Relaxed);
             }
@@ -807,8 +1032,28 @@ impl Session {
 }
 impl Drop for Session {
     fn drop(&mut self) {
+        let download_id = self
+            .shared
+            .lock()
+            .unwrap()
+            .info
+            .download
+            .as_ref()
+            .map_or(0, |d| d.id);
+        let _ = self.action(Action::Download {
+            id: download_id,
+            allow: false,
+        });
+        for (_, path) in self.upload_staging.drain(..) {
+            let _ = std::fs::remove_dir_all(path);
+        }
         let _ = self.send("Browser.close", json!({}));
-        let deadline = Instant::now() + Duration::from_millis(800);
+        let deadline = Instant::now()
+            + if self.memory_pressure {
+                Duration::from_millis(100)
+            } else {
+                Duration::from_secs(5)
+            };
         while Instant::now() < deadline {
             if self.child.try_wait().ok().flatten().is_some() {
                 return;
@@ -879,6 +1124,9 @@ impl BrowserEngine {
                             return Ok(());
                         }
                         if let Err(e) = session.action(action) {
+                            if session.memory_pressure {
+                                return Err(e);
+                            }
                             let mut s = state.lock().unwrap();
                             s.info.error = Some(e);
                             s.info.loading = false;
@@ -893,6 +1141,14 @@ impl BrowserEngine {
                 let mut s = state.lock().unwrap();
                 s.info.error = Some(e);
                 s.info.loading = false;
+                s.info.dialog = None;
+                s.info.javascript_dialog = None;
+                s.info.permission = None;
+                s.info.upload = None;
+                if let Some(d) = &mut s.info.download {
+                    d.pending = false;
+                    d.active = false;
+                }
                 s.revision += 1;
             }
         });
@@ -902,6 +1158,15 @@ impl BrowserEngine {
             stopped,
             worker: Some(worker),
         }
+    }
+    pub fn begin_shutdown(&self) {
+        self.stopped.store(true, Ordering::Relaxed);
+        let _ = self.commands.try_send(Action::Quit);
+    }
+    pub fn shutdown_finished(&self) -> bool {
+        self.worker
+            .as_ref()
+            .is_none_or(|worker| worker.is_finished())
     }
     pub fn send(&self, action: Action) -> Result<(), String> {
         self.commands.try_send(action).map_err(|error| match error {
