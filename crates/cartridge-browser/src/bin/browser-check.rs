@@ -1,7 +1,7 @@
 //! Opt-in live-site checks for the local engine; not part of offline CI.
 use base64::Engine as _;
-use cartridge_browser::engine::{Action, Session, Shared, discover};
-use serde_json::{Value, json};
+use cartridge_browser::engine::{discover, Action, Session, Shared};
+use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -90,7 +90,46 @@ fn click_text(s: &mut Session, label: &str) -> Result<bool, String> {
     }
     Ok(false)
 }
+fn check_sandbox(engine: &Path, out: &Path) -> Result<(), String> {
+    let out = out.join("sandbox");
+    std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+    let mut session = Session::start(engine, &out.join("profile"), Shared::default())?;
+    // Fixed internal diagnostic only; normal address entry still allows web URLs.
+    session.call("Page.navigate", json!({"url":"chrome://sandbox/"}))?;
+    let body = wait(
+        &mut session,
+        "document.body && document.body.innerText.includes('sandboxed') && document.body.innerText",
+    )?;
+    let text = body.as_str().ok_or("Missing Chromium sandbox report")?;
+    std::fs::write(out.join("sandbox.txt"), text).map_err(|e| e.to_string())?;
+    capture(&mut session, &out, "sandbox")?;
+    let normalized = text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase();
+    for expected in [
+        "namespace sandbox yes",
+        "seccomp-bpf sandbox yes",
+        "you are adequately sandboxed",
+    ] {
+        if !normalized.contains(expected) {
+            return Err(format!(
+                "Chromium sandbox report is missing {expected:?}; see sandbox.txt"
+            ));
+        }
+    }
+    println!(
+        "{}",
+        json!({"check":"chromium sandbox", "result":"pass", "report":text})
+    );
+    Ok(())
+}
+
 fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
+    if site == "sandbox" {
+        return check_sandbox(engine, out);
+    }
     let out = out.join(site);
     std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
     let profile = out.join("profile");
@@ -243,7 +282,7 @@ fn run() -> Result<(), String> {
             "--engine" => engine = Some(PathBuf::from(args.next().ok_or("Missing engine path")?)),
             "--help" => {
                 println!(
-                    "browser-check --site all|slashdot|cnn|osm --out NEW-DIRECTORY [--engine PATH]\nOpt-in real-site checks. Creates isolated profiles and public-page captures, never personal browser sessions."
+                    "browser-check --site all|slashdot|cnn|osm|sandbox --out NEW-DIRECTORY [--engine PATH]\nOpt-in real-site checks. Creates isolated profiles and public-page captures, never personal browser sessions."
                 );
                 return Ok(());
             }
