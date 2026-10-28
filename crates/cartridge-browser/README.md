@@ -113,8 +113,9 @@ ARM interaction checks have passed for Slashdot article/Back and map drag/zoom/s
 Linux now uses normal Chromium with Ozone's offscreen display, which fixes the
 13-byte CNN CDN response seen with headless mode. The strict article/Back check
 passes on the Mac and 1 GiB ARM VM. CNN still reaches the actual handheld's memory
-guard during its late consent flow; it remains an unreliable site on this device,
-not a passing handheld acceptance case. Slashdot and OpenStreetMap pass there.
+guard during its late consent flow. Ordinary article/Back checks now pass on the
+handheld, but the explicit cold-consent case remains unreliable. Slashdot and
+OpenStreetMap pass there.
 No browser identity override, consent bypass or lower memory floor is used.
 The private component passes Chromium's namespace, PID/network namespace and
 seccomp-BPF report on both the ARM VM and the actual Linux 4.4.189 handheld.
@@ -147,6 +148,11 @@ Opt-in live-site interaction checks (network required):
 cargo run -p cartridge-browser --bin browser-check -- \
   --site all --out /tmp/new-browser-site-check
 ```
+
+For a fresh-profile case that must wait for CNN's visible privacy controls and
+reject optional cookies before opening an article, use `--site cnn-consent`.
+This is a separate, currently failing handheld acceptance case; an ordinary CNN
+navigation pass does not imply it passes.
 
 This exercises news article links and Back on Slashdot/CNN, and map dragging,
 zoom controls and location search on OpenStreetMap. It saves public-page captures,

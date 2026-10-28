@@ -231,6 +231,43 @@ partial frame and an oversized message that must still fail. All pass; the first
 case aborts the unchanged reader. The genuine Chromium fixture also passes HTML,
 CSS pixels, JavaScript, navigation, companion popups, forms and cancellation.
 
+## Direct hardware regression and live-check follow-up
+
+The CI now exports exact ARM `real_engine`, `capabilities` and `transport` test
+executables as `browser-tests-aarch64`, plus a smaller `browser-check-aarch64`
+artifact for iteration. All eight regression tests passed as the normal user on
+the actual Linux 4.4.189 handheld: transport framing/limits, rendered HTML/CSS/JS,
+forms, navigation/popups, prompts, permission handling, bounded uploads/downloads
+and cancellation, tab freezing/audio continuity, and cookies/localStorage/IndexedDB
+across separate processes. Geolocation in the fixture is explicitly emulated;
+this does not assert a physical GPS service. The normal signed 0.8.3 launcher was
+restored with the identical active/previous state afterward. The corresponding
+production sources are unchanged from the installed 0.8.3 build.
+
+The live checker no longer forces a PNG between hit-testing an article link and
+clicking it. It also matches the native input sequence and its 24/8-fps active/idle
+transfer budget. Inspection is not treated as user activity. Visible-control
+probing now rejects unrelated labels before requesting ancestor styles, retaining
+all visibility/hit-test checks for matching candidates. No timeout, memory floor,
+site identity, permission or consent protection is weakened.
+
+All three ordinary site checks passed on the handheld with immediate link input:
+Slashdot 23.98 seconds, CNN article/Back 91.50 seconds, and OpenStreetMap 19.77
+seconds, with a sampled minimum of 299,964 KiB available. This CNN run navigated
+before a privacy dialog appeared, so it does not prove the later consent path.
+The explicit `--site cnn-consent` case waits for the site's own visible controls
+and requires optional-cookie rejection before article navigation. That harder
+case passes on the Mac but still fails on the handheld with a memory guard or
+renderer-command timeout. Keep it as an open acceptance case.
+
+Isolated startup-option experiments tried disabling BackForwardCache, a 128 MiB
+V8 old-space limit, and one raster thread. Some VM cases passed, but a combined
+cache/heap case failed, and all three individual hardware cases failed. Their
+profiles, command lines and memory reports are retained. These results do not
+establish a reliable fix; none of those options is adopted in the runtime. The
+next investigation should measure per-process memory/heap during cold consent
+rather than lower the safety floor or relabel an ordinary-navigation pass.
+
 ## Remaining public-release scope
 
 The handheld promoted the signed runtime to healthy active 0.8 and retained
