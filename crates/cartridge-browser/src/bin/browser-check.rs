@@ -630,6 +630,8 @@ enum VisualCommand {
     Frame,
     Status,
     Heap,
+    Targets,
+    Evaluate { expression: String },
     Quit,
 }
 fn visual_session(engine: &Path, out: &Path) -> Result<(), String> {
@@ -717,6 +719,11 @@ fn visual_session(engine: &Path, out: &Path) -> Result<(), String> {
             },
             VisualCommand::Status => s.evaluate("({url:location.href,title:document.title,ready:document.readyState,h1:document.querySelector('h1')?.textContent?.slice(0,500)})")?,
             VisualCommand::Heap => s.call("Runtime.getHeapUsage",json!({}))?,
+            VisualCommand::Targets => s.call("Target.getTargets",json!({}))?,
+            VisualCommand::Evaluate { expression } => {
+                if expression.len() > 8192 { return Err("Diagnostic expression exceeds 8 KiB".into()); }
+                s.evaluate(&expression)?
+            },
             VisualCommand::Quit => { emit(json!({"quit":true}))?; return Ok(()); },
         };
         emit(

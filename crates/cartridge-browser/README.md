@@ -165,6 +165,9 @@ a forced renderer screenshot; its reply includes the frame generation.
 Coordinates refer to the native 720×576 web surface. `navigate`, `scroll`, `key`
 and `zoom` commands are also available. This is an observation tool, not an
 automatic site pass; it retains normal memory, timeout and consent protections.
+`targets` lists engine targets; `evaluate` accepts an at-most-8-KiB page-console
+expression for trusted developer diagnostics. Neither is exposed to websites.
+
 
 For isolated transfer-cost experiments, the checker accepts
 `CARTRIDGE_BROWSER_CHECK_ACTIVE_FPS` and `CARTRIDGE_BROWSER_CHECK_IDLE_FPS`
