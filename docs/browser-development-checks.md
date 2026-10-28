@@ -1,9 +1,11 @@
 # Browser development checks — 27–28 October 2026
 
 This is the 0.8 development branch, not a public stable release. Main and the
-released 0.7 runtime remain unchanged. The handheld has permanent, reboot-verified
-0.8.1 (`bdb28e4f934c974a9bf97a8be447f63cb3268d52`), with stable 0.7 retained as
-the direct rollback release. The next 0.8.2 candidate changes Linux browser startup.
+released 0.7 runtime remain unchanged. These notes record staged development
+observations; the PR description tracks later candidate activation. The screenshot-safe
+0.8.1 patch (`bdb28e4f934c974a9bf97a8be447f63cb3268d52`) was installed and
+reboot-verified with stable 0.7 retained as the direct rollback release. Subsequent
+0.8.2 candidates change Linux browser startup.
 
 The final screenshot-safe candidate is **0.8.1**, source
 `4cafb388f1bad52f42d1cc6dd527c9dfdc7d1977`, CI merge
@@ -156,6 +158,32 @@ signed updates and rollback with persistent errors. The dedicated
 `browser-engine-stable` channel is separate from the runtime's latest release.
 It is not published yet and reports unavailable honestly. The same verified
 commands are embedded in the signed runtime as `cartridge browser-engine`.
+
+## Subsequent 0.8.2 checks
+
+The normal-browser/Ozone backend passed native and ARM CI, plus exact ARM
+promotion, screenshot verification and recovery in the VM. A real accelerated
+KMSDRM handheld session rendered CNN and captured it with SIGUSR1, then restored
+0.8.1. Automatic capture initially waited for every background resource; the
+capture-only follow-up records the available frame at its requested delay. A
+real Mac fixture with an intentionally pending image verified that behaviour.
+
+Guarded CNN checks exposed two distinct limits. The 1 GiB VM reached the unchanged
+220,000 KiB memory floor around consent handling. The actual handheld retained
+at least 415,592 KiB but its check waited for `readyState === complete` even though
+the page was interactive. The live checker now uses parsed content, revalidates
+rendered links after scrolling, checks the intended article's path/site and
+requires a rendered listing after Back. All three strict Mac cases passed.
+Critical memory notifications and forced low-end mode were tested in the VM;
+neither prevented its guard, and neither change is adopted in production.
+
+A separate loopback regression proved that a companion popup could replace a
+normal article navigation. The corrected engine queues one popup and checks its
+owning target/navigation generation across an asynchronous renderer round trip.
+Immediate and about:blank companion cases retain the article and working Back;
+legitimate new-window links and the existing tab bounds still pass. No new
+popup delay, timeout extension, site blocklist or security bypass is used.
+These Mac fixture results precede the final rebuilt ARM checks recorded in the PR.
 
 ## Remaining public-release scope
 

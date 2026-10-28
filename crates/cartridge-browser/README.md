@@ -41,6 +41,10 @@ listed in the 0.8 launcher. The normal simulator provides isolated state under
   `<CARTRIDGE_HOME>/.cartridges/screenshots` (the simulator uses `.sim/home`). A USB keyboard and
   mouse work alongside controller input. IJKL/TFGH simulate the two sticks.
 
+Links requesting a new window normally follow in the active page. A companion
+popup cannot replace a navigation the active page already requested; at most one
+new-window destination waits for a decision. Use Start > Tabs for separate tabs.
+
 History and up to 64 bookmarks are stored separately from the engine profile.
 History writes are coalesced; map fragment changes do not fill the history list.
 Engine page capture stops behind native menus; animated-page frame transfer is
