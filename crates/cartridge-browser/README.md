@@ -83,6 +83,7 @@ cargo test -p cartridge-browser --lib
 CARTRIDGE_BROWSER_TEST_OUT=/tmp/browser-check \
   cargo test -p cartridge-browser --test real_engine -- --ignored --nocapture
 SDL_VIDEODRIVER=dummy cargo test -p cartridge-browser --test capabilities -- --ignored --test-threads=1
+cargo test -p cartridge-browser --test media -- --ignored --nocapture
 ```
 
 The real-engine check serves a loopback-only fixture and verifies actual CSS grid
@@ -112,10 +113,14 @@ The native ARM frontend also renders OpenStreetMap through the private pipes.
 ARM interaction checks have passed for Slashdot article/Back and map drag/zoom/search.
 Linux now uses normal Chromium with Ozone's offscreen display, which fixes the
 13-byte CNN CDN response seen with headless mode. The strict article/Back check
-passes on the Mac and 1 GiB ARM VM. CNN still reaches the actual handheld's memory
-guard during its late consent flow. Ordinary article/Back checks now pass on the
-handheld, but the explicit cold-consent case remains unreliable. Slashdot and
-OpenStreetMap pass there.
+passes on the Mac and 1 GiB ARM VM. The 0.8.4 ARM build limits software video
+decoding to one thread per decoder and compositor retention to 32 MiB. All nine
+regressions pass on the actual handheld, including two real 720p H.264 videos
+with trusted Play/Pause/Seek input. A three-minute native CNN session at 100%
+zoom retained at least 293,972 KiB available and exited cleanly. The strict
+fresh-consent automation still exceeds its 35-second interaction budget; this
+is a recorded failure, not a claim of reliable CNN performance. Earlier ordinary
+article/Back checks and Slashdot/OpenStreetMap interaction pass there.
 No browser identity override, consent bypass or lower memory floor is used.
 The private component passes Chromium's namespace, PID/network namespace and
 seccomp-BPF report on both the ARM VM and the actual Linux 4.4.189 handheld.

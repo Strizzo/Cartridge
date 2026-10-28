@@ -2,7 +2,9 @@
 
 This is the 0.8 development branch, not a public stable release. Main and the
 released 0.7 runtime remain unchanged. These notes record staged development
-observations; the PR description tracks later candidate activation. The screenshot-safe
+observations; the PR description tracks later candidate activation. The
+0.8.4 section below records the latest exact-build hardware results; the
+0.8.1/0.8.2 sections are historical. The screenshot-safe
 0.8.1 patch (`bdb28e4f934c974a9bf97a8be447f63cb3268d52`) was installed and
 reboot-verified with stable 0.7 retained as the direct rollback release. Subsequent
 0.8.2 candidates change Linux browser startup.
@@ -267,6 +269,58 @@ profiles, command lines and memory reports are retained. These results do not
 establish a reliable fix; none of those options is adopted in the runtime. The
 next investigation should measure per-process memory/heap during cold consent
 rather than lower the safety floor or relabel an ordinary-navigation pass.
+
+## 0.8.4 software-video memory check
+
+The following results supersede the earlier memory observations above; they do
+not erase the failed runs. Source `6a80e99d40c300fc99fac886b72433c8f59683f3`,
+[CI 40638258531](https://github.com/Strizzo/Cartridge/actions/runs/40638258531),
+ARM merge `3280f2d338c0b7639312b7a4e581ebf8225fa41c`: native and ARM jobs pass.
+The exact signed payload passes all seven promotion/recovery cases in the marked
+ARM VM. Public release remains held for review.
+
+A bounded Chromium MemoryInfra trace of the actual device identified retained
+software-video frame pools as a major source of page growth: media allocations
+rose from roughly 11 to 102 MiB, including about 80 MiB of frame pools, while V8
+was roughly 23 MiB. These allocator trees overlap and must not be summed. The
+page contained several preloaded full-HD video loops. This is one measured page,
+not a universal memory profile.
+
+The ARM-only startup policy now uses `--video-threads=1` and
+`--force-gpu-mem-available-mb=32`. Full page rendering, JPEG quality 90, 24/8-fps
+transfer, the 8 MiB protocol limit, command/phase timeouts and low-memory guard
+remain unchanged. No autoplay, consent, permission or security bypass is added.
+Single-thread software decoding can trade motion smoothness for memory headroom.
+
+All **nine exact ARM regression tests** pass on the handheld: four transport,
+one HTML/CSS/JS/input fixture, three capabilities fixtures and one new media
+fixture. The media test serves two original synthetic 720p H.264 loops, requires
+real decoded/presented frames and colored transferred pixels, then checks trusted
+Play/Pause/Seek clicks, stable pause, resumed clocks and clean engine shutdown.
+It also passes on the Mac and in native CI.
+
+A 182.73-second actual accelerated SDL/KMSDRM CNN session at the normal 100% zoom
+retained at least **293,972 KiB** available. Its genuine 720×720 screenshot shows
+the page and visible consent controls; the browser exited normally and the
+permanent launcher/state were restored. This observation does not exercise
+article navigation through the native frontend.
+
+The exact build's fresh `cnn-consent` automation still **fails**: it reaches
+Essential Cookies Only, but the 35-second interaction budget expires before a
+stable article can be selected. Minimum available memory was **303,940 KiB**;
+this run did not hit the memory guard. A prior visual session with the same
+one-thread/32 MiB policy did complete real consent, intended article navigation
+and a rendered Back homepage over four minutes, with at least 251,140 KiB
+available. A one-thread/64 MiB experiment also passed the strict case once but
+came close to the guard. Neither result makes the failed exact-build automation
+a pass or establishes reliable performance for all heavy websites.
+
+The corresponding-source sidecar, the signed engine inventory and 267 notice
+hashes have been reconciled locally. A fresh static helper build and independent
+relinks reproduced the shipped helper byte-for-byte; its separate relink kit is
+retained. Those are reconstructed technical evidence, not recovered historical
+build inputs or a legal compliance conclusion. Public retrieval and licence/
+GCC-runtime classification review remain release work.
 
 ## Remaining public-release scope
 
