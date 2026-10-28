@@ -537,19 +537,31 @@ Use `app.set_idle_fps(1)` for static utilities and return `false` from `on_updat
 
 ## Sandboxing
 
-For safety, the following Lua features are removed:
+The runtime does not load the `io`, `package`, or `debug` libraries. Standard
+package loaders, native module loading, and `package.loaded` are unavailable.
+It also removes these base and `os` functions before loading app code:
 
 - `os.execute`, `os.rename`, `os.remove`, `os.tmpname`, `os.exit`, `os.getenv`, `os.setlocale`
-- The entire `io` library
-- The `debug` library
 - `loadfile` and `dofile` (a restricted `require` is provided instead)
 
 The custom `require` only loads `.lua` files from inside your cartridge
 directory. `require("ui")` resolves to `ui.lua`, `require("screens.detail")`
-to `screens/detail.lua`. Path traversal (`../`) is blocked.
+to `screens/detail.lua`. Resolved paths must stay inside the cartridge directory,
+including symlink targets. Module results are cached privately for each runner;
+apps cannot replace that cache through a global `package` table.
+
+Entry points and required modules are loaded as text. The base `load` function
+also accepts text only, from strings or reader functions, and preserves Lua's
+optional environment argument. Binary chunks are rejected even when the caller
+requests mode `"bt"` or `"b"`. `string.dump` remains available, but its bytecode
+output cannot be loaded by apps.
 
 `screen.draw_image` and `audio.play` paths are also sandboxed: they must
 canonically resolve inside the cartridge directory.
+
+These restrictions limit Lua API access; they do not provide OS-level isolation
+or per-app CPU or memory quotas. Granted network and SSH APIs remain available.
+Run cartridges you trust and review their requested permissions.
 
 ## Lifecycle exit conditions
 

@@ -28,3 +28,21 @@ Cargo.lock
 .sim/
 screenshots/
 deploy/wifi/.device
+
+# Local credentials and private signing/SSH keys
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.ssh/
+id_rsa
+id_ecdsa
+id_ed25519
+*.p12
+*.pfx
+*.key
+*.pem
+# Verification keys are public and intentionally versioned.
+!scripts/store-public-key.pem
+!scripts/system-update-public-key.pem
