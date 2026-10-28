@@ -150,6 +150,8 @@ bypass consent, authentication, certificates or site access restrictions.
 For repeatable UI captures, add `--capture /tmp/browser.png --capture-after 8
 --seconds 10 --hidden` after the simulator's `--` separator. Delayed capture lets
 lazy map tiles/images finish loading; it does not change normal browsing.
+Once a frame is available, the capture records the visible UI after the requested
+delay even if background page requests are still loading.
 
 For a fixed internal Chromium sandbox diagnostic, run `browser-check --site sandbox
 --out /tmp/new-sandbox-check --engine /path/to/chromium`. This checks the engine

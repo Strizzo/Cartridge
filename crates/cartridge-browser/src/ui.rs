@@ -1569,7 +1569,8 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
         if options.capture.is_some()
             && !captured
             && (has_frame || ui.mode != Mode::Page)
-            && !ui.info.loading
+            // A diagnostic capture records the visible UI at the requested
+            // time. Background requests may keep a usable page loading.
             && start.elapsed().as_secs_f64() >= options.capture_after.unwrap_or(2.0)
         {
             pending_capture = true;
@@ -1594,7 +1595,6 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
                 || (!captured
                     && options.capture.is_some()
                     && (has_frame || ui.mode != Mode::Page)
-                    && !ui.info.loading
                     && start.elapsed().as_secs_f64() >= options.capture_after.unwrap_or(2.0))
             {
                 let path = options
@@ -1663,7 +1663,10 @@ pub fn run(assets: &Path, options: Options) -> Result<(), String> {
     drop(engine);
     save_result?;
     if options.capture.is_some() && !captured {
-        return Err("No rendered webpage was available for capture.".into());
+        return Err(match ui.info.error.as_ref() {
+            Some(error) => format!("No webpage capture: {error}"),
+            None => "No rendered webpage was available for capture.".into(),
+        });
     }
     Ok(())
 }
