@@ -185,6 +185,52 @@ legitimate new-window links and the existing tab bounds still pass. No new
 popup delay, timeout extension, site blocklist or security bypass is used.
 These Mac fixture results precede the final rebuilt ARM checks recorded in the PR.
 
+## Exact 0.8.2 installation and visible-site checks
+
+The signed payload from [CI 40612661758](https://github.com/Strizzo/Cartridge/actions/runs/40612661758)
+passed all seven ARM promotion/recovery checks, then installed over Wi-Fi as
+`0.8.2-fbdbb1b5a1bd`. A screenshot in user storage was followed by whole-release
+signature verification. A real reboot returned to that exact binary; the signed
+engine and persistent browser profile verified afterward. `0.8.1-bdb28e4f934c`
+is the previous release. Bootstrap and supervisor hashes remain unchanged.
+
+The subsequent checker-only [CI 40616261690](https://github.com/Strizzo/Cartridge/actions/runs/40616261690)
+also passed native and ARM checks. It tries all visible consent choices first,
+including Show Purposes, and inspects a closed shadow root only when a visible
+overlay blocks the intended article. Ordinary clickable pages need no DOM search.
+Trusted input, exact intended article path/site, rendered heading and real Back
+checks remain mandatory, with the same zoom, time bounds and memory guard.
+
+All three cases pass on the Mac and ARM VM. The VM run took 13.03 seconds and
+retained at least 277,048 KiB available. On the actual handheld, Slashdot article
+and Back passed in 25.81 seconds; OpenStreetMap pan, zoom and search passed in
+21.14 seconds. CNN rendered but reached the guard at 218,532 KiB during late
+consent, with a sampled minimum of 215,036 KiB. There was no closed-shadow DOM
+search in this run. The earlier hidden-DOM test overhead therefore does not
+explain away this remaining physical-device limit. CNN is still a failing
+handheld acceptance case.
+
+A timed native CNN image in the VM also contains the low-memory error panel.
+Successful capture/exit confirms the screenshot path, not continued page usability.
+The earlier actual-device CNN capture demonstrates rendering, not long-session
+stability. Neither capture is counted as a full CNN interaction pass.
+
+## 0.8.3 transport regression
+
+A valid fragmented 7 MiB reply reproduced a stack overflow in the old CDP reader.
+Each 32 KiB read recursively entered the reader again. A measured real closed
+shadow-tree inspection had also produced a 7.42 MB unsolicited DOM event, below
+the existing 8 MiB transport limit.
+
+The reader now accumulates ready chunks iteratively and scans only newly received
+bytes for the frame delimiter. Partial data survives an idle pipe; only the first
+poll may wait. The memory and cancellation guards run between chunks, with the
+same message cap and command timeout. Deterministic inherited-pipe tests cover a
+7 MiB reply, a 7 MiB unsolicited event followed by its reply, an interrupted
+partial frame and an oversized message that must still fail. All pass; the first
+case aborts the unchanged reader. The genuine Chromium fixture also passes HTML,
+CSS pixels, JavaScript, navigation, companion popups, forms and cancellation.
+
 ## Remaining public-release scope
 
 The handheld promoted the signed runtime to healthy active 0.8 and retained
@@ -207,7 +253,7 @@ VM. Its AppArmor allowance names only the verified helper's exact installed path
 global namespace policy remains unchanged. The VM is stopped after testing.
 
 Keep the browser PR in draft and blog additions unpublished pending review.
-Wider-device compatibility, final 0.8.2 integration, hardware web graphics,
+Wider-device compatibility, CNN reliability on the handheld, hardware web graphics,
 long battery/thermal testing and public engine/source distribution remain explicit
 limitations. Camera/microphone devices are not exposed; blob/data downloads,
 pause/resume and a general file manager are not implemented. Permission approval

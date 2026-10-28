@@ -110,9 +110,12 @@ security bypass flags. There is no unsafe fallback when namespaces are unavailab
 The ARM VM has executed Chromium 156.0.8078.47 and real JavaScript in this setup.
 The native ARM frontend also renders OpenStreetMap through the private pipes.
 ARM interaction checks have passed for Slashdot article/Back and map drag/zoom/search.
-CNN has returned a 13-byte HTTP 200 “Unknown Error” response from its CDN in
-ARM trials and remains an open compatibility issue, even though its Mac
-interaction check passes. This is recorded as a failing acceptance case.
+Linux now uses normal Chromium with Ozone's offscreen display, which fixes the
+13-byte CNN CDN response seen with headless mode. The strict article/Back check
+passes on the Mac and 1 GiB ARM VM. CNN still reaches the actual handheld's memory
+guard during its late consent flow; it remains an unreliable site on this device,
+not a passing handheld acceptance case. Slashdot and OpenStreetMap pass there.
+No browser identity override, consent bypass or lower memory floor is used.
 The private component passes Chromium's namespace, PID/network namespace and
 seccomp-BPF report on both the ARM VM and the actual Linux 4.4.189 handheld.
 The user has opened Slashdot with the physical controller, returned to Cartridge

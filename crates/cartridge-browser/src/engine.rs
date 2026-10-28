@@ -548,49 +548,62 @@ impl Session {
         Ok(())
     }
     fn receive(&mut self, timeout: Duration) -> Result<Option<Value>, String> {
-        self.check_memory()?;
-        // Backpressure animated pages to the frontend's active/idle frame budget.
-        // Input replies continue to be handled while a frame acknowledgement waits.
-        if Instant::now() >= self.next_ack {
-            if let Some(id) = self.frame_acks.pop_front() {
-                self.send("Page.screencastFrameAck", json!({"sessionId":id}))?;
-                self.next_ack = Instant::now() + self.frame_interval;
+        // Only the first poll may wait. Continue with ready chunks using one
+        // stack frame, retaining the partial message if the pipe becomes idle.
+        let mut wait = timeout;
+        let mut checked = 0;
+        loop {
+            self.check_memory()?;
+            if self.stopped.load(Ordering::Relaxed) {
+                return Ok(None);
             }
+            // Backpressure animated pages to the frontend's active/idle frame budget.
+            // Input replies continue while a frame acknowledgement waits.
+            if Instant::now() >= self.next_ack {
+                if let Some(id) = self.frame_acks.pop_front() {
+                    self.send("Page.screencastFrameAck", json!({"sessionId":id}))?;
+                    self.next_ack = Instant::now() + self.frame_interval;
+                }
+            }
+            // Earlier bytes were already checked in this call; a large message
+            // must not repeatedly scan its entire accumulated prefix.
+            if let Some(relative) = self.bytes[checked..].iter().position(|c| *c == 0) {
+                let index = checked + relative;
+                let message = self.bytes.drain(..=index).collect::<Vec<_>>();
+                let value: Value = serde_json::from_slice(&message[..index])
+                    .map_err(|e| format!("Invalid browser protocol: {e}"))?;
+                log::trace!(
+                    "CDP received id={:?} method={:?}",
+                    value["id"],
+                    value["method"]
+                );
+                self.event(&value)?;
+                return Ok(Some(value));
+            }
+            checked = self.bytes.len();
+            let mut fd = libc::pollfd {
+                fd: self.reader.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            let ready = unsafe { libc::poll(&mut fd, 1, wait.as_millis().min(1000) as i32) };
+            if ready < 0 {
+                return Err(std::io::Error::last_os_error().to_string());
+            }
+            if ready == 0 {
+                return Ok(None);
+            }
+            let mut chunk = [0u8; 32768];
+            let count = self.reader.read(&mut chunk).map_err(|e| e.to_string())?;
+            if count == 0 {
+                return Err("Browser engine stopped. See the private profile's engine.log.".into());
+            }
+            if self.bytes.len() + count > MAX_MESSAGE {
+                return Err("Browser message exceeded the bounded transport limit.".into());
+            }
+            self.bytes.extend_from_slice(&chunk[..count]);
+            wait = Duration::ZERO;
         }
-        if let Some(index) = self.bytes.iter().position(|c| *c == 0) {
-            let message = self.bytes.drain(..=index).collect::<Vec<_>>();
-            let value: Value = serde_json::from_slice(&message[..index])
-                .map_err(|e| format!("Invalid browser protocol: {e}"))?;
-            log::trace!(
-                "CDP received id={:?} method={:?}",
-                value["id"],
-                value["method"]
-            );
-            self.event(&value)?;
-            return Ok(Some(value));
-        }
-        let mut fd = libc::pollfd {
-            fd: self.reader.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
-        };
-        let ready = unsafe { libc::poll(&mut fd, 1, timeout.as_millis().min(1000) as i32) };
-        if ready < 0 {
-            return Err(std::io::Error::last_os_error().to_string());
-        }
-        if ready == 0 {
-            return Ok(None);
-        }
-        let mut chunk = [0u8; 32768];
-        let count = self.reader.read(&mut chunk).map_err(|e| e.to_string())?;
-        if count == 0 {
-            return Err("Browser engine stopped. See the private profile's engine.log.".into());
-        }
-        if self.bytes.len() + count > MAX_MESSAGE {
-            return Err("Browser message exceeded the bounded transport limit.".into());
-        }
-        self.bytes.extend_from_slice(&chunk[..count]);
-        self.receive(Duration::ZERO)
     }
     fn event(&mut self, value: &Value) -> Result<(), String> {
         if value.get("method").is_none() {
