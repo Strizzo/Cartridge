@@ -250,7 +250,9 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
     s.action(Action::Zoom(0.75))?;
     wait(
         &mut s,
-        "location.protocol.startsWith('http') && document.readyState==='complete'",
+        // A parsed, nonempty document is interactive while slow images/ads
+        // may still load. Subsequent real controls/links verify usability.
+        "location.protocol.startsWith('http') && document.readyState!=='loading' && document.body?.innerText.trim().length>0",
     )?;
     let inspect=s.evaluate("({title:document.title,url:location.href,status:performance.getEntriesByType('navigation')[0]?.responseStatus,body:document.body.innerText.slice(0,500),buttons:[...document.querySelectorAll('button,[role=button]')].map(e=>e.innerText).filter(Boolean).slice(0,60),frames:[...document.querySelectorAll('iframe')].map(e=>({title:e.title,src:e.src})).slice(0,15),links:[...document.querySelectorAll('a[href]')].filter(e=>e.innerText.trim().length>30).slice(0,20).map(e=>({text:e.innerText.slice(0,180),url:e.href}))})")?;
     std::fs::write(
@@ -344,7 +346,7 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
         wait(
             &mut s,
             &format!(
-                "location.href!=={} && document.readyState==='complete'",
+                "location.href!=={} && document.readyState!=='loading'",
                 before
             ),
         )?;
