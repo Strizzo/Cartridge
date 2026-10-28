@@ -117,8 +117,10 @@ const CONTROL_POINT: &str = r#"function(labels) {
 }"#;
 
 fn visible_text_point(s: &mut Session, labels: &[&str]) -> Result<Value, String> {
-    s.evaluate(&format!(
+    let started = Instant::now();
+    let result = s.evaluate(&format!(
         r#"(()=>{{
+            const started = performance.now();
             const labels = {labels}, point = {point};
             let remaining = 20000, best = null;
             const exhausted = {{}};
@@ -142,11 +144,18 @@ fn visible_text_point(s: &mut Session, labels: &[&str]) -> Result<Value, String>
                 }}
             }}
             try {{ scan(document, 0); }} catch (error) {{ if (error !== exhausted) throw error; }}
-            return best;
+            return {{point:best, script_ms:performance.now()-started, visited:20000-remaining}};
         }})()"#,
         labels = json!(labels),
         point = CONTROL_POINT,
-    ))
+    ))?;
+    log::debug!(
+        "Visible consent probe: {} ms script, {:.1} ms round trip, {} visited",
+        result["script_ms"],
+        started.elapsed().as_secs_f64() * 1000.0,
+        result["visited"]
+    );
+    Ok(result["point"].clone())
 }
 
 fn shadow_text_point(s: &mut Session, labels: &[&str]) -> Result<Value, String> {
@@ -239,7 +248,6 @@ fn click_text(s: &mut Session, labels: &[&str]) -> Result<bool, String> {
 fn news_interaction(
     s: &mut Session,
     selector: &str,
-    out: &Path,
     checks: &mut Vec<&str>,
     article_link: bool,
 ) -> Result<String, String> {
@@ -273,14 +281,11 @@ fn news_interaction(
                     s.pump(Duration::from_millis(50))?;
                     continue;
                 }
-                capture(s, out, "after-consent")?;
-                // Capturing can span a layout update; revalidate the same kind of
-                // intended link after two animation frames before real input.
-                let point = s.evaluate(&expression)?;
-                if point.is_object() && point["blocked"] == false {
-                    return click_link_point(s, &point);
-                }
-                continue;
+                // The expression already revalidated this target after two
+                // animation frames and a hit test. Dispatch input now: forcing a
+                // diagnostic PNG here stalls the renderer and lets unrelated
+                // layout/consent changes invalidate an otherwise usable link.
+                return click_link_point(s, &point);
             }
             if article_link && point["overlay"] == true {
                 // An asynchronous consent UI may have appeared during the link
@@ -462,7 +467,7 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
             "a[href*='/202']:not([href*='/videos/']):not([href*='/live-news/'])"
         };
         let before = s.evaluate("location.href")?;
-        let expected_article = news_interaction(&mut s, selector, &out, &mut checks, true)?;
+        let expected_article = news_interaction(&mut s, selector, &mut checks, true)?;
         let expected = serde_json::to_string(&expected_article).unwrap();
         wait(
             &mut s,
@@ -470,7 +475,7 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
                 "(()=>{{const wanted=new URL({expected});return location.pathname===wanted.pathname&&location.hostname.split('.').slice(-2).join('.')===wanted.hostname.split('.').slice(-2).join('.')&&location.href!=={before}&&document.readyState!=='loading'}})()"
             ),
         )?;
-        news_interaction(&mut s, "h1", &out, &mut checks, false)?;
+        news_interaction(&mut s, "h1", &mut checks, false)?;
         checks.push("article opened through real link input");
         capture(&mut s, &out, "article")?;
         log::debug!("Article URL before Back: {}", s.evaluate("location.href")?);
@@ -659,8 +664,6 @@ mod tests {
         assert!(!click_text(&mut s, &["No such choice"]).unwrap());
         assert_dom_disabled(&mut s);
         println!("PASS: DOM agent disabled after inspection failure and missing label");
-        let out = profile.join("captures");
-        std::fs::create_dir_all(&out).unwrap();
         println!("FIXTURE: normal listing with hidden consent tree");
         s.evaluate(r##"(()=>{
             document.body.innerHTML='<div id="vendors" hidden></div><a id="story" href="#article">Read intended story</a>';
@@ -674,7 +677,7 @@ mod tests {
         })()"##).unwrap();
         let mut checks = vec![];
         assert!(
-            news_interaction(&mut s, "#story", &out, &mut checks, true)
+            news_interaction(&mut s, "#story", &mut checks, true)
                 .unwrap()
                 .ends_with("#article")
         );
@@ -699,7 +702,7 @@ mod tests {
             return true;
         })()"#).unwrap();
         let mut checks = vec![];
-        news_interaction(&mut s, "#story", &out, &mut checks, true).unwrap();
+        news_interaction(&mut s, "#story", &mut checks, true).unwrap();
         assert_eq!(
             s.evaluate("window.consentClicks").unwrap(),
             json!([["purposes", true], ["reject", true]])
@@ -719,7 +722,7 @@ mod tests {
             document.querySelector('#late-consent button').onclick=e=>{window.lateChoice=e.isTrusted;document.getElementById('late-consent').remove()};
             return true;
         })()"#).unwrap();
-        news_interaction(&mut s, "h1", &out, &mut checks, false).unwrap();
+        news_interaction(&mut s, "h1", &mut checks, false).unwrap();
         assert_eq!(s.evaluate("window.lateChoice").unwrap(), true);
         assert_eq!(s.evaluate("window.articleClick").unwrap(), Value::Null);
         assert_dom_disabled(&mut s);
@@ -739,7 +742,7 @@ mod tests {
         let point = s.evaluate(&selector_point_expression("#story")).unwrap();
         assert_eq!(point["overlay"], true);
         let mut checks = vec![];
-        news_interaction(&mut s, "#story", &out, &mut checks, true).unwrap();
+        news_interaction(&mut s, "#story", &mut checks, true).unwrap();
         assert_eq!(s.evaluate("window.closedChoice").unwrap(), true);
         assert_eq!(s.evaluate("window.articleClick").unwrap(), true);
         assert_dom_disabled(&mut s);

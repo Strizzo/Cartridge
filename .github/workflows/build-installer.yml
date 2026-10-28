@@ -158,6 +158,15 @@ jobs:
             system-update/*.tar.gz
             system-update/system-update.unsigned.json
 
+      - name: Upload exact ARM browser checker for device iteration
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-check-aarch64
+          if-no-files-found: error
+          path: |
+            bundle/Cartridge/dev/browser-check
+            bundle/Cartridge/dev/build-revision
+
       - name: Upload aarch64 device bundle
         uses: actions/upload-artifact@v4
         with:
