@@ -36,6 +36,7 @@ jobs:
           export CARTRIDGE_BROWSER_ENGINE="$(command -v google-chrome)"
           cargo test -p cartridge-browser --test real_engine -- --ignored --nocapture
           cargo test -p cartridge-browser --test capabilities -- --ignored --nocapture
+          cargo test -p cartridge-browser --bin browser-check -- --ignored --nocapture
 
       - name: Upload browser render diagnostics
         if: always()
