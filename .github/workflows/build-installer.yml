@@ -33,7 +33,22 @@ jobs:
           CARTRIDGE_BROWSER_TEST_OUT: ${{ runner.temp }}/cartridge-browser-check
           RUST_LOG: cartridge_browser=trace
         run: |
+          collect_browser_logs() {
+            python3 - <<'PYTHON'
+          import os, pathlib, tempfile
+          output = pathlib.Path(os.environ['CARTRIDGE_BROWSER_TEST_OUT'])
+          output.mkdir(parents=True, exist_ok=True)
+          paths = pathlib.Path(tempfile.gettempdir()).glob('cartridge-*/engine.log')
+          for path in sorted(paths)[:12]:
+              data = path.read_bytes()[-65536:]
+              (output / (path.parent.name + '-engine.log')).write_bytes(data)
+              print('Browser fixture log:', path.parent.name)
+              print(data.decode('utf-8', errors='replace'))
+          PYTHON
+          }
+          trap collect_browser_logs EXIT
           export CARTRIDGE_BROWSER_ENGINE="$(command -v google-chrome)"
+          "$CARTRIDGE_BROWSER_ENGINE" --version
           cargo test -p cartridge-browser --test real_engine -- --ignored --nocapture
           cargo test -p cartridge-browser --test capabilities -- --ignored --nocapture
           cargo test -p cartridge-browser --test media -- --ignored --nocapture
@@ -45,7 +60,9 @@ jobs:
         with:
           name: browser-render-check
           if-no-files-found: ignore
-          path: ${{ runner.temp }}/cartridge-browser-check/*.png
+          path: |
+            ${{ runner.temp }}/cartridge-browser-check/*.png
+            ${{ runner.temp }}/cartridge-browser-check/*-engine.log
 
       - name: Test manual launcher
         run: |
