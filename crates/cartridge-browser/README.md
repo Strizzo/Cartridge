@@ -154,6 +154,16 @@ reject optional cookies before opening an article, use `--site cnn-consent`.
 This is a separate, currently failing handheld acceptance case; an ordinary CNN
 navigation pass does not imply it passes.
 
+For visual diagnosis without automatic DOM searches, use `--site visual`. The
+session starts at CNN and accepts one JSON command per line on private standard
+input; it opens no network listener and closes after at most 240 seconds. For
+example, send `{"command":"capture"}`, `{"command":"click","x":100,"y":200}`,
+`{"command":"status"}`, `{"command":"heap"}`, `{"command":"back"}`, or
+`{"command":"quit"}`. Captures are numbered PNGs under the new output directory.
+Coordinates refer to the native 720×576 web surface. `navigate`, `scroll`, `key`
+and `zoom` commands are also available. This is an observation tool, not an
+automatic site pass; it retains normal memory, timeout and consent protections.
+
 For isolated transfer-cost experiments, the checker accepts
 `CARTRIDGE_BROWSER_CHECK_ACTIVE_FPS` and `CARTRIDGE_BROWSER_CHECK_IDLE_FPS`
 (integers 1–30). Defaults remain 24/8, matching the native interface; alternate

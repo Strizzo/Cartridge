@@ -612,6 +612,105 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
     println!("{}", serde_json::to_string(&report).unwrap());
     Ok(())
 }
+// A developer-only visual session: line-delimited JSON on private stdin/stdout.
+// No listener or website bridge. Screenshots and real pointer input let a slow
+// site be checked without repeatedly inspecting its DOM. Same engine guards,
+// command timeout and native transfer budget as the automated site checker.
+#[derive(serde::Deserialize)]
+#[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
+enum VisualCommand {
+    Click { x: f64, y: f64 },
+    Scroll { x: f64, y: f64, dx: f64, dy: f64 },
+    Key { key: String },
+    Navigate { url: String },
+    Zoom { factor: f64 },
+    Back,
+    Forward,
+    Capture,
+    Status,
+    Heap,
+    Quit,
+}
+fn visual_session(engine: &Path, out: &Path) -> Result<(), String> {
+    use std::io::{BufRead, Write};
+    use std::sync::mpsc;
+    let shared = Shared::default();
+    let mut s = Session::start(engine, &out.join("profile"), shared)?;
+    let (tx, rx) = mpsc::sync_channel(16);
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lock().lines() {
+            match line {
+                Ok(line) if !line.trim().is_empty() => {
+                    if tx.send(line).is_err() {
+                        return;
+                    }
+                }
+                Ok(_) => {}
+                Err(_) => return,
+            }
+        }
+    });
+    let emit = |value: Value| -> Result<(), String> {
+        println!("{value}");
+        std::io::stdout().flush().map_err(|e| e.to_string())
+    };
+    s.action(Action::Navigate("https://www.cnn.com/".into()))?;
+    s.action(Action::Zoom(0.75))?;
+    emit(
+        json!({"ready":true,"transfer_fps":{"active":s.active_fps,"idle":s.idle_fps},"surface":{"width":720,"height":576},"limit_seconds":240}),
+    )?;
+    let started = Instant::now();
+    let mut captures = 0;
+    while started.elapsed() < Duration::from_secs(240) {
+        s.pump(Duration::from_millis(20))?;
+        let line = match rx.try_recv() {
+            Ok(line) => line,
+            Err(mpsc::TryRecvError::Empty) => continue,
+            Err(mpsc::TryRecvError::Disconnected) => return Ok(()),
+        };
+        let command = match serde_json::from_str::<VisualCommand>(&line) {
+            Ok(command) => command,
+            Err(e) => {
+                emit(json!({"error":e.to_string()}))?;
+                continue;
+            }
+        };
+        let command_started = Instant::now();
+        let point = |x: f64, y: f64| -> Result<(), String> {
+            if x.is_finite()
+                && y.is_finite()
+                && (0.0..720.0).contains(&x)
+                && (0.0..576.0).contains(&y)
+            {
+                Ok(())
+            } else {
+                Err("Pointer must be inside the native 720x576 surface".into())
+            }
+        };
+        let value = match command {
+            VisualCommand::Click { x,y } => { point(x,y)?; s.action(Action::Click(x,y))?; json!({"clicked":[x,y]}) },
+            VisualCommand::Scroll { x,y,dx,dy } => { point(x,y)?; s.action(Action::Scroll(x,y,dx,dy))?; json!({"scrolled":[dx,dy]}) },
+            VisualCommand::Key { key } => { s.action(Action::Key(key,false))?; json!({"key_sent":true}) },
+            VisualCommand::Navigate { url } => { s.action(Action::Navigate(url))?; json!({"navigation_requested":true}) },
+            VisualCommand::Zoom { factor } => { s.action(Action::Zoom(factor))?; json!({"zoom_requested":factor}) },
+            VisualCommand::Back => { s.action(Action::Back)?; json!({"back_requested":true}) },
+            VisualCommand::Forward => { s.action(Action::Forward)?; json!({"forward_requested":true}) },
+            VisualCommand::Capture => {
+                captures += 1;
+                let name=format!("visual-{captures:04}"); capture(&mut s,out,&name)?;
+                json!({"screenshot":out.join(format!("{name}.png"))})
+            },
+            VisualCommand::Status => s.evaluate("({url:location.href,title:document.title,ready:document.readyState,h1:document.querySelector('h1')?.textContent?.slice(0,500)})")?,
+            VisualCommand::Heap => s.call("Runtime.getHeapUsage",json!({}))?,
+            VisualCommand::Quit => { emit(json!({"quit":true}))?; return Ok(()); },
+        };
+        emit(
+            json!({"result":value,"command_seconds":command_started.elapsed().as_secs_f64(),"session_seconds":started.elapsed().as_secs_f64()}),
+        )?;
+    }
+    Err("Visual session reached its fixed 240-second limit".into())
+}
+
 fn run() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
     let mut site = "all".to_string();
@@ -628,7 +727,7 @@ fn run() -> Result<(), String> {
             "--engine" => engine = Some(PathBuf::from(args.next().ok_or("Missing engine path")?)),
             "--help" => {
                 println!(
-                    "browser-check --site all|slashdot|cnn|cnn-consent|osm|sandbox --out NEW-DIRECTORY [--engine PATH]\nOpt-in real-site checks. Creates isolated profiles and public-page captures, never personal browser sessions."
+                    "browser-check --site all|slashdot|cnn|cnn-consent|osm|sandbox|visual --out NEW-DIRECTORY [--engine PATH]\nOpt-in real-site checks. Creates isolated profiles and public-page captures, never personal browser sessions."
                 );
                 return Ok(());
             }
@@ -641,6 +740,9 @@ fn run() -> Result<(), String> {
     }
     std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
     let engine = discover(engine)?;
+    if site == "visual" {
+        return visual_session(&engine, &out);
+    }
     let sites = if site == "all" {
         vec!["slashdot", "cnn", "osm"]
     } else {
