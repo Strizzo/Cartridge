@@ -16,7 +16,7 @@ const CARD_ROW_H: i32 = 52;
 const NEO_LIST_Y: i32 = neo::CONTENT_Y + 12;
 
 const CACHE_OPTIONS: &[u32] = &[15, 30, 60, 120, 360];
-const SETTINGS_ROWS: usize = 12;
+const SETTINGS_ROWS: usize = 14;
 // Step size for brightness/volume left/right adjustments.
 const HW_STEP: u8 = 10;
 // Row indices.
@@ -32,6 +32,8 @@ const HW_STEP: u8 = 10;
 //   9: Volume        (hardware)
 //  10: About
 //  11: System Update
+//  12: Remote Access
+//  13: Browser Tools
 const ROW_THEME: usize = 4;
 const ROW_ANIMATIONS: usize = 5;
 const ROW_SOUNDS: usize = 6;
@@ -40,6 +42,8 @@ const ROW_BRIGHTNESS: usize = 8;
 const ROW_VOLUME: usize = 9;
 const ROW_ABOUT: usize = 10;
 const ROW_SYSTEM_UPDATE: usize = 11;
+const ROW_REMOTE_ACCESS: usize = 12;
+const ROW_BROWSER_TOOLS: usize = 13;
 
 /// Move to the next/previous theme preset by id, wrapping at the ends.
 fn cycle_theme(current: &str, forward: bool) -> String {
@@ -160,6 +164,12 @@ impl LauncherScreen for SettingsScreen {
                         }
                         ROW_SYSTEM_UPDATE => {
                             return ScreenAction::Push(ScreenId::SystemUpdate);
+                        }
+                        ROW_BROWSER_TOOLS => {
+                            return ScreenAction::Push(ScreenId::BrowserTools);
+                        }
+                        ROW_REMOTE_ACCESS => {
+                            return ScreenAction::Push(ScreenId::RemoteAccess);
                         }
                         ROW_WIFI => {
                             return ScreenAction::Push(ScreenId::WiFi);
@@ -546,6 +556,8 @@ impl SettingsScreen {
             SettingsRow::hardware("Volume", &self.volume),
             SettingsRow::new("About CartridgeOS", about_status(ctx), RowValue::None),
             SettingsRow::new("System Update", "Check for signed CartridgeOS releases", RowValue::Chevron),
+            SettingsRow::new("Remote Access", "SSH and file access over your network", RowValue::Chevron),
+            SettingsRow::new("Browser Tools", "Engine status, signed installation and rollback", RowValue::Chevron),
         ]
     }
 
@@ -563,7 +575,7 @@ impl SettingsScreen {
             })
         } else {
             match self.selected_row {
-                ROW_WIFI | ROW_SYSTEM_UPDATE => Some("Open"),
+                ROW_WIFI | ROW_SYSTEM_UPDATE | ROW_REMOTE_ACCESS | ROW_BROWSER_TOOLS => Some("Open"),
                 2 | ROW_THEME => Some("Next"),
                 0 | ROW_ABOUT => None,
                 _ => Some("Toggle"),
@@ -695,6 +707,27 @@ mod tests {
         assert_eq!(screen.rows(&ctx)[ROW_SYSTEM_UPDATE].title, "System Update");
         assert!(matches!(screen.handle_input(&[InputEvent { button: Button::A, action: InputAction::Press }], &mut ctx),
             ScreenAction::Push(ScreenId::SystemUpdate)));
+        std::fs::remove_dir_all(ctx.storage.data_dir.parent().unwrap().parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn browser_tools_has_a_native_settings_entry_without_moving_existing_rows() {
+        assert_eq!(ROW_REMOTE_ACCESS, 12);
+        assert_eq!(ROW_BROWSER_TOOLS, 13);
+        let mut ctx = super::super::test_context();
+        let mut screen = SettingsScreen::new();
+        screen.selected_row = ROW_BROWSER_TOOLS;
+        assert_eq!(screen.rows(&ctx)[ROW_BROWSER_TOOLS].title, "Browser Tools");
+        assert!(matches!(
+            screen.handle_input(
+                &[InputEvent {
+                    button: Button::A,
+                    action: InputAction::Press
+                }],
+                &mut ctx
+            ),
+            ScreenAction::Push(ScreenId::BrowserTools)
+        ));
         std::fs::remove_dir_all(ctx.storage.data_dir.parent().unwrap().parent().unwrap()).unwrap();
     }
 

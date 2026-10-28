@@ -248,6 +248,8 @@ fn main() -> Result<(), String> {
             "store_updates" => snap_navigation(&assets, &dir, s, vec![Button::Y, Button::R1, Button::R1])?,
             "settings_about" => snap_navigation(&assets, &dir, s, std::iter::once(Button::Start).chain(std::iter::repeat_n(Button::DpadDown, 10)).collect())?,
             "system_update" => snap_navigation(&assets, &dir, s, std::iter::once(Button::Start).chain(std::iter::repeat_n(Button::DpadDown, 11)).chain([Button::A]).collect())?,
+            "remote_access" => snap_navigation(&assets, &dir, s, std::iter::once(Button::Start).chain(std::iter::repeat_n(Button::DpadDown, 12)).chain([Button::A]).collect())?,
+            "remote_access_enable" => snap_navigation(&assets, &dir, s, std::iter::once(Button::Start).chain(std::iter::repeat_n(Button::DpadDown, 12)).chain([Button::A, Button::A]).collect())?,
             "wifi" => snap_navigation(&assets, &dir, s, std::iter::once(Button::Start).chain(std::iter::repeat_n(Button::DpadDown, 7)).chain([Button::A]).collect())?,
             other => eprintln!("unknown scenario: {other}"),
         }

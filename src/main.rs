@@ -6,6 +6,13 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     match args.get(1).map(|s| s.as_str()) {
+        Some("browser-engine") => {
+            // Forward every trailing argument unchanged, including hyphenated flags.
+            if let Err(error) = cartridge_net::browser_component_cli::run(args.iter().skip(2).cloned()) {
+                eprintln!("Browser engine: {error}");
+                std::process::exit(1);
+            }
+        }
         Some("system-verify") => {
             let result = if args.len() == 4 && args[2] == "--path" {
                 cartridge_net::system_update::verify_release_dir(std::path::Path::new(&args[3]))
@@ -20,9 +27,9 @@ fn main() {
         Some("run") => {
             let app_dir = parse_run_args(&args);
             let assets_dir = find_assets_dir();
-            log::info!("Running Lua app from: {}", app_dir.display());
+            log::info!("Running app from: {}", app_dir.display());
 
-            if let Err(e) = cartridge_lua::run_lua_app(&app_dir, &assets_dir) {
+            if let Err(e) = run_app(&app_dir, &assets_dir) {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }
@@ -76,7 +83,7 @@ fn main() {
                     }
                     Ok(cartridge_launcher::LauncherResult::LaunchApp(app_dir)) => {
                         log::info!("Launching app from: {}", app_dir.display());
-                        if let Err(e) = cartridge_lua::run_lua_app(&app_dir, &assets_dir) {
+                        if let Err(e) = run_app(&app_dir, &assets_dir) {
                             log::error!("App error: {e}");
                             eprintln!("App error: {e}");
                             // Write crash log next to the binary for debugging
@@ -133,8 +140,9 @@ fn print_usage() {
     eprintln!();
     eprintln!("Commands:");
     eprintln!("  (default)          Launch the CartridgeOS home screen");
-    eprintln!("  run --path <dir>   Run a Lua cartridge app");
+    eprintln!("  run --path <dir>   Run a cartridge app");
     eprintln!("  demo               Run the built-in demo screen");
+    eprintln!("  browser-engine ... Inspect, verify, adopt, install or roll back the browser engine");
     eprintln!("  --version          Print the version and exit");
     eprintln!("  help               Show this help message");
 }
@@ -142,4 +150,17 @@ fn print_usage() {
 /// Honors CARTRIDGE_ASSETS, then probes cwd / exe dir (see cartridge_core::paths).
 fn find_assets_dir() -> PathBuf {
     cartridge_core::paths::assets_dir()
+}
+
+/// Route only named built-in runtimes after manifest version/identity checks.
+/// No app manifest can choose a native executable or inject command arguments.
+fn run_app(app_dir: &std::path::Path, assets: &std::path::Path) -> Result<(), String> {
+    use cartridge_lua::manifest::{AppRuntime, CartridgeManifest};
+    let manifest = CartridgeManifest::load(app_dir)?;
+    match manifest.runtime {
+        AppRuntime::Lua => cartridge_lua::run_lua_app(app_dir, assets),
+        AppRuntime::Browser => {
+            cartridge_browser::ui::run(assets, Default::default())
+        }
+    }
 }

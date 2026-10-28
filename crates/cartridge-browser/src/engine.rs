@@ -1,0 +1,1319 @@
+//! Chromium DevTools transport over two inherited pipes. No listening socket,
+//! browser extensions, page privileged bridge, shell invocation or sandbox bypass.
+use crate::model::{VIEW_HEIGHT, VIEW_WIDTH, ZOOM_LEVELS, address};
+use base64::Engine as _;
+use serde_json::{Value, json};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::fs::File;
+use std::io::{Cursor, Read, Write};
+use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::unix::fs::PermissionsExt;
+use std::os::unix::process::CommandExt;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+    mpsc,
+};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
+
+mod native;
+use native::{Download, Tab, Upload};
+pub use native::{
+    DownloadInfo, FileChoice, JavascriptDialog, MAX_FILE_BYTES, MAX_TABS, Permission,
+    PermissionPrompt, TabInfo, UploadPrompt,
+};
+
+const MAX_MESSAGE: usize = 8 * 1024 * 1024;
+const FRAME_QUALITY: u8 = 90;
+#[derive(Clone, Debug, Default)]
+pub struct PageInfo {
+    pub url: String,
+    pub title: String,
+    pub loading: bool,
+    pub error: Option<String>,
+    pub editable: bool,
+    pub password: bool,
+    pub dialog: Option<String>,
+    pub javascript_dialog: Option<JavascriptDialog>,
+    pub permission: Option<PermissionPrompt>,
+    pub upload: Option<UploadPrompt>,
+    pub download: Option<DownloadInfo>,
+    pub notice: Option<String>,
+    pub tabs: Vec<TabInfo>,
+    pub engine_version: String,
+    pub http_status: Option<u16>,
+    pub focus_serial: u64,
+}
+pub struct Frame {
+    pub width: u32,
+    pub height: u32,
+    pub rgb: Vec<u8>,
+}
+#[derive(Default)]
+pub struct Snapshot {
+    pub info: PageInfo,
+    pub frame: Option<Frame>,
+    pub revision: u64,
+    pub frame_count: u64,
+}
+pub type Shared = Arc<Mutex<Snapshot>>;
+#[derive(Clone, Debug)]
+pub enum Action {
+    Navigate(String),
+    Back,
+    Forward,
+    Reload,
+    Stop,
+    Pointer(f64, f64),
+    Button(f64, f64, bool),
+    Click(f64, f64),
+    Scroll(f64, f64, f64, f64),
+    Key(String, bool),
+    Text(String),
+    ReplaceText(String),
+    FocusInfo(u64),
+    Zoom(f64),
+    Visible(bool),
+    FrameRate(u8),
+    Dialog(bool),
+    Prompt { id: u64, text: Option<String> },
+    RequestPermission(Permission),
+    PermissionDecision { id: u64, allow: bool },
+    RevokePermissions,
+    Upload { id: u64, names: Vec<String> },
+    Download { id: u64, allow: bool },
+    DismissNotice,
+    NewTab,
+    SwitchTab(String),
+    CloseTab(String),
+    Quit,
+}
+
+// Preserve every click/key boundary, but do not replay stale continuous motion
+// after a heavy page stalls the renderer. A batch never exceeds the channel cap.
+fn queue_action(batch: &mut Vec<Action>, action: Action) {
+    match (batch.last_mut(), action) {
+        (Some(Action::Pointer(px, py)), Action::Pointer(x, y)) => {
+            *px = x;
+            *py = y;
+        }
+        (Some(Action::Scroll(px, py, pdx, pdy)), Action::Scroll(x, y, dx, dy)) => {
+            *px = x;
+            *py = y;
+            *pdx = (*pdx + dx).clamp(-2048.0, 2048.0);
+            *pdy = (*pdy + dy).clamp(-2048.0, 2048.0);
+        }
+        (_, action) => batch.push(action),
+    }
+}
+
+pub fn discover(override_path: Option<PathBuf>) -> Result<PathBuf, String> {
+    if let Some(path) =
+        override_path.or_else(|| std::env::var_os("CARTRIDGE_BROWSER_ENGINE").map(PathBuf::from))
+    {
+        return path
+            .is_file()
+            .then_some(path)
+            .ok_or("The configured browser engine executable is missing.".into());
+    }
+    let mut candidates =
+        vec![cartridge_core::paths::cartridges_dir().join("components/browser-engine/chromium")];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("browser-engine/chromium"));
+        }
+    }
+    candidates.extend(
+        [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/usr/bin/google-chrome",
+            "/opt/google/chrome/chrome",
+        ]
+        .into_iter()
+        .map(PathBuf::from),
+    );
+    candidates.into_iter().find(|p|p.is_file()).ok_or("No local Chromium engine found. Install the browser engine bundle or set CARTRIDGE_BROWSER_ENGINE.".into())
+}
+
+// Only the prepared private wrapper remaps its profile to /profile. Native
+// Linux Chrome (including CI and desktop simulators) retains the host path.
+fn engine_profile(executable: &Path, profile: &Path) -> PathBuf {
+    let private_wrapper = cfg!(target_os = "linux") && executable.canonicalize().ok()
+        .and_then(|p| p.parent().map(Path::to_owned))
+        .is_some_and(|base| base.join(".cartridge-browser-build").is_file()
+            && base.join("rootfs/usr/lib/chromium/chromium").is_file());
+    if private_wrapper { PathBuf::from("/profile") } else { profile.to_owned() }
+}
+
+fn pipe() -> std::io::Result<(File, File)> {
+    let mut raw = [-1; 2];
+    if unsafe { libc::pipe(raw.as_mut_ptr()) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    // Move every pipe descriptor out of 3/4 before dup2 in the child. This also
+    // avoids collisions when the parent initially had those descriptors free.
+    let mut files = Vec::new();
+    let originals = unsafe { [File::from_raw_fd(raw[0]), File::from_raw_fd(raw[1])] };
+    for original in originals {
+        let duplicate = unsafe { libc::fcntl(original.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 10) };
+        if duplicate < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        files.push(unsafe { File::from_raw_fd(duplicate) });
+    }
+    let write = files.pop().unwrap();
+    let read = files.pop().unwrap();
+    Ok((read, write))
+}
+
+struct PendingPopup {
+    started: Instant,
+    owner: String,
+    navigation: u64,
+    url: Option<String>,
+    barrier: Option<u64>,
+}
+
+pub struct Session {
+    child: Child,
+    reader: File,
+    writer: File,
+    bytes: Vec<u8>,
+    next_id: u64,
+    session: Option<String>,
+    target: String,
+    main_frame: String,
+    popups: HashMap<String, PendingPopup>,
+    navigation: u64,
+    closing_popups: HashSet<String>,
+    pub shared: Shared,
+    stopped: Arc<AtomicBool>,
+    info_dirty: bool,
+    mouse_down: bool,
+    zoom: f64,
+    frame_acks: VecDeque<u64>,
+    next_ack: Instant,
+    frame_interval: Duration,
+    pending_navigation: Option<(u64, Instant)>,
+    pending_info: Option<(u64, u64)>,
+    info_generation: u64,
+    focus_serial: u64,
+    native_serial: u64,
+    files_root: PathBuf,
+    profile_in_engine: PathBuf,
+    frame_origins: HashMap<String, String>,
+    upload: Option<Upload>,
+    upload_staging: Vec<(String, PathBuf)>,
+    download: Option<Download>,
+    canceled_streams: HashSet<u64>,
+    tabs: Vec<Tab>,
+    creating_tab: bool,
+    visible: bool,
+    #[cfg(target_os = "linux")]
+    memory_check: Instant,
+    #[cfg(target_os = "linux")]
+    memory_low_samples: u8,
+    memory_pressure: bool,
+}
+impl Session {
+    pub fn start(executable: &Path, profile: &Path, shared: Shared) -> Result<Self, String> {
+        Self::start_controlled(
+            executable,
+            profile,
+            shared,
+            Arc::new(AtomicBool::new(false)),
+        )
+    }
+    fn start_controlled(
+        executable: &Path,
+        profile: &Path,
+        shared: Shared,
+        stopped: Arc<AtomicBool>,
+    ) -> Result<Self, String> {
+        #[cfg(target_os = "linux")]
+        if unsafe { libc::geteuid() } == 0 {
+            return Err("Run the browser as the regular Cartridge user; Chromium's sandbox must remain enabled.".into());
+        }
+        std::fs::create_dir_all(profile).map_err(|e| e.to_string())?;
+        std::fs::set_permissions(profile, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| e.to_string())?;
+        let log = profile.join("engine.log");
+        if log.metadata().is_ok_and(|s| s.len() > 1024 * 1024) {
+            let _ = std::fs::rename(&log, profile.join("engine.previous.log"));
+        }
+        let errors = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log)
+            .map_err(|e| e.to_string())?;
+        let (child_read, writer) = pipe().map_err(|e| e.to_string())?;
+        let (reader, child_write) = pipe().map_err(|e| e.to_string())?;
+        let read_fd = child_read.as_raw_fd();
+        let write_fd = child_write.as_raw_fd();
+        let mut command = Command::new(executable);
+        // Do not pass SSH agent sockets, API keys or unrelated application
+        // environment to the engine. macOS frameworks require the real HOME:
+        // substituting a profile path makes Chrome's certificate/network startup
+        // stall. --user-data-dir still isolates all browsing data. The Linux
+        // component instead mounts only its private root and profile.
+        #[cfg(target_os = "macos")]
+        let engine_home =
+            std::env::var_os("HOME").unwrap_or_else(|| profile.as_os_str().to_owned());
+        #[cfg(not(target_os = "macos"))]
+        let engine_home = profile.as_os_str();
+        command
+            .env_clear()
+            .env("HOME", engine_home)
+            .env("PATH", "/usr/bin:/bin:/opt/homebrew/bin")
+            .env("LANG", "C.UTF-8");
+        for name in ["TMPDIR", "TZ"] {
+            if let Some(value) = std::env::var_os(name) {
+                command.env(name, value);
+            }
+        }
+        // Linux uses the normal browser with Ozone's offscreen software display.
+        // Keep Chromium's default browser identity and the existing CDP pipe;
+        // no host display server is needed. macOS retains its headless mode.
+        #[cfg(target_os = "linux")]
+        command.arg("--ozone-platform=headless");
+        #[cfg(not(target_os = "linux"))]
+        command.arg("--headless=new");
+        // The 1 GiB handheld decodes video in software. Several full-HD loops
+        // otherwise retain large per-thread frame pools while competing with
+        // page input. Keep full page rendering and bound decoder parallelism
+        // and compositor retention for the ARM device build.
+        #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+        command.args(["--video-threads=1", "--force-gpu-mem-available-mb=32"]);
+        command
+            .args([
+                "--remote-debugging-pipe",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-extensions",
+                "--disable-sync",
+                "--disable-gpu",
+                // Chromium147 CanLaunchOnDeviceModelService() ORs these two
+                // features. Disable only local-model launch, retaining general
+                // security/network component updates and the existing GPU path.
+                // https://github.com/chromium/chromium/blob/147.0.7727.0/components/optimization_guide/core/optimization_guide_features.cc
+                "--disable-features=OptimizationGuideOnDeviceModel,LogOnDeviceMetricsOnStartup",
+                "--disk-cache-size=33554432",
+                "--media-cache-size=8388608",
+            ])
+            .arg(format!("--user-data-dir={}", profile.display()))
+            .arg(format!("--window-size={VIEW_WIDTH},{VIEW_HEIGHT}"))
+            .arg("about:blank")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(errors);
+        unsafe {
+            command.pre_exec(move || {
+                if libc::setpgid(0, 0) != 0
+                    || libc::dup2(read_fd, 3) < 0
+                    || libc::dup2(write_fd, 4) < 0
+                {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let child = command
+            .spawn()
+            .map_err(|e| format!("Cannot start browser engine: {e}"))?;
+        drop(child_read);
+        drop(child_write);
+        let mut s = Self {
+            child,
+            reader,
+            writer,
+            bytes: Vec::new(),
+            next_id: 0,
+            session: None,
+            target: String::new(),
+            main_frame: String::new(),
+            popups: HashMap::new(),
+            navigation: 0,
+            closing_popups: HashSet::new(),
+            shared,
+            stopped,
+            info_dirty: false,
+            mouse_down: false,
+            zoom: 1.0,
+            frame_acks: VecDeque::new(),
+            next_ack: Instant::now(),
+            frame_interval: Duration::from_millis(40),
+            pending_navigation: None,
+            pending_info: None,
+            info_generation: 0,
+            focus_serial: 0,
+            native_serial: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+            files_root: profile.join("files"),
+            profile_in_engine: engine_profile(executable, profile),
+            frame_origins: HashMap::new(),
+            upload: None,
+            upload_staging: Vec::new(),
+            download: None,
+            canceled_streams: HashSet::new(),
+            tabs: Vec::new(),
+            creating_tab: false,
+            visible: true,
+            #[cfg(target_os = "linux")]
+            memory_check: Instant::now() - Duration::from_secs(1),
+            #[cfg(target_os = "linux")]
+            memory_low_samples: 0,
+            memory_pressure: false,
+        };
+        let version = s.call("Browser.getVersion", json!({}))?;
+        s.shared.lock().unwrap().info.engine_version =
+            version["product"].as_str().unwrap_or("Chromium").into();
+        let targets = s.call("Target.getTargets", json!({}))?;
+        let target = targets["targetInfos"]
+            .as_array()
+            .and_then(|list| list.iter().find(|t| t["type"] == "page"))
+            .map(|t| t["targetId"].clone());
+        let target = match target {
+            Some(t) => t,
+            None => {
+                s.call("Target.createTarget", json!({"url":"about:blank"}))?["targetId"].clone()
+            }
+        };
+        let attached = s.call(
+            "Target.attachToTarget",
+            json!({"targetId":target,"flatten":true}),
+        )?;
+        s.target = target.as_str().ok_or("Missing page target")?.into();
+        s.session = Some(
+            attached["sessionId"]
+                .as_str()
+                .ok_or("Engine did not attach a page")?
+                .into(),
+        );
+        s.call("Target.setDiscoverTargets", json!({"discover":true}))?;
+        s.call("Page.enable", json!({}))?;
+        let tree = s.call("Page.getFrameTree", json!({}))?;
+        s.main_frame = tree["frameTree"]["frame"]["id"]
+            .as_str()
+            .ok_or("Missing main page frame")?
+            .into();
+        s.call("Runtime.enable", json!({}))?;
+        s.call(
+            "Emulation.setDeviceMetricsOverride",
+            json!({"width":VIEW_WIDTH,"height":VIEW_HEIGHT,"deviceScaleFactor":1,"mobile":false}),
+        )?;
+        s.call(
+            "Emulation.setEmulatedMedia",
+            json!({"features":[{"name":"prefers-reduced-motion","value":"reduce"}]}),
+        )?;
+        s.init_native()?;
+        // Keep Chromium disk downloads denied; native confirmed streams are bounded.
+        s.call(
+            "Browser.setDownloadBehavior",
+            json!({"behavior":"deny","eventsEnabled":true}),
+        )?;
+        s.call("Page.startScreencast",json!({"format":"jpeg","quality":FRAME_QUALITY,"maxWidth":VIEW_WIDTH,"maxHeight":VIEW_HEIGHT,"everyNthFrame":1}))?;
+        Ok(s)
+    }
+    fn send(&mut self, method: &str, params: Value) -> Result<u64, String> {
+        self.send_on(method, params, self.session.clone().as_deref())
+    }
+    fn send_on(
+        &mut self,
+        method: &str,
+        params: Value,
+        session: Option<&str>,
+    ) -> Result<u64, String> {
+        self.next_id += 1;
+        let mut message = json!({"id":self.next_id,"method":method,"params":params});
+        if !(method.starts_with("Browser.") || method.starts_with("Target.")) {
+            if let Some(session) = session {
+                message["sessionId"] = json!(session);
+            }
+        }
+        let bytes = serde_json::to_vec(&message).map_err(|e| e.to_string())?;
+        self.writer
+            .write_all(&bytes)
+            .and_then(|_| self.writer.write_all(&[0]))
+            .map_err(|e| format!("Browser pipe closed: {e}"))?;
+        Ok(self.next_id)
+    }
+    pub fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
+        let id = self.send(method, params)?;
+        self.wait_reply(id, method)
+    }
+    /// Host-side CDP inspection/control of a known tab; never exposed to pages.
+    pub fn call_tab(&mut self, target: &str, method: &str, params: Value) -> Result<Value, String> {
+        let session = self
+            .tabs
+            .iter()
+            .find(|t| t.target == target)
+            .ok_or("Unknown tab")?
+            .session
+            .clone();
+        let id = self.send_on(method, params, Some(&session))?;
+        self.wait_reply(id, method)
+    }
+    fn wait_reply(&mut self, id: u64, method: &str) -> Result<Value, String> {
+        log::debug!("CDP call {id}: {method}");
+        let deadline = Instant::now() + Duration::from_secs(12);
+        while Instant::now() < deadline && !self.stopped.load(Ordering::Relaxed) {
+            if let Some(v) = self.receive(Duration::from_millis(50))? {
+                if v["id"].as_u64() != Some(id)
+                    && {
+                        let s = self.shared.lock().unwrap();
+                        s.info.dialog.is_some()
+                            || s.info.upload.is_some()
+                            || s.info.download.as_ref().is_some_and(|d| d.pending)
+                    }
+                    && (method.starts_with("Input.") || method == "Page.navigate")
+                {
+                    // A page dialog may defer the input reply. Return control to
+                    // the UI so it can send the user's dialog decision.
+                    return Ok(json!({}));
+                }
+                if v["id"].as_u64() == Some(id) {
+                    return if v.get("error").is_some() {
+                        Err(format!("{method}: {}", v["error"]["message"]))
+                    } else {
+                        Ok(v["result"].clone())
+                    };
+                }
+            }
+        }
+        Err(format!(
+            "Browser did not answer {method}; check engine.log (sandbox and library requirements)."
+        ))
+    }
+    pub fn evaluate(&mut self, expression: &str) -> Result<Value, String> {
+        let result = self.call(
+            "Runtime.evaluate",
+            json!({"expression":expression,"returnByValue":true,"awaitPromise":true}),
+        )?;
+        if result.get("exceptionDetails").is_some() {
+            return Err(format!(
+                "Page script failed: {}",
+                result["exceptionDetails"]
+            ));
+        }
+        Ok(result["result"]["value"].clone())
+    }
+    pub fn pump(&mut self, timeout: Duration) -> Result<(), String> {
+        self.receive(timeout)?;
+        self.pump_native()?;
+        if self
+            .pending_navigation
+            .is_some_and(|(_, start)| start.elapsed() > Duration::from_secs(45))
+        {
+            self.pending_navigation = None;
+            self.send("Page.stopLoading", json!({}))?;
+            let mut state = self.shared.lock().unwrap();
+            state.info.loading = false;
+            state.info.error = Some("This page took too long to connect. Reload to retry.".into());
+            state.revision += 1;
+        }
+        let expired = self
+            .popups
+            .iter()
+            .filter(|(_, p)| p.started.elapsed() > Duration::from_secs(1)
+                || p.owner != self.target || p.navigation != self.navigation)
+            .map(|(id, _)| id.clone())
+            .collect::<Vec<_>>();
+        for id in expired {
+            self.popups.remove(&id);
+            self.closing_popups.insert(id.clone());
+            self.send("Target.closeTarget", json!({"targetId":id}))?;
+        }
+        // A renderer round trip after the input action lets its default
+        // navigation request arrive before we promote a new-window destination.
+        // This is a protocol boundary, not a popup grace-period timer.
+        if let Some(id) = self.popups.iter()
+            .find(|(_, p)| p.url.is_some() && p.barrier.is_none())
+            .map(|(id, _)| id.clone())
+        {
+            let barrier = self.send("Runtime.evaluate", json!({"expression":"void 0"}))?;
+            self.popups.get_mut(&id).unwrap().barrier = Some(barrier);
+        }
+        if self.info_dirty
+            && self.pending_info.is_none()
+            && self.shared.lock().unwrap().info.dialog.is_none()
+        {
+            self.info_dirty = false;
+            // A provisional navigation can defer Runtime.evaluate until HTTP
+            // responds. Never wait synchronously for metadata in the input loop.
+            let id=self.send("Runtime.evaluate",json!({"expression":"(()=>{const e=document.activeElement;return {title:document.title,status:performance.getEntriesByType('navigation')[0]?.responseStatus,password:e?.type==='password',editable:!!(e&&!e.disabled&&!e.readOnly&&(e.isContentEditable||e.tagName==='TEXTAREA'||(e.tagName==='INPUT'&&['text','search','url','tel','email','password','number'].includes(e.type))))}})()", "returnByValue":true}))?;
+            self.pending_info = Some((id, self.info_generation));
+        }
+        Ok(())
+    }
+    fn receive(&mut self, timeout: Duration) -> Result<Option<Value>, String> {
+        // Only the first poll may wait. Continue with ready chunks using one
+        // stack frame, retaining the partial message if the pipe becomes idle.
+        let mut wait = timeout;
+        let mut checked = 0;
+        loop {
+            self.check_memory()?;
+            if self.stopped.load(Ordering::Relaxed) {
+                return Ok(None);
+            }
+            // Backpressure animated pages to the frontend's active/idle frame budget.
+            // Input replies continue while a frame acknowledgement waits.
+            if Instant::now() >= self.next_ack {
+                if let Some(id) = self.frame_acks.pop_front() {
+                    self.send("Page.screencastFrameAck", json!({"sessionId":id}))?;
+                    self.next_ack = Instant::now() + self.frame_interval;
+                }
+            }
+            // Earlier bytes were already checked in this call; a large message
+            // must not repeatedly scan its entire accumulated prefix.
+            if let Some(relative) = self.bytes[checked..].iter().position(|c| *c == 0) {
+                let index = checked + relative;
+                let message = self.bytes.drain(..=index).collect::<Vec<_>>();
+                let value: Value = serde_json::from_slice(&message[..index])
+                    .map_err(|e| format!("Invalid browser protocol: {e}"))?;
+                log::trace!(
+                    "CDP received id={:?} method={:?}",
+                    value["id"],
+                    value["method"]
+                );
+                self.event(&value)?;
+                return Ok(Some(value));
+            }
+            checked = self.bytes.len();
+            let mut fd = libc::pollfd {
+                fd: self.reader.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            let ready = unsafe { libc::poll(&mut fd, 1, wait.as_millis().min(1000) as i32) };
+            if ready < 0 {
+                return Err(std::io::Error::last_os_error().to_string());
+            }
+            if ready == 0 {
+                return Ok(None);
+            }
+            let mut chunk = [0u8; 32768];
+            let count = self.reader.read(&mut chunk).map_err(|e| e.to_string())?;
+            if count == 0 {
+                return Err("Browser engine stopped. See the private profile's engine.log.".into());
+            }
+            if self.bytes.len() + count > MAX_MESSAGE {
+                return Err("Browser message exceeded the bounded transport limit.".into());
+            }
+            self.bytes.extend_from_slice(&chunk[..count]);
+            wait = Duration::ZERO;
+        }
+    }
+    fn event(&mut self, value: &Value) -> Result<(), String> {
+        if value.get("method").is_none() {
+            if let Some(id) = self.popups.iter()
+                .find(|(_, p)| p.barrier.is_some() && p.barrier == value["id"].as_u64())
+                .map(|(id, _)| id.clone())
+            {
+                let popup = self.popups.remove(&id).unwrap();
+                if popup.owner == self.target && popup.navigation == self.navigation
+                    && value.get("error").is_none()
+                {
+                    if let Some(url) = popup.url {
+                        self.send("Page.navigate", json!({"url":url}))?;
+                    }
+                }
+                self.send("Target.closeTarget", json!({"targetId":id}))?;
+                self.closing_popups.insert(id);
+            }
+            if self.native_event(value)? {
+                return Ok(());
+            }
+            if self
+                .pending_info
+                .is_some_and(|(id, _)| value["id"].as_u64() == Some(id))
+            {
+                let (_, generation) = self.pending_info.take().unwrap();
+                let info = &value["result"]["result"]["value"];
+                if generation == self.info_generation && info.is_object() {
+                    let mut state = self.shared.lock().unwrap();
+                    state.info.title = info["title"]
+                        .as_str()
+                        .unwrap_or("")
+                        .chars()
+                        .take(512)
+                        .collect();
+                    state.info.editable = info["editable"].as_bool().unwrap_or(false);
+                    state.info.password = info["password"].as_bool().unwrap_or(false);
+                    state.info.focus_serial = self.focus_serial;
+                    state.info.http_status =
+                        info["status"].as_u64().and_then(|n| u16::try_from(n).ok());
+                    state.revision += 1;
+                    drop(state);
+                    self.publish_tabs();
+                }
+            }
+            if self
+                .pending_navigation
+                .as_ref()
+                .is_some_and(|(id, _)| value["id"].as_u64() == Some(*id))
+            {
+                self.pending_navigation = None;
+                if let Some(error) = value["result"]["errorText"]
+                    .as_str()
+                    .or_else(|| value["error"]["message"].as_str())
+                {
+                    let mut state = self.shared.lock().unwrap();
+                    state.info.loading = false;
+                    state.info.error = Some(format!("Page load failed: {error}"));
+                    state.revision += 1;
+                }
+            }
+            return Ok(());
+        }
+        let method = value["method"].as_str().unwrap_or("");
+        if matches!(
+            method,
+            "Browser.downloadWillBegin" | "Page.downloadWillBegin"
+        ) {
+            self.notice("This download type is blocked. Use an HTTP attachment link; generated blob/data downloads are unsupported.");
+            return Ok(());
+        }
+        if method == "Target.targetDestroyed" {
+            if let Some(id) = value["params"]["targetId"].as_str() {
+                self.popups.remove(id);
+                self.closing_popups.remove(id);
+                if id == self.target && !self.stopped.load(Ordering::Relaxed) {
+                    return Err(
+                        "The active browser tab closed. Exit Browser and reopen to continue."
+                            .into(),
+                    );
+                }
+                if self.tabs.iter().any(|t| t.target == id) {
+                    self.clear_upload_staging(id);
+                    self.tabs.retain(|t| t.target != id);
+                    self.publish_tabs();
+                }
+            }
+            return Ok(());
+        }
+        if method == "Target.targetCreated" || method == "Target.targetInfoChanged" {
+            let info = &value["params"]["targetInfo"];
+            if info["type"] == "page" {
+                if let Some(id) = info["targetId"].as_str().filter(|id| {
+                    !self.creating_tab
+                        && *id != self.target
+                        && !self.tabs.iter().any(|t| t.target == *id)
+                        && !self.closing_popups.contains(*id)
+                }) {
+                    let id = id.to_string();
+                    if info["openerId"].as_str().is_some_and(|opener| opener != self.target)
+                        || (!self.popups.contains_key(&id) && !self.popups.is_empty())
+                    {
+                        self.send("Target.closeTarget", json!({"targetId":id}))?;
+                        self.closing_popups.insert(id);
+                    } else {
+                        let popup = self.popups.entry(id).or_insert_with(|| PendingPopup {
+                            started: Instant::now(),
+                            owner: self.target.clone(),
+                            navigation: self.navigation,
+                            url: None,
+                            barrier: None,
+                        });
+                        // Record the generation at creation, including about:blank
+                        // popups whose HTTP destination is only reported later.
+                        let url = info["url"].as_str().unwrap_or("");
+                        popup.url = if url.starts_with("http://") || url.starts_with("https://") {
+                            address(url).ok()
+                        } else {
+                            None
+                        };
+                    }
+                }
+            }
+            return Ok(());
+        }
+        if let Some(session) = &self.session {
+            if value["sessionId"].as_str() != Some(session) {
+                // A frozen background page can still finish an in-flight response.
+                // Never leave it paused or present a background prompt.
+                if let Some(background) = value["sessionId"].as_str() {
+                    let reply = match method {
+                        "Page.screencastFrame" => Some((
+                            "Page.screencastFrameAck",
+                            json!({"sessionId":value["params"]["sessionId"]}),
+                        )),
+                        "Fetch.requestPaused" => Some((
+                            "Fetch.failRequest",
+                            json!({"requestId":value["params"]["requestId"],"errorReason":"Aborted"}),
+                        )),
+                        "Page.javascriptDialogOpening" => {
+                            Some(("Page.handleJavaScriptDialog", json!({"accept":false})))
+                        }
+
+                        _ => None,
+                    };
+                    if let Some((method, params)) = reply {
+                        self.send_on(method, params, Some(background))?;
+                    }
+                }
+                return Ok(());
+            }
+        }
+        if self.native_event(value)? {
+            return Ok(());
+        }
+        let p = &value["params"];
+        if method == "Page.frameNavigated" {
+            if let Some(id) = p["frame"]["id"].as_str() {
+                if let Some(origin) =
+                    crate::model::site_key(p["frame"]["url"].as_str().unwrap_or(""))
+                {
+                    if self.frame_origins.len() < 128 {
+                        self.frame_origins.insert(id.into(), origin);
+                    }
+                } else {
+                    self.frame_origins.remove(id);
+                }
+                if self.upload.as_ref().is_some_and(|u| u.frame == id) {
+                    self.upload = None;
+                    self.shared.lock().unwrap().info.upload = None;
+                }
+            }
+        } else if method == "Page.frameDetached" {
+            if let Some(id) = p["frameId"].as_str() {
+                self.frame_origins.remove(id);
+            }
+        }
+        match value["method"].as_str().unwrap_or("") {
+            "Page.frameRequestedNavigation"
+                if p["frameId"].as_str() == Some(&self.main_frame)
+                    && p["disposition"] == "currentTab" =>
+            {
+                self.navigation = self.navigation.wrapping_add(1);
+            }
+            "Page.frameStartedNavigating"
+                if p["frameId"].as_str() == Some(&self.main_frame) =>
+            {
+                self.navigation = self.navigation.wrapping_add(1);
+            }
+            "Page.screencastFrame" => {
+                if let Some(id) = p["sessionId"].as_u64() {
+                    if self.frame_acks.len() >= 4 {
+                        return Err("Browser exceeded its bounded frame window.".into());
+                    }
+                    self.frame_acks.push_back(id);
+                }
+                if let Some(data) = p["data"].as_str().filter(|s| s.len() < 2 * 1024 * 1024) {
+                    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data) {
+                        let mut reader = image::ImageReader::with_format(
+                            Cursor::new(bytes),
+                            image::ImageFormat::Jpeg,
+                        );
+                        let mut limits = image::Limits::default();
+                        limits.max_image_width = Some(VIEW_WIDTH);
+                        limits.max_image_height = Some(VIEW_HEIGHT);
+                        limits.max_alloc = Some(16 * 1024 * 1024);
+                        reader.limits(limits);
+                        if let Ok(decoded) = reader.decode() {
+                            log::trace!(
+                                "Web frame {}x{} at zoom {}",
+                                decoded.width(),
+                                decoded.height(),
+                                self.zoom
+                            );
+                            if decoded.width() == VIEW_WIDTH && decoded.height() == VIEW_HEIGHT {
+                                let mut state = self.shared.lock().unwrap();
+                                state.frame = Some(Frame {
+                                    width: VIEW_WIDTH,
+                                    height: VIEW_HEIGHT,
+                                    rgb: decoded.into_rgb8().into_raw(),
+                                });
+                                state.frame_count += 1;
+                                state.revision += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            "Page.frameStartedLoading" if p["frameId"].as_str() == Some(&self.main_frame) => {
+                let mut s = self.shared.lock().unwrap();
+                s.info.loading = true;
+                s.revision += 1;
+            }
+            "Page.loadEventFired" | "Page.frameStoppedLoading"
+                if p.get("frameId").is_none()
+                    || p["frameId"].as_str() == Some(&self.main_frame) =>
+            {
+                let mut s = self.shared.lock().unwrap();
+                s.info.loading = false;
+                s.revision += 1;
+                self.info_dirty = true;
+            }
+            "Page.navigatedWithinDocument" if p["frameId"].as_str() == Some(&self.main_frame) => {
+                self.navigation = self.navigation.wrapping_add(1);
+                let mut s = self.shared.lock().unwrap();
+                s.info.url = p["url"]
+                    .as_str()
+                    .unwrap_or("")
+                    .chars()
+                    .take(crate::model::MAX_URL)
+                    .collect();
+                s.revision += 1;
+                self.info_dirty = true;
+            }
+            "Page.frameNavigated" if p["frame"].get("parentId").is_none() => {
+                self.navigation = self.navigation.wrapping_add(1);
+                self.send("Browser.resetPermissions", json!({}))?;
+                self.send("Browser.grantPermissions", json!({"permissions":[]}))?;
+                self.clear_upload_staging(&self.target.clone());
+                self.upload = None;
+                {
+                    let mut s = self.shared.lock().unwrap();
+                    s.info.permission = None;
+                    s.info.upload = None;
+                }
+                self.info_generation = self.info_generation.wrapping_add(1);
+                if let Some(id) = p["frame"]["id"].as_str() {
+                    self.main_frame = id.into();
+                }
+                let mut s = self.shared.lock().unwrap();
+                s.info.url = p["frame"]["url"]
+                    .as_str()
+                    .unwrap_or("")
+                    .chars()
+                    .take(crate::model::MAX_URL)
+                    .collect();
+                s.info.error = None;
+                s.revision += 1;
+                self.info_dirty = true;
+            }
+            "Page.javascriptDialogOpening" => {
+                self.native_serial += 1;
+                let dialog = JavascriptDialog {
+                    id: self.native_serial,
+                    origin: crate::model::site_key(p["url"].as_str().unwrap_or(""))
+                        .unwrap_or_else(|| "Opaque / local origin".into()),
+                    kind: p["type"].as_str().unwrap_or("alert").into(),
+                    message: p["message"]
+                        .as_str()
+                        .unwrap_or("Website dialog")
+                        .chars()
+                        .take(800)
+                        .collect(),
+                    default_text: p["defaultPrompt"]
+                        .as_str()
+                        .unwrap_or("")
+                        .chars()
+                        .take(2048)
+                        .collect(),
+                };
+                let mut s = self.shared.lock().unwrap();
+                s.info.dialog = Some(dialog.message.clone());
+                s.info.javascript_dialog = Some(dialog);
+                s.revision += 1;
+            }
+            "Page.javascriptDialogClosed" => {
+                let mut s = self.shared.lock().unwrap();
+                s.info.dialog = None;
+                s.info.javascript_dialog = None;
+                s.revision += 1;
+            }
+            "Inspector.targetCrashed" => {
+                return Err("This page stopped responding. Reopen the browser to retry.".into());
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    pub fn action(&mut self, action: Action) -> Result<(), String> {
+        if matches!(&action, Action::Navigate(_) | Action::Back | Action::Forward | Action::Reload | Action::Stop) {
+            self.navigation = self.navigation.wrapping_add(1);
+        }
+        match action {
+            Action::Navigate(url) => {
+                let url = address(&url)?;
+                self.clear_native_prompts()?;
+                self.info_generation = self.info_generation.wrapping_add(1);
+                {
+                    let mut s = self.shared.lock().unwrap();
+                    s.info.loading = true;
+                    s.info.error = None;
+                    s.info.http_status = None;
+                    s.info.title.clear();
+                    s.info.editable = false;
+                    s.info.password = false;
+                    s.revision += 1;
+                }
+                let id = self.send("Page.navigate", json!({"url":url}))?;
+                self.pending_navigation = Some((id, Instant::now()));
+            }
+            Action::Back | Action::Forward => {
+                let delta = if matches!(action, Action::Back) {
+                    -1
+                } else {
+                    1
+                };
+                let history = self.call("Page.getNavigationHistory", json!({}))?;
+                let index = history["currentIndex"].as_i64().unwrap_or(0) + delta;
+                if let Some(entry) = history["entries"]
+                    .as_array()
+                    .and_then(|e| usize::try_from(index).ok().and_then(|i| e.get(i)))
+                {
+                    self.call(
+                        "Page.navigateToHistoryEntry",
+                        json!({"entryId":entry["id"]}),
+                    )?;
+                }
+            }
+            Action::Reload => {
+                self.call("Page.reload", json!({}))?;
+            }
+            Action::Stop => {
+                self.pending_navigation = None;
+                self.call("Page.stopLoading", json!({}))?;
+                self.shared.lock().unwrap().info.loading = false;
+            }
+            // Positions use the native view's pixels. Chromium applies the
+            // emulated view scale; dividing here a second time misplaces clicks.
+            Action::Pointer(x, y) => {
+                self.call(
+                    "Input.dispatchMouseEvent",
+                    json!({"type":"mouseMoved","x":x,"y":y,"buttons":if self.mouse_down{1}else{0}}),
+                )?;
+            }
+            Action::Button(x, y, down) => {
+                self.mouse_down = down;
+                self.call("Input.dispatchMouseEvent",json!({"type":if down{"mousePressed"}else{"mouseReleased"},"x":x,"y":y,"button":"left","buttons":if down{1}else{0},"clickCount":1}))?;
+                if !down {
+                    self.info_dirty = true;
+                }
+            }
+            Action::Click(x, y) => {
+                for kind in ["mousePressed", "mouseReleased"] {
+                    self.call(
+                        "Input.dispatchMouseEvent",
+                        json!({"type":kind,"x":x,"y":y,"button":"left","clickCount":1}),
+                    )?;
+                }
+                self.info_dirty = true;
+            }
+            Action::Scroll(x, y, dx, dy) => {
+                self.call("Input.dispatchMouseEvent",json!({"type":"mouseWheel","x":x,"y":y,"deltaX":dx/self.zoom,"deltaY":dy/self.zoom}))?;
+            }
+            Action::Key(key, shift) => {
+                let code = match key.as_str() {
+                    "Tab" => 9,
+                    "Enter" => 13,
+                    "Backspace" => 8,
+                    "Escape" => 27,
+                    _ => 0,
+                };
+                for kind in ["keyDown", "keyUp"] {
+                    self.call("Input.dispatchKeyEvent",json!({"type":kind,"key":key,"code":key,"windowsVirtualKeyCode":code,"text":if kind=="keyDown" && key=="Enter" {"\r"}else{""},"unmodifiedText":if kind=="keyDown" && key=="Enter" {"\r"}else{""},"modifiers":if shift {8} else {0}}))?;
+                }
+                self.info_dirty = true;
+            }
+            Action::Text(text) => {
+                if text.len() > 8192 {
+                    return Err("Text entry is too long.".into());
+                }
+                self.call("Input.insertText", json!({"text":text}))?;
+            }
+            Action::ReplaceText(text) => {
+                if text.len() > 8192 {
+                    return Err("Text entry is too long.".into());
+                }
+                // Browser editing command, not a script assignment: native
+                // input/beforeinput handlers keep working and passwords are
+                // never copied from the page into the controller UI.
+                self.call("Input.dispatchKeyEvent",json!({"type":"rawKeyDown","key":"a","code":"KeyA","windowsVirtualKeyCode":65,"commands":["selectAll"]}))?;
+                self.call(
+                    "Input.dispatchKeyEvent",
+                    json!({"type":"keyUp","key":"a","code":"KeyA","windowsVirtualKeyCode":65}),
+                )?;
+                self.call("Input.insertText", json!({"text":text}))?;
+                self.info_dirty = true;
+            }
+            Action::FocusInfo(serial) => {
+                self.focus_serial = serial;
+                self.info_generation = self.info_generation.wrapping_add(1);
+                self.info_dirty = true;
+            }
+            Action::FrameRate(fps) => {
+                self.frame_interval = Duration::from_secs_f64(1.0 / fps.clamp(1, 30) as f64);
+            }
+            Action::Visible(visible) => {
+                self.visible = visible;
+                self.frame_acks.clear();
+                if visible {
+                    self.call("Page.startScreencast",json!({"format":"jpeg","quality":FRAME_QUALITY,"maxWidth":VIEW_WIDTH,"maxHeight":VIEW_HEIGHT,"everyNthFrame":1}))?;
+                } else {
+                    self.call("Page.stopScreencast", json!({}))?;
+                }
+            }
+            Action::Zoom(zoom) => {
+                if !zoom.is_finite() {
+                    return Err("Invalid zoom".into());
+                }
+                let percent = ZOOM_LEVELS
+                    .iter()
+                    .min_by(|a, b| {
+                        (f64::from(**a) / 100.0 - zoom)
+                            .abs()
+                            .total_cmp(&(f64::from(**b) / 100.0 - zoom).abs())
+                    })
+                    .unwrap();
+                self.zoom = f64::from(*percent) / 100.0;
+                // Keep the compositor at native resolution while reflowing the
+                // layout. Otherwise screencast shrinks to CSS dimensions and
+                // the UI either freezes or has to upscale blurry text.
+                self.call("Emulation.setDeviceMetricsOverride",json!({"width":(VIEW_WIDTH as f64/self.zoom).round() as u32,"height":(VIEW_HEIGHT as f64/self.zoom).round() as u32,"deviceScaleFactor":self.zoom,"mobile":false,"scale":self.zoom,"dontSetVisibleSize":true}))?;
+                self.call(
+                    "Emulation.setVisibleSize",
+                    json!({"width":VIEW_WIDTH,"height":VIEW_HEIGHT}),
+                )?;
+            }
+            Action::Dialog(accept) => {
+                self.call("Page.handleJavaScriptDialog", json!({"accept":accept}))?;
+                let mut s = self.shared.lock().unwrap();
+                s.info.dialog = None;
+                s.info.javascript_dialog = None;
+                s.revision += 1;
+            }
+            Action::Prompt { id, text } => {
+                let prompt = self.shared.lock().unwrap().info.javascript_dialog.clone();
+                if prompt.is_some_and(|p| p.id == id) {
+                    if text.as_ref().is_some_and(|t| t.len() > 8192) {
+                        return Err("Prompt text is too long.".into());
+                    }
+                    self.call(
+                        "Page.handleJavaScriptDialog",
+                        json!({"accept":text.is_some(),"promptText":text.unwrap_or_default()}),
+                    )?;
+                    let mut s = self.shared.lock().unwrap();
+                    s.info.dialog = None;
+                    s.info.javascript_dialog = None;
+                    s.revision += 1;
+                }
+            }
+            Action::RequestPermission(permission) => self.request_permission(permission)?,
+            Action::PermissionDecision { id, allow } => self.permission_decision(id, allow)?,
+            Action::RevokePermissions => {
+                self.block_permissions()?;
+                self.notice("All site permissions blocked.");
+            }
+            Action::Upload { id, names } => self.upload_decision(id, names)?,
+            Action::Download { id, allow } => self.download_decision(id, allow)?,
+            Action::DismissNotice => {
+                let mut s = self.shared.lock().unwrap();
+                s.info.notice = None;
+                s.info.download = None;
+                s.revision += 1;
+            }
+            Action::NewTab => self.new_tab()?,
+            Action::SwitchTab(id) => self.switch_tab(&id)?,
+            Action::CloseTab(id) => self.close_tab(&id)?,
+            Action::Quit => {
+                self.stopped.store(true, Ordering::Relaxed);
+            }
+        }
+        Ok(())
+    }
+}
+impl Drop for Session {
+    fn drop(&mut self) {
+        let download_id = self
+            .shared
+            .lock()
+            .unwrap()
+            .info
+            .download
+            .as_ref()
+            .map_or(0, |d| d.id);
+        let _ = self.action(Action::Download {
+            id: download_id,
+            allow: false,
+        });
+        for (_, path) in self.upload_staging.drain(..) {
+            let _ = std::fs::remove_dir_all(path);
+        }
+        let _ = self.send("Browser.close", json!({}));
+        let deadline = Instant::now()
+            + if self.memory_pressure {
+                Duration::from_millis(100)
+            } else {
+                Duration::from_secs(5)
+            };
+        while Instant::now() < deadline {
+            if self.child.try_wait().ok().flatten().is_some() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        unsafe {
+            libc::kill(-(self.child.id() as i32), libc::SIGTERM);
+        }
+        thread::sleep(Duration::from_millis(100));
+        if self.child.try_wait().ok().flatten().is_none() {
+            unsafe {
+                libc::kill(-(self.child.id() as i32), libc::SIGKILL);
+            }
+            let _ = self.child.wait();
+        }
+    }
+}
+
+pub struct BrowserEngine {
+    pub shared: Shared,
+    commands: mpsc::SyncSender<Action>,
+    stopped: Arc<AtomicBool>,
+    worker: Option<JoinHandle<()>>,
+}
+impl BrowserEngine {
+    pub fn unavailable(message: String) -> Self {
+        let (commands, receiver) = mpsc::sync_channel(1);
+        drop(receiver);
+        let shared = Shared::default();
+        {
+            let mut state = shared.lock().unwrap();
+            state.info.error = Some(message);
+            state.revision = 1;
+        }
+        Self {
+            shared,
+            commands,
+            stopped: Arc::new(AtomicBool::new(true)),
+            worker: None,
+        }
+    }
+    pub fn start(executable: PathBuf, profile: PathBuf, initial: Option<String>) -> Self {
+        let shared = Shared::default();
+        let state = shared.clone();
+        let (tx, rx) = mpsc::sync_channel(64);
+        let stopped = Arc::new(AtomicBool::new(false));
+        let stop = stopped.clone();
+        let worker = thread::spawn(move || {
+            let run = || -> Result<(), String> {
+                let mut session =
+                    Session::start_controlled(&executable, &profile, state.clone(), stop.clone())?;
+                if let Some(url) = initial {
+                    session.action(Action::Navigate(url))?;
+                }
+                let mut batch = Vec::with_capacity(64);
+                while !stop.load(Ordering::Relaxed) {
+                    for _ in 0..64 {
+                        match rx.try_recv() {
+                            Ok(Action::Quit) => return Ok(()),
+                            Ok(action) => queue_action(&mut batch, action),
+                            Err(mpsc::TryRecvError::Disconnected) => return Ok(()),
+                            Err(mpsc::TryRecvError::Empty) => break,
+                        }
+                    }
+                    for action in batch.drain(..) {
+                        if stop.load(Ordering::Relaxed) {
+                            return Ok(());
+                        }
+                        if let Err(e) = session.action(action) {
+                            if session.memory_pressure {
+                                return Err(e);
+                            }
+                            let mut s = state.lock().unwrap();
+                            s.info.error = Some(e);
+                            s.info.loading = false;
+                            s.revision += 1;
+                        }
+                    }
+                    session.pump(Duration::from_millis(20))?;
+                }
+                Ok(())
+            };
+            if let Err(e) = run() {
+                let mut s = state.lock().unwrap();
+                s.info.error = Some(e);
+                s.info.loading = false;
+                s.info.dialog = None;
+                s.info.javascript_dialog = None;
+                s.info.permission = None;
+                s.info.upload = None;
+                if let Some(d) = &mut s.info.download {
+                    d.pending = false;
+                    d.active = false;
+                }
+                s.revision += 1;
+            }
+        });
+        Self {
+            shared,
+            commands: tx,
+            stopped,
+            worker: Some(worker),
+        }
+    }
+    pub fn begin_shutdown(&self) {
+        self.stopped.store(true, Ordering::Relaxed);
+        let _ = self.commands.try_send(Action::Quit);
+    }
+    pub fn shutdown_finished(&self) -> bool {
+        self.worker
+            .as_ref()
+            .is_none_or(|worker| worker.is_finished())
+    }
+    pub fn send(&self, action: Action) -> Result<(), String> {
+        self.commands.try_send(action).map_err(|error| match error {
+            mpsc::TrySendError::Full(_) => "Browser is busy; retry in a moment.".into(),
+            mpsc::TrySendError::Disconnected(_) => self
+                .shared
+                .lock()
+                .unwrap()
+                .info
+                .error
+                .clone()
+                .unwrap_or_else(|| {
+                    "Browser engine stopped. Exit and reopen Browser to retry.".into()
+                }),
+        })
+    }
+}
+impl Drop for BrowserEngine {
+    fn drop(&mut self) {
+        self.stopped.store(true, Ordering::Relaxed);
+        let _ = self.commands.try_send(Action::Quit);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn stale_motion_is_coalesced_without_losing_click_order() {
+        let mut batch = vec![];
+        for action in [
+            Action::Pointer(1.0, 2.0),
+            Action::Pointer(4.0, 5.0),
+            Action::Button(4.0, 5.0, true),
+            Action::Pointer(8.0, 9.0),
+            Action::Pointer(10.0, 11.0),
+            Action::Button(10.0, 11.0, false),
+            Action::Scroll(1.0, 1.0, 0.0, 130.0),
+            Action::Scroll(2.0, 3.0, 0.0, 130.0),
+        ] {
+            queue_action(&mut batch, action);
+        }
+        assert!(matches!(
+            batch.as_slice(),
+            [
+                Action::Pointer(4.0, 5.0),
+                Action::Button(4.0, 5.0, true),
+                Action::Pointer(10.0, 11.0),
+                Action::Button(10.0, 11.0, false),
+                Action::Scroll(2.0, 3.0, 0.0, 260.0)
+            ]
+        ));
+    }
+}

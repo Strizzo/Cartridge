@@ -103,13 +103,10 @@ pub fn bundled_cartridges_dir() -> PathBuf {
         .join("lua_cartridges")
 }
 
-/// Directory where F12 / SIGUSR1 screenshots are written: `screenshots/`
-/// under the current working directory (repo root in the simulator,
-/// `/roms/Cartridge` on the device).
+/// F12 / SIGUSR1 captures are mutable user data, outside signed runtime trees.
+/// The simulator's CARTRIDGE_HOME keeps these in its isolated scratch home.
 pub fn screenshots_dir() -> PathBuf {
-    std::env::current_dir()
-        .unwrap_or_default()
-        .join("screenshots")
+    cartridges_dir().join("screenshots")
 }
 
 /// Names supported by older bundled and local cartridge layouts.

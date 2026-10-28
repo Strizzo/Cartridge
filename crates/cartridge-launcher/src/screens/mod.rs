@@ -6,6 +6,8 @@ pub mod settings;
 pub mod overlay;
 pub mod wifi;
 pub mod system_update;
+pub mod browser_tools;
+pub mod remote_access;
 
 use cartridge_core::input::InputEvent;
 use cartridge_core::screen::Screen;
@@ -39,6 +41,8 @@ pub enum ScreenId {
     Settings,
     WiFi,
     SystemUpdate,
+    BrowserTools,
+    RemoteAccess,
 }
 
 /// Common trait for all launcher screens.
@@ -58,6 +62,7 @@ pub struct ScreenContext {
     pub(crate) local_apps: LocalApps,
     pub(crate) store_jobs: StoreJobs,
     pub(crate) system_update_jobs: crate::system_update_jobs::SystemUpdateJobs,
+    pub(crate) browser_component_jobs: crate::browser_component_jobs::BrowserComponentJobs,
     pub registry_revision: u64,
     pub(crate) invalidated_textures: Vec<String>,
     pub(crate) notice_pages: usize,
@@ -68,6 +73,11 @@ pub struct ScreenContext {
     pub registry_client: Option<cartridge_net::RegistryClient>,
     pub installer: Option<cartridge_net::AppInstaller>,
     pub sysinfo: AsyncSystemInfo,
+}
+
+enum BrowserComponentChange {
+    Install(std::sync::Arc<crate::browser_component_jobs::EngineRelease>),
+    Rollback(String),
 }
 
 impl ScreenContext {
@@ -124,6 +134,10 @@ impl ScreenContext {
     pub fn sync_installed_from_disk(&mut self) { self.start_store_job(StoreOperation::Sync); }
 
     pub(crate) fn start_store_job(&mut self, operation: StoreOperation) {
+        if self.browser_component_jobs.is_changing() {
+            self.store_jobs.error("Wait for the browser engine change before starting a Store task.");
+            return;
+        }
         if self.system_update_jobs.is_staging() {
             self.store_jobs.error("System update staging is in progress. Store tasks can resume when it finishes.");
             return;
@@ -159,12 +173,51 @@ impl ScreenContext {
     }
 
     pub(crate) fn stage_system_update(&mut self, release: std::sync::Arc<cartridge_net::system_update::Release>) -> bool {
+        if self.browser_component_jobs.is_changing() {
+            self.store_jobs.error("Wait for the browser engine change before downloading a system update.");
+            return false;
+        }
         if self.store_jobs.is_busy() {
             self.store_jobs.error("Wait for the current Store task before downloading a system update.");
             return false;
         }
         let battery = u8::try_from(self.sysinfo.battery_percent).ok().filter(|percent| *percent <= 100);
         self.system_update_jobs.stage(release, battery, self.sysinfo.battery_charging)
+    }
+
+    pub(crate) fn install_browser_component(&mut self, release: std::sync::Arc<crate::browser_component_jobs::EngineRelease>) -> bool {
+        self.change_browser_component(BrowserComponentChange::Install(release), self.sysinfo.battery_percent, self.sysinfo.battery_charging)
+    }
+
+    pub(crate) fn rollback_browser_component(&mut self, previous: &str) -> bool {
+        self.change_browser_component(BrowserComponentChange::Rollback(previous.into()), self.sysinfo.battery_percent, self.sysinfo.battery_charging)
+    }
+
+    fn change_browser_component(&mut self, change: BrowserComponentChange, battery: i32, charging: bool) -> bool {
+        if self.system_update_jobs.is_staging() || self.store_jobs.is_busy() {
+            self.browser_component_jobs.error("Wait for the current Store or System Update task before changing the browser engine.");
+            return false;
+        }
+        // Only use the cached async sysinfo reading. The frame never probes
+        // hardware or starts a backend until both mutation guards pass.
+        if !crate::system_update_jobs::power_ready(battery, charging) {
+            let message = "Connect the charger or charge to at least 30% before installing or rolling back the browser engine. An unknown battery level requires charging.";
+            self.browser_component_jobs.error(message);
+            self.store_jobs.notify(crate::store_jobs::Notice {
+                message: format!("Browser Tools: {message}"), is_error: true,
+            });
+            return false;
+        }
+        match change {
+            BrowserComponentChange::Install(release) => self.browser_component_jobs.install(release),
+            BrowserComponentChange::Rollback(previous) => self.browser_component_jobs.rollback(&previous),
+        }
+    }
+
+    pub(crate) fn poll_browser_component_jobs(&mut self) -> bool {
+        let (changed, notice) = self.browser_component_jobs.poll();
+        if let Some(notice) = notice { self.store_jobs.notify(notice); }
+        changed
     }
 
     pub(crate) fn system_update_power_ready(&self) -> bool {
@@ -178,7 +231,7 @@ impl ScreenContext {
     }
 
     pub(crate) fn has_background_notice(&self) -> bool {
-        self.system_update_jobs.progress.is_some() || self.store_jobs.progress.is_some()
+        self.browser_component_jobs.progress.is_some() || self.system_update_jobs.progress.is_some() || self.store_jobs.progress.is_some()
             || !self.store_jobs.notices.is_empty()
     }
 
@@ -236,7 +289,7 @@ pub(crate) fn test_context() -> ScreenContext {
     let root = std::env::temp_dir().join(format!("cartridge-context-{}-{}", std::process::id(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
     ScreenContext {
         registry: crate::data::Registry::empty(), bundled_app_ids: vec![], installed: Default::default(), local_apps: Default::default(),
-        store_jobs: Default::default(), system_update_jobs: Default::default(), registry_revision: 0, invalidated_textures: vec![], notice_pages: 0, automatic_store_refresh: true,
+        store_jobs: Default::default(), system_update_jobs: Default::default(), browser_component_jobs: Default::default(), registry_revision: 0, invalidated_textures: vec![], notice_pages: 0, automatic_store_refresh: true,
         settings: crate::data::LauncherSettings { auto_refresh: false, ..Default::default() }, recents: vec![],
         storage: cartridge_core::storage::AppStorage::at_root("launcher", root), registry_client: None, installer: None,
         sysinfo: Default::default(),
@@ -332,4 +385,153 @@ mod completion_tests {
         std::fs::remove_dir_all(ctx.storage.data_dir.parent().unwrap().parent().unwrap()).unwrap();
     }
 
+}
+
+#[cfg(test)]
+mod browser_component_power_tests {
+    use super::*;
+    use crate::browser_component_jobs::{self, Operation};
+    use std::sync::mpsc::TryRecvError;
+
+    fn change(ctx: &ScreenContext, install: bool) -> BrowserComponentChange {
+        if install {
+            BrowserComponentChange::Install(
+                ctx.browser_component_jobs.release.as_ref().unwrap().clone(),
+            )
+        } else {
+            BrowserComponentChange::Rollback(
+                ctx.browser_component_jobs
+                    .local
+                    .as_ref()
+                    .unwrap()
+                    .state
+                    .previous
+                    .clone()
+                    .unwrap(),
+            )
+        }
+    }
+    fn cleanup(ctx: &ScreenContext) {
+        std::fs::remove_dir_all(ctx.storage.data_dir.parent().unwrap().parent().unwrap()).unwrap();
+    }
+    #[test]
+    fn unknown_low_and_invalid_power_cannot_reach_either_backend_and_status_persists() {
+        for install in [true, false] {
+            for battery in [-1, 0, 5, 29, 101] {
+                let mut ctx = test_context();
+                let (jobs, calls) = browser_component_jobs::recording_for_test();
+                ctx.browser_component_jobs = jobs;
+                let request = change(&ctx, install);
+                assert!(!ctx.change_browser_component(request, battery, false));
+                assert!(!ctx.browser_component_jobs.is_busy());
+                assert!(matches!(calls.try_recv(), Err(TryRecvError::Empty)));
+                assert!(ctx.browser_component_jobs.is_error);
+                let message = ctx.browser_component_jobs.message.clone();
+                assert!(message.contains("at least 30%"));
+                for _ in 0..3 {
+                    assert!(!ctx.poll_browser_component_jobs());
+                    ctx.browser_component_jobs.ensure_status();
+                }
+                assert_eq!(ctx.browser_component_jobs.message, message);
+                assert!(ctx.store_jobs.notices.front().unwrap().is_error);
+                assert!(
+                    ctx.store_jobs
+                        .notices
+                        .front()
+                        .unwrap()
+                        .message
+                        .contains(&message)
+                );
+                let mut screen = browser_tools::BrowserToolsScreen::new();
+                screen.update(&mut ctx);
+                assert!(!ctx.browser_component_jobs.is_busy());
+                assert_eq!(ctx.browser_component_jobs.message, message);
+                cleanup(&ctx);
+            }
+        }
+    }
+    #[test]
+    fn threshold_or_charging_allows_both_backend_starts_without_claiming_activation() {
+        for install in [true, false] {
+            for (battery, charging) in [(30, false), (100, false), (-1, true), (5, true)] {
+                let mut ctx = test_context();
+                let (jobs, calls) = browser_component_jobs::recording_for_test();
+                ctx.browser_component_jobs = jobs;
+                let request = change(&ctx, install);
+                assert!(ctx.change_browser_component(request, battery, charging));
+                assert_eq!(
+                    calls
+                        .recv_timeout(std::time::Duration::from_secs(2))
+                        .unwrap(),
+                    if install {
+                        Operation::Install
+                    } else {
+                        Operation::Rollback
+                    }
+                );
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+                while ctx.browser_component_jobs.is_busy() {
+                    ctx.poll_browser_component_jobs();
+                    assert!(std::time::Instant::now() < deadline);
+                    std::thread::yield_now();
+                }
+                assert!(ctx.browser_component_jobs.is_error);
+                assert!(!ctx.browser_component_jobs.message.contains("activated"));
+                cleanup(&ctx);
+            }
+        }
+    }
+    #[test]
+    fn power_refusal_before_initial_status_does_not_get_overwritten_on_open() {
+        let mut ctx = test_context();
+        assert!(!ctx.change_browser_component(
+            BrowserComponentChange::Rollback("unread".into()),
+            -1,
+            false
+        ));
+        let message = ctx.browser_component_jobs.message.clone();
+        let mut screen = browser_tools::BrowserToolsScreen::new();
+        screen.update(&mut ctx);
+        assert!(!ctx.browser_component_jobs.is_busy());
+        assert_eq!(ctx.browser_component_jobs.message, message);
+        assert!(ctx.browser_component_jobs.is_error);
+        assert!(ctx.store_jobs.notices.front().unwrap().is_error);
+        cleanup(&ctx);
+    }
+    #[test]
+    fn public_component_entry_points_use_the_cached_sysinfo_reading() {
+        for install in [true, false] {
+            let mut ctx = test_context();
+            let (jobs, calls) = browser_component_jobs::recording_for_test();
+            ctx.browser_component_jobs = jobs;
+            let ready = crate::system_update_jobs::power_ready(
+                ctx.sysinfo.battery_percent,
+                ctx.sysinfo.battery_charging,
+            );
+            let request = change(&ctx, install);
+            let started = match request {
+                BrowserComponentChange::Install(release) => ctx.install_browser_component(release),
+                BrowserComponentChange::Rollback(previous) => {
+                    ctx.rollback_browser_component(&previous)
+                }
+            };
+            assert_eq!(started, ready);
+            if ready {
+                assert_eq!(
+                    calls
+                        .recv_timeout(std::time::Duration::from_secs(2))
+                        .unwrap(),
+                    if install {
+                        Operation::Install
+                    } else {
+                        Operation::Rollback
+                    }
+                );
+            } else {
+                assert!(!ctx.browser_component_jobs.is_busy());
+                assert!(matches!(calls.try_recv(), Err(TryRecvError::Empty)));
+            }
+            cleanup(&ctx);
+        }
+    }
 }

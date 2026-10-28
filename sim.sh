@@ -4,6 +4,7 @@
 # Usage:
 #   ./sim.sh                          # launcher (FPS overlay on)
 #   ./sim.sh app lua_cartridges/hacker_news   # one cartridge, hot reload on
+#   ./sim.sh browser                  # real local Chromium browser
 #   ./sim.sh check                    # automated navigation/app screenshots
 #   ./sim.sh session                  # real startup supervisor + native UI
 #   ./sim.sh boot                     # the 5 s boot selector
@@ -29,7 +30,7 @@
 # CARTRIDGE_HOT_RELOAD / CARTRIDGE_SIM_BATTERY / CARTRIDGE_SIM_WIFI as requested.
 #
 # Keys: arrows=D-pad  Z=A  X=B  C=X  V=Y  A=L1  S=R1  Q=L2  W=R2
-#       Enter=Start  Space=Select  Esc=quit  F12=screenshot (screenshots/)
+#       Enter=Start  Space=Select  Esc=quit  F12=screenshot (<home>/.cartridges/screenshots/)
 # See docs/simulator.md.
 set -euo pipefail
 
@@ -60,6 +61,7 @@ usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; }
 while [[ $# -gt 0 ]]; do
     case "$1" in
         app)          MODE="app"; APP_DIR="${2:-}"; [[ -n "$APP_DIR" ]] || { echo "app: missing cartridge dir" >&2; exit 2; }; shift 2 ;;
+        browser)      MODE="browser"; shift ;;
         check)        MODE="check"; HIDDEN=1; SOFTWARE=1; SHOW_FPS=0; shift ;;
         session)      MODE="session"; shift ;;
         boot)         MODE="boot"; shift ;;
@@ -180,6 +182,7 @@ echo "sim: home=$CARTRIDGE_HOME profile=${CARTRIDGE_SIM_PROFILE:-<defaults>} bat
 echo
 
 case "$MODE" in
+    browser) exec cargo run -q ${CARGO_FLAGS[@]+"${CARGO_FLAGS[@]}"} -p cartridge-browser -- ${PASS[@]+"${PASS[@]}"} ;;
     check)
         export CARTRIDGE_READY_FILE="$SIM_HOME/check-ready"
         rm -f "$CARTRIDGE_READY_FILE"

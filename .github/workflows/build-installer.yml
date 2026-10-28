@@ -27,10 +27,48 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
+      - name: Real browser engine regression (private pipe, isolated profile)
+        env:
+          SDL_VIDEODRIVER: dummy
+          CARTRIDGE_BROWSER_TEST_OUT: ${{ runner.temp }}/cartridge-browser-check
+          RUST_LOG: cartridge_browser=trace
+        run: |
+          collect_browser_logs() {
+            python3 - <<'PYTHON'
+          import os, pathlib, tempfile
+          output = pathlib.Path(os.environ['CARTRIDGE_BROWSER_TEST_OUT'])
+          output.mkdir(parents=True, exist_ok=True)
+          paths = pathlib.Path(tempfile.gettempdir()).glob('cartridge-*/engine.log')
+          for path in sorted(paths)[:12]:
+              data = path.read_bytes()[-65536:]
+              (output / (path.parent.name + '-engine.log')).write_bytes(data)
+              print('Browser fixture log:', path.parent.name)
+              print(data.decode('utf-8', errors='replace'))
+          PYTHON
+          }
+          trap collect_browser_logs EXIT
+          export CARTRIDGE_BROWSER_ENGINE="$(command -v google-chrome)"
+          "$CARTRIDGE_BROWSER_ENGINE" --version
+          cargo test -p cartridge-browser --test real_engine -- --ignored --nocapture
+          cargo test -p cartridge-browser --test capabilities -- --ignored --nocapture
+          cargo test -p cartridge-browser --test media -- --ignored --nocapture
+          cargo test -p cartridge-browser --bin browser-check -- --ignored --nocapture
+
+      - name: Upload browser render diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-render-check
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/cartridge-browser-check/*.png
+            ${{ runner.temp }}/cartridge-browser-check/*-engine.log
+
       - name: Test manual launcher
         run: |
           bash -n deploy/tools/Cartridge.sh
           python3 -m unittest discover -s tests -p 'test_*.py'
+          python3 -m unittest discover -s crates/cartridge-browser/engine -p 'test_*.py'
 
       - name: Simulator smoke (software renderer, no host hardware access)
         env:
@@ -51,7 +89,6 @@ jobs:
 
   cross-compile:
     runs-on: ubuntu-latest
-    needs: build
 
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +104,24 @@ jobs:
           docker run --rm -v "$PWD":/src -w /src cartridge-device \
             cargo build --workspace --release --target aarch64-unknown-linux-gnu
           sudo chown -R "$(id -u):$(id -g)" target
+
+      - name: Cross-compile browser regression fixtures for the real handheld
+        run: |
+          docker run --rm -v "$PWD":/src -w /src cartridge-device \
+            cargo test -p cartridge-browser --release --no-run --target aarch64-unknown-linux-gnu \
+              --test real_engine --test capabilities --test transport --test media
+          sudo chown -R "$(id -u):$(id -g)" target
+          python3 - <<'PYTHON'
+          import os, pathlib, shutil
+          output = pathlib.Path('arm-browser-tests')
+          output.mkdir()
+          for name in ('real_engine', 'capabilities', 'transport', 'media'):
+              binaries = [p for p in pathlib.Path('target/aarch64-unknown-linux-gnu/release/deps').glob(name + '-*') if p.is_file() and os.access(p, os.X_OK)]
+              if len(binaries) != 1:
+                  raise RuntimeError('Expected one exact ARM test binary: ' + name)
+              shutil.copy2(binaries[0], output / name)
+          (output / 'build-revision').write_text(os.environ['GITHUB_SHA'] + '\n')
+          PYTHON
 
       - name: Generate overlay assets
         run: python3 scripts/generate_overlays.py
@@ -87,6 +142,9 @@ jobs:
           cp target/aarch64-unknown-linux-gnu/release/sim-check bundle/Cartridge/dev/
           cp target/aarch64-unknown-linux-gnu/release/app-check bundle/Cartridge/dev/
           cp target/aarch64-unknown-linux-gnu/release/store-check bundle/Cartridge/dev/
+          cp target/aarch64-unknown-linux-gnu/release/cartridge-browser bundle/Cartridge/dev/
+          cp target/aarch64-unknown-linux-gnu/release/browser-check bundle/Cartridge/dev/
+          cp target/aarch64-unknown-linux-gnu/release/browser-component bundle/Cartridge/dev/
           printf '%s\n' "$GITHUB_SHA" > bundle/Cartridge/dev/build-revision
 
           # Boot scripts
@@ -135,6 +193,22 @@ jobs:
           path: |
             system-update/*.tar.gz
             system-update/system-update.unsigned.json
+
+      - name: Upload ARM browser regression fixtures
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-tests-aarch64
+          if-no-files-found: error
+          path: arm-browser-tests/
+
+      - name: Upload exact ARM browser checker for device iteration
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-check-aarch64
+          if-no-files-found: error
+          path: |
+            bundle/Cartridge/dev/browser-check
+            bundle/Cartridge/dev/build-revision
 
       - name: Upload aarch64 device bundle
         uses: actions/upload-artifact@v4

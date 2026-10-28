@@ -3,6 +3,7 @@ pub mod games;
 pub mod data;
 mod store_jobs;
 mod system_update_jobs;
+mod browser_component_jobs;
 pub mod neo;
 pub mod screens;
 pub mod ui_constants;

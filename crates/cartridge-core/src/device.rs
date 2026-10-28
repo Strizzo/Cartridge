@@ -104,7 +104,7 @@ fn parse_volume(text: &str) -> Result<u8, String> {
 /// pipes. The caller supplies piped stdout/stderr. Errors (including timeout)
 /// kill and reap the child before the persistent hardware worker takes more work.
 #[cfg(any(target_os = "linux", all(test, unix)))]
-fn output_with_timeout(
+pub(crate) fn output_with_timeout(
     mut child: std::process::Child,
     timeout: std::time::Duration,
 ) -> std::io::Result<std::process::Output> {
@@ -176,7 +176,7 @@ fn output_with_timeout(
             if remaining.is_zero() {
                 return Err(io::Error::new(
                     io::ErrorKind::TimedOut,
-                    format!("amixer timed out after {:.1}s", timeout.as_secs_f32()),
+                    format!("command timed out after {:.1}s", timeout.as_secs_f32()),
                 ));
             }
             std::thread::sleep(remaining.min(Duration::from_millis(10)));
@@ -311,7 +311,7 @@ mod tests {
         let started = Instant::now();
         let error = output_with_timeout(child, Duration::from_millis(80)).unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
-        assert!(error.to_string().contains("amixer timed out"));
+        assert!(error.to_string().contains("command timed out"));
         assert!(started.elapsed() < Duration::from_secs(2));
         assert_reaped(pid);
 

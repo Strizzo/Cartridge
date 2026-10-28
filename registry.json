@@ -286,6 +286,24 @@
         "size": 38066,
         "min_runtime": "0.6.0"
       }
+    },
+    {
+      "id": "dev.cartridge.browser",
+      "name": "Browser",
+      "description": "Real websites, bookmarks and controller navigation. Requires the local browser engine.",
+      "version": "0.1.0",
+      "author": "CartridgeOS",
+      "category": "tools",
+      "tags": [
+        "web",
+        "browser"
+      ],
+      "permissions": [
+        "network",
+        "storage",
+        "audio"
+      ],
+      "repo_url": "https://github.com/Strizzo/Cartridge"
     }
   ]
 }

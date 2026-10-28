@@ -1,0 +1,16 @@
+{
+  "id": "dev.cartridge.browser",
+  "name": "Browser",
+  "version": "0.1.0",
+  "author": "CartridgeOS",
+  "description": "Browse real websites with links, JavaScript, forms, bookmarks and controller navigation. A local Chromium engine is required.",
+  "category": "tools",
+  "permissions": [
+    "network",
+    "storage",
+    "audio"
+  ],
+  "entry": "main.lua",
+  "runtime": "browser",
+  "min_runtime": "0.8.0"
+}
