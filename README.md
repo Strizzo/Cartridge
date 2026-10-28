@@ -5,7 +5,7 @@ An experimental app platform developed and tested on an R36S Plus. Turn a retro 
 Built in Rust with SDL2. Apps are scripted in Lua.
 
 **[Build your first Cartridge app](docs/app-development.md)** — start on your
-Mac with the v0.7.0 runtime, a runnable Lua counter, and the desktop simulator.
+Mac with the v0.7.1 runtime, a runnable Lua counter, and the desktop simulator.
 The runtime repository and its Lua APIs are the SDK.
 
 > **Experimental software — back up your card before installing.** CartridgeOS is
@@ -14,6 +14,10 @@ The runtime repository and its Lua APIs are the SDK.
 > system, games and saves, and preferably experiment on a spare card. A similar
 > product name does not guarantee compatible hardware or firmware. See
 > [installation, SD-card guidance and recovery](INSTALL.md) before proceeding.
+
+**Security update:** v0.7.1 restricts Lua library access, rejects binary Lua
+chunks and closes storage path escapes. Update older installations before
+adding apps. See [security reporting and app trust limits](SECURITY.md).
 
 ## See it running
 
@@ -25,7 +29,7 @@ New R36S Plus footage: launcher navigation, radio-map zooming, illustrated weath
 
 ## Install on R36S Plus
 
-The [v0.7.0 release](https://github.com/Strizzo/Cartridge/releases/tag/v0.7.0)
+The [v0.7.1 release](https://github.com/Strizzo/Cartridge/releases/tag/v0.7.1)
 contains an application bundle for an **existing, working R36S Plus system**.
 It is not a complete SD-card image. The macOS image installer remains a
 prototype; it is not a general-purpose public installer.
@@ -41,16 +45,16 @@ prototype; it is not a general-purpose public installer.
 4. Safely eject, boot normally into EmulationStation, then open
    **Options → Tools → Cartridge** and confirm the launcher works.
 5. Only after that check, optionally run **Tools → Setup Cartridge Boot**.
-   In v0.7.0 this enables direct Cartridge startup at the next normal boot,
+   In v0.7.1 this enables direct Cartridge startup at the next normal boot,
    with EmulationStation retained as fallback. Setup does not reboot for you.
 
 [INSTALL.md](INSTALL.md) explains returning to EmulationStation, the recovery
 file, and the limits of this tested setup. Do not follow legacy boot-selector
 instructions for this release.
 
-**Source and documentation:** `main` contains the released **v0.7.0 runtime**,
+**Source and documentation:** `main` contains the released **v0.7.1 runtime**,
 plus current documentation and media. Use the immutable
-[`v0.7.0`](https://github.com/Strizzo/Cartridge/tree/v0.7.0) tag to reproduce the
+[`v0.7.1`](https://github.com/Strizzo/Cartridge/tree/v0.7.1) tag to reproduce the
 release source. The [simulator guide](docs/simulator.md) and
 [app development guide](docs/app-development.md) describe the current platform.
 
