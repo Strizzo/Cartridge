@@ -226,11 +226,33 @@ fn visible_text_point(s: &mut Session, labels: &[&str]) -> Result<Value, String>
             const labels = {labels}, point = {point};
             let remaining = 20000, best = null;
             const exhausted = {{}};
+            const controls = 'button, a[href], input[type=button], input[type=submit], input[type=reset], [role=button]';
+            const visibility = new WeakMap();
+            // Only branches can hide descendants. Plain leaves need no computed
+            // style unless they are controls. Reuse ancestor results within this
+            // one synchronous probe; no visibility state survives a page change.
+            function branchVisible(element) {{
+                let ancestor = element;
+                const chain = [];
+                while (ancestor && !visibility.has(ancestor)) {{
+                    chain.push(ancestor);
+                    ancestor = ancestor.parentElement || ancestor.getRootNode().host;
+                }}
+                let visible = ancestor ? visibility.get(ancestor) : true;
+                for (let i = chain.length - 1; i >= 0; --i) {{
+                    const node = chain[i];
+                    if (visible) {{
+                        const style = getComputedStyle(node);
+                        visible = !node.inert && style.display !== 'none' && style.contentVisibility !== 'hidden' && Number(style.opacity) !== 0;
+                    }}
+                    visibility.set(node, visible);
+                }}
+                return visibility.get(element);
+            }}
             const filter = {{acceptNode(e) {{
                 if (--remaining < 0) throw exhausted;
-                const style = getComputedStyle(e);
-                return e.inert || style.display === 'none' || style.contentVisibility === 'hidden' || Number(style.opacity) === 0
-                    ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+                const branchOrControl = e.firstElementChild || e.shadowRoot || e.matches(controls);
+                return branchOrControl && !branchVisible(e) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
             }}}};
             function scan(root, depth) {{
                 if (depth > 32) return;

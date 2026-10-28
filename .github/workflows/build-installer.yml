@@ -36,6 +36,7 @@ jobs:
           export CARTRIDGE_BROWSER_ENGINE="$(command -v google-chrome)"
           cargo test -p cartridge-browser --test real_engine -- --ignored --nocapture
           cargo test -p cartridge-browser --test capabilities -- --ignored --nocapture
+          cargo test -p cartridge-browser --test media -- --ignored --nocapture
           cargo test -p cartridge-browser --bin browser-check -- --ignored --nocapture
 
       - name: Upload browser render diagnostics
@@ -91,13 +92,13 @@ jobs:
         run: |
           docker run --rm -v "$PWD":/src -w /src cartridge-device \
             cargo test -p cartridge-browser --release --no-run --target aarch64-unknown-linux-gnu \
-              --test real_engine --test capabilities --test transport
+              --test real_engine --test capabilities --test transport --test media
           sudo chown -R "$(id -u):$(id -g)" target
           python3 - <<'PYTHON'
           import os, pathlib, shutil
           output = pathlib.Path('arm-browser-tests')
           output.mkdir()
-          for name in ('real_engine', 'capabilities', 'transport'):
+          for name in ('real_engine', 'capabilities', 'transport', 'media'):
               binaries = [p for p in pathlib.Path('target/aarch64-unknown-linux-gnu/release/deps').glob(name + '-*') if p.is_file() and os.access(p, os.X_OK)]
               if len(binaries) != 1:
                   raise RuntimeError('Expected one exact ARM test binary: ' + name)

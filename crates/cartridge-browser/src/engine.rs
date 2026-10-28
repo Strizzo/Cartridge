@@ -284,6 +284,12 @@ impl Session {
         command.arg("--ozone-platform=headless");
         #[cfg(not(target_os = "linux"))]
         command.arg("--headless=new");
+        // The 1 GiB handheld decodes video in software. Several full-HD loops
+        // otherwise retain large per-thread frame pools while competing with
+        // page input. Keep full page rendering and bound decoder parallelism
+        // and compositor retention for the ARM device build.
+        #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+        command.args(["--video-threads=1", "--force-gpu-mem-available-mb=32"]);
         command
             .args([
                 "--remote-debugging-pipe",
