@@ -28,17 +28,40 @@ fn capture(s: &mut Session, out: &Path, name: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     std::fs::write(out.join(format!("{name}.png")), bytes).map_err(|e| e.to_string())
 }
-fn click_selector(s: &mut Session, selector: &str) -> Result<(), String> {
+fn wait_for_visible_link(s: &mut Session, selector: &str) -> Result<(), String> {
+    // Client-rendered news lists can appear after DOMContentLoaded or a
+    // consent decision. Require a rendered link before real pointer input.
     let selector = serde_json::to_string(selector).unwrap();
-    let point=s.evaluate(&format!("(()=>{{const e=[...document.querySelectorAll({selector})].find(e=>{{const r=e.getBoundingClientRect();return r.width>1&&r.height>1}}); if(!e)return null; e.scrollIntoView({{block:'center',behavior:'instant'}});const r=[...e.getClientRects()].find(r=>r.width>1&&r.height>1);return r?[r.x+r.width/2,r.y+r.height/2]:null}})()"))?;
-    let scale = 720.0
-        / s.evaluate("innerWidth")?
-            .as_f64()
-            .ok_or("Missing viewport width")?;
+    wait(s, &format!("[...document.querySelectorAll({selector})].some(e=>{{const r=e.getBoundingClientRect();return r.width>1&&r.height>1}})"))?;
+    Ok(())
+}
+fn click_selector(s: &mut Session, selector: &str) -> Result<String, String> {
+    let selector = serde_json::to_string(selector).unwrap();
+    let point = wait(s, &format!(r#"(async()=>{{
+        const selector={selector};
+        const visible=e=>{{const r=e.getBoundingClientRect();return r.width>1&&r.height>1}};
+        const first=[...document.querySelectorAll(selector)].find(visible);
+        if(!first)return false;
+        const key=first.href||first.id||'';
+        first.scrollIntoView({{block:'center',behavior:'instant'}});
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        const e=[...document.querySelectorAll(selector)].find(e=>(e.href||e.id||'')===key&&visible(e));
+        if(!e)return false;
+        const r=[...e.getClientRects()].find(r=>r.width>1&&r.height>1);
+        if(!r)return false;
+        const x=(Math.max(0,r.left)+Math.min(innerWidth,r.right))/2;
+        const y=(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2;
+        const hit=document.elementFromPoint(x,y);
+        if(!hit||(hit!==e&&!e.contains(hit)))return false;
+        return [x,y,innerWidth,key];
+    }})()"#))?;
+    let scale = 720.0 / point[2].as_f64().ok_or("Missing viewport width")?;
+    log::debug!("Trusted click target: {}", point[3]);
     s.action(Action::Click(
         point[0].as_f64().ok_or("Missing clickable element")? * scale,
         point[1].as_f64().ok_or("Missing clickable element")? * scale,
-    ))
+    ))?;
+    Ok(point[3].as_str().unwrap_or("").to_string())
 }
 // Called on a candidate element (or CDP search text node). Read layout and
 // hit-test each shadow boundary; never scroll, reveal or activate a control in JS.
@@ -342,19 +365,21 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
             "a[href*='/202']:not([href*='/videos/']):not([href*='/live-news/'])"
         };
         let before = s.evaluate("location.href")?;
-        click_selector(&mut s, selector)?;
+        wait_for_visible_link(&mut s, selector)?;
+        let expected_article = click_selector(&mut s, selector)?;
+        let expected = serde_json::to_string(&expected_article).unwrap();
         wait(
             &mut s,
-            &format!(
-                "location.href!=={} && document.readyState!=='loading'",
-                before
-            ),
+            &format!("(()=>{{const wanted=new URL({expected});return location.pathname===wanted.pathname&&location.hostname.split('.').slice(-2).join('.')===wanted.hostname.split('.').slice(-2).join('.')&&location.href!=={before}&&document.readyState!=='loading'}})()"),
         )?;
         wait(&mut s, "document.querySelector('h1')?.innerText?.length>10")?;
         checks.push("article opened through real link input");
         capture(&mut s, &out, "article")?;
+        log::debug!("Article URL before Back: {}", s.evaluate("location.href")?);
         s.action(Action::Back)?;
+        log::debug!("URL just after Back: {}", s.evaluate("location.href")?);
         wait(&mut s, &format!("location.href==={}", before))?;
+        wait_for_visible_link(&mut s, selector)?;
         checks.push("Back returned to listing");
     }
     let final_url = s.evaluate("location.href")?;
