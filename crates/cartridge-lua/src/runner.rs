@@ -6,6 +6,7 @@ use cartridge_core::sticks::StickEvent;
 use cartridge_core::storage::AppStorage;
 use cartridge_core::theme::Theme;
 use mlua::prelude::*;
+use mlua::{ChunkMode, LuaOptions, StdLib};
 
 use crate::api::{
     new_app_control, new_screen_handle, new_text_input, register_app_api,
@@ -47,7 +48,12 @@ impl LuaAppRunner {
     pub fn new_with_options(app_dir: &Path, entry_file: &str, app_id: &str,
         theme: &Theme, permissions: &[String], fixture: Option<&Path>, storage_root: Option<&Path>) -> Result<Self, String> {
         let has = |p: &str| permissions.iter().any(|x| x == p);
-        let lua = Lua::new();
+        // mlua's "safe" defaults still include host I/O and package loaders.
+        // Do not load those libraries or expose their standard registry entries.
+        let libraries = StdLib::COROUTINE | StdLib::TABLE | StdLib::OS
+            | StdLib::STRING | StdLib::UTF8 | StdLib::MATH;
+        let lua = Lua::new_with(libraries, LuaOptions::default())
+            .map_err(|e| format!("Failed to create Lua VM: {e}"))?;
         let screen_handle = new_screen_handle();
         let text_input = new_text_input();
         let control = new_app_control();
@@ -70,7 +76,8 @@ impl LuaAppRunner {
         register_app_api(&lua, control.clone())
             .map_err(|e| format!("Failed to register app API: {e}"))?;
 
-        let ui: LuaTable = lua.load(include_str!("app_ui.lua")).eval()
+        let ui: LuaTable = lua.load(include_str!("app_ui.lua"))
+            .set_mode(ChunkMode::Text).eval()
             .map_err(|e| format!("Failed to load app UI helpers: {e}"))?;
         lua.globals().set("ui", ui).map_err(|e| e.to_string())?;
 
@@ -139,6 +146,7 @@ impl LuaAppRunner {
 
         lua.load(&source)
             .set_name(entry_file)
+            .set_mode(ChunkMode::Text)
             .exec()
             .map_err(|e| format!("Lua load error: {e}"))?;
 
@@ -191,21 +199,31 @@ impl LuaAppRunner {
             os_table.set("setlocale", LuaValue::Nil)?;
         }
 
-        // Remove io library entirely
-        globals.set("io", LuaValue::Nil)?;
-
-        // Remove debug library
-        globals.set("debug", LuaValue::Nil)?;
-
         // Remove loadfile and dofile (we provide a restricted require instead)
         globals.set("loadfile", LuaValue::Nil)?;
         globals.set("dofile", LuaValue::Nil)?;
+
+        // Preserve native reader and environment handling, but never allow
+        // binary VM input. Varargs preserve an omitted versus explicit nil env.
+        let text_load: LuaFunction = lua.load(r#"
+            local base_load, find = load, string.find
+            return function(chunk, name, mode, ...)
+                if mode ~= nil and not find(mode, 't', 1, true) then
+                    return nil, 'only text chunks are supported'
+                end
+                return base_load(chunk, name, 't', ...)
+            end
+        "#).set_mode(ChunkMode::Text).eval()?;
+        globals.set("load", text_load)?;
 
         Ok(())
     }
 
     fn setup_require(lua: &Lua, app_dir: &Path) -> LuaResult<()> {
         let app_dir = app_dir.to_path_buf();
+        // Keep the cache private to this Rust callback, independent of globals
+        // or Lua's standard package registry and its host library references.
+        let loaded_key = lua.create_registry_value(lua.create_table()?)?;
 
         let require_fn = lua.create_function(move |lua, module_name: String| {
             // Convert module name dots to path separators
@@ -229,16 +247,11 @@ impl LuaAppRunner {
                 )));
             }
 
-            // Check the loaded table first to avoid double-loading
-            let loaded: LuaTable = lua
-                .globals()
-                .get::<LuaTable>("package")?
-                .get::<LuaTable>("loaded")?;
-
-            if let Ok(existing) = loaded.get::<LuaValue>(&*module_name)
-                && existing != LuaValue::Nil {
-                    return Ok(existing);
-                }
+            let loaded: LuaTable = lua.registry_value(&loaded_key)?;
+            let existing: LuaValue = loaded.raw_get(&*module_name)?;
+            if existing != LuaValue::Nil {
+                return Ok(existing);
+            }
 
             let source = std::fs::read_to_string(&canonical_file).map_err(|e| {
                 LuaError::RuntimeError(format!(
@@ -249,6 +262,7 @@ impl LuaAppRunner {
             let result: LuaValue = lua
                 .load(&source)
                 .set_name(&module_name)
+                .set_mode(ChunkMode::Text)
                 .eval()
                 .map_err(|e| {
                     LuaError::RuntimeError(format!(
@@ -256,13 +270,13 @@ impl LuaAppRunner {
                     ))
                 })?;
 
-            // Store in package.loaded
+            // Retain the existing per-module return-value caching behavior.
             let store_value = if result == LuaValue::Nil {
                 LuaValue::Boolean(true)
             } else {
                 result.clone()
             };
-            loaded.set(module_name, store_value)?;
+            loaded.raw_set(module_name, store_value)?;
 
             Ok(result)
         })?;
