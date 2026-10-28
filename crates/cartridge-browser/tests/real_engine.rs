@@ -66,7 +66,18 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
                         std::thread::sleep(Duration::from_millis(10));
                     }
                 }
-                let page = if path == "/server-error" {
+                let page = if path == "/popup-listing" {
+                    format!(
+                        r#"<!doctype html><title>Popup listing</title>
+<a id="story" href="{serve}/article" onclick="window.open('{serve}/companion','_blank')">Read normal article</a>
+<a id="story-blank" href="{serve}/article" onclick="const popup=window.open('about:blank','_blank');popup.location='{serve}/companion'">Read article with blank companion</a>
+<button id="programmatic" onclick="window.open('{serve}/second','_blank')">Open requested window</button>"#
+                    )
+                } else if path == "/article" {
+                    "<title>Intended article</title><h1>The normal link destination</h1>".into()
+                } else if path == "/companion" {
+                    "<title>Companion popup</title><h1>Unrelated companion window</h1>".into()
+                } else if path == "/server-error" {
                     "<title>Service unavailable</title><h1>Upstream server error</h1>".to_string()
                 } else if path.starts_with("/frame") {
                     "<body>SUBFRAME<script>history.replaceState({},'', '/frame?ad-frame');</script>"
@@ -117,7 +128,12 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
         let identity = session
             .evaluate("({agent:navigator.userAgent,webdriver:navigator.webdriver})")
             .unwrap();
-        assert!(!identity["agent"].as_str().unwrap().contains("HeadlessChrome"));
+        assert!(
+            !identity["agent"]
+                .as_str()
+                .unwrap()
+                .contains("HeadlessChrome")
+        );
         assert_eq!(identity["webdriver"], true);
     }
     session.action(Action::Navigate(base.clone())).unwrap();
@@ -259,6 +275,62 @@ fn real_html_css_javascript_links_forms_history_and_pixels() {
         "background page leaked"
     );
     session.action(Action::Back).unwrap();
+    wait(&mut session, "document.title==='Browser acceptance'");
+    session
+        .action(Action::Navigate(format!("{base}/popup-listing")))
+        .unwrap();
+    wait(&mut session, "document.title==='Popup listing'");
+    for link in ["story", "story-blank"] {
+        let point=session.evaluate(&format!("(()=>{{const r=document.getElementById({}).getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]}})()", serde_json::json!(link))).unwrap();
+        session
+            .action(Action::Click(
+                point[0].as_f64().unwrap(),
+                point[1].as_f64().unwrap(),
+            ))
+            .unwrap();
+        // Continue receiving target lifecycle events so a transient article frame
+        // cannot hide a late companion promotion (the baseline fails this check).
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline {
+            session.pump(Duration::from_millis(20)).unwrap();
+        }
+        let destination = session
+            .evaluate("({title:document.title,url:location.href})")
+            .unwrap();
+        println!("Companion-popup {link} destination: {destination}");
+        assert_eq!(
+            destination["title"], "Intended article",
+            "companion popup overrode the normal link navigation"
+        );
+        let targets = session
+            .call("Target.getTargets", serde_json::json!({}))
+            .unwrap();
+        assert_eq!(
+            targets["targetInfos"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|t| t["type"] == "page")
+                .count(),
+            1,
+            "companion popup leaked a background page"
+        );
+        session.action(Action::Back).unwrap();
+        wait(&mut session, "document.title==='Popup listing'");
+        println!("PASS: normal article with {link} companion preserves destination and Back");
+    }
+    let point=session.evaluate("(()=>{const r=document.getElementById('programmatic').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()").unwrap();
+    session
+        .action(Action::Click(
+            point[0].as_f64().unwrap(),
+            point[1].as_f64().unwrap(),
+        ))
+        .unwrap();
+    wait(&mut session, "document.title==='Second page'");
+    session.action(Action::Back).unwrap();
+    wait(&mut session, "document.title==='Popup listing'");
+    println!("PASS: requested programmatic new window preserves destination and Back");
+    session.action(Action::Navigate(base.clone())).unwrap();
     wait(&mut session, "document.title==='Browser acceptance'");
     let point=session.evaluate("(()=>{let r=document.getElementById('dialog').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()").unwrap();
     session

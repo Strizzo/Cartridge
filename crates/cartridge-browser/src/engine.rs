@@ -172,6 +172,14 @@ fn pipe() -> std::io::Result<(File, File)> {
     Ok((read, write))
 }
 
+struct PendingPopup {
+    started: Instant,
+    owner: String,
+    navigation: u64,
+    url: Option<String>,
+    barrier: Option<u64>,
+}
+
 pub struct Session {
     child: Child,
     reader: File,
@@ -181,7 +189,8 @@ pub struct Session {
     session: Option<String>,
     target: String,
     main_frame: String,
-    popups: HashMap<String, Instant>,
+    popups: HashMap<String, PendingPopup>,
+    navigation: u64,
     closing_popups: HashSet<String>,
     pub shared: Shared,
     stopped: Arc<AtomicBool>,
@@ -323,6 +332,7 @@ impl Session {
             target: String::new(),
             main_frame: String::new(),
             popups: HashMap::new(),
+            navigation: 0,
             closing_popups: HashSet::new(),
             shared,
             stopped,
@@ -506,13 +516,24 @@ impl Session {
         let expired = self
             .popups
             .iter()
-            .filter(|(_, t)| t.elapsed() > Duration::from_secs(1))
+            .filter(|(_, p)| p.started.elapsed() > Duration::from_secs(1)
+                || p.owner != self.target || p.navigation != self.navigation)
             .map(|(id, _)| id.clone())
             .collect::<Vec<_>>();
         for id in expired {
             self.popups.remove(&id);
             self.closing_popups.insert(id.clone());
             self.send("Target.closeTarget", json!({"targetId":id}))?;
+        }
+        // A renderer round trip after the input action lets its default
+        // navigation request arrive before we promote a new-window destination.
+        // This is a protocol boundary, not a popup grace-period timer.
+        if let Some(id) = self.popups.iter()
+            .find(|(_, p)| p.url.is_some() && p.barrier.is_none())
+            .map(|(id, _)| id.clone())
+        {
+            let barrier = self.send("Runtime.evaluate", json!({"expression":"void 0"}))?;
+            self.popups.get_mut(&id).unwrap().barrier = Some(barrier);
         }
         if self.info_dirty
             && self.pending_info.is_none()
@@ -573,6 +594,21 @@ impl Session {
     }
     fn event(&mut self, value: &Value) -> Result<(), String> {
         if value.get("method").is_none() {
+            if let Some(id) = self.popups.iter()
+                .find(|(_, p)| p.barrier.is_some() && p.barrier == value["id"].as_u64())
+                .map(|(id, _)| id.clone())
+            {
+                let popup = self.popups.remove(&id).unwrap();
+                if popup.owner == self.target && popup.navigation == self.navigation
+                    && value.get("error").is_none()
+                {
+                    if let Some(url) = popup.url {
+                        self.send("Page.navigate", json!({"url":url}))?;
+                    }
+                }
+                self.send("Target.closeTarget", json!({"targetId":id}))?;
+                self.closing_popups.insert(id);
+            }
             if self.native_event(value)? {
                 return Ok(());
             }
@@ -654,23 +690,27 @@ impl Session {
                         && !self.closing_popups.contains(*id)
                 }) {
                     let id = id.to_string();
-                    let url = info["url"].as_str().unwrap_or("");
-                    if let Some(url) = url
-                        .starts_with("http://")
-                        .then_some(url)
-                        .or_else(|| url.starts_with("https://").then_some(url))
-                        .and_then(|u| address(u).ok())
+                    if info["openerId"].as_str().is_some_and(|opener| opener != self.target)
+                        || (!self.popups.contains_key(&id) && !self.popups.is_empty())
                     {
-                        // Keep one active page: follow a new-window web link in
-                        // this page, preserving its normal Back history.
-                        self.send("Page.navigate", json!({"url":url}))?;
                         self.send("Target.closeTarget", json!({"targetId":id}))?;
-                        self.popups.remove(&id);
                         self.closing_popups.insert(id);
-                    } else if self.popups.is_empty() {
-                        self.popups.entry(id).or_insert_with(Instant::now);
                     } else {
-                        self.send("Target.closeTarget", json!({"targetId":id}))?;
+                        let popup = self.popups.entry(id).or_insert_with(|| PendingPopup {
+                            started: Instant::now(),
+                            owner: self.target.clone(),
+                            navigation: self.navigation,
+                            url: None,
+                            barrier: None,
+                        });
+                        // Record the generation at creation, including about:blank
+                        // popups whose HTTP destination is only reported later.
+                        let url = info["url"].as_str().unwrap_or("");
+                        popup.url = if url.starts_with("http://") || url.starts_with("https://") {
+                            address(url).ok()
+                        } else {
+                            None
+                        };
                     }
                 }
             }
@@ -729,6 +769,17 @@ impl Session {
             }
         }
         match value["method"].as_str().unwrap_or("") {
+            "Page.frameRequestedNavigation"
+                if p["frameId"].as_str() == Some(&self.main_frame)
+                    && p["disposition"] == "currentTab" =>
+            {
+                self.navigation = self.navigation.wrapping_add(1);
+            }
+            "Page.frameStartedNavigating"
+                if p["frameId"].as_str() == Some(&self.main_frame) =>
+            {
+                self.navigation = self.navigation.wrapping_add(1);
+            }
             "Page.screencastFrame" => {
                 if let Some(id) = p["sessionId"].as_u64() {
                     if self.frame_acks.len() >= 4 {
@@ -783,6 +834,7 @@ impl Session {
                 self.info_dirty = true;
             }
             "Page.navigatedWithinDocument" if p["frameId"].as_str() == Some(&self.main_frame) => {
+                self.navigation = self.navigation.wrapping_add(1);
                 let mut s = self.shared.lock().unwrap();
                 s.info.url = p["url"]
                     .as_str()
@@ -794,6 +846,7 @@ impl Session {
                 self.info_dirty = true;
             }
             "Page.frameNavigated" if p["frame"].get("parentId").is_none() => {
+                self.navigation = self.navigation.wrapping_add(1);
                 self.send("Browser.resetPermissions", json!({}))?;
                 self.send("Browser.grantPermissions", json!({"permissions":[]}))?;
                 self.clear_upload_staging(&self.target.clone());
@@ -857,6 +910,9 @@ impl Session {
         Ok(())
     }
     pub fn action(&mut self, action: Action) -> Result<(), String> {
+        if matches!(&action, Action::Navigate(_) | Action::Back | Action::Forward | Action::Reload | Action::Stop) {
+            self.navigation = self.navigation.wrapping_add(1);
+        }
         match action {
             Action::Navigate(url) => {
                 let url = address(&url)?;
