@@ -627,6 +627,7 @@ enum VisualCommand {
     Back,
     Forward,
     Capture,
+    Frame,
     Status,
     Heap,
     Quit,
@@ -635,7 +636,7 @@ fn visual_session(engine: &Path, out: &Path) -> Result<(), String> {
     use std::io::{BufRead, Write};
     use std::sync::mpsc;
     let shared = Shared::default();
-    let mut s = Session::start(engine, &out.join("profile"), shared)?;
+    let mut s = Session::start(engine, &out.join("profile"), shared.clone())?;
     let (tx, rx) = mpsc::sync_channel(16);
     std::thread::spawn(move || {
         for line in std::io::stdin().lock().lines() {
@@ -699,6 +700,20 @@ fn visual_session(engine: &Path, out: &Path) -> Result<(), String> {
                 captures += 1;
                 let name=format!("visual-{captures:04}"); capture(&mut s,out,&name)?;
                 json!({"screenshot":out.join(format!("{name}.png"))})
+            },
+            VisualCommand::Frame => {
+                let frame = {
+                    let state = shared.lock().unwrap();
+                    state.frame.as_ref().map(|f| (f.width, f.height, f.rgb.clone(), state.frame_count))
+                };
+                if let Some((width, height, rgb, generation)) = frame {
+                    captures += 1;
+                    let path=out.join(format!("visual-{captures:04}.png"));
+                    image::save_buffer(&path,&rgb,width,height,image::ColorType::Rgb8).map_err(|e| e.to_string())?;
+                    json!({"screenshot":path,"frame_generation":generation,"source":"transferred_native_frame"})
+                } else {
+                    json!({"no_frame_yet":true})
+                }
             },
             VisualCommand::Status => s.evaluate("({url:location.href,title:document.title,ready:document.readyState,h1:document.querySelector('h1')?.textContent?.slice(0,500)})")?,
             VisualCommand::Heap => s.call("Runtime.getHeapUsage",json!({}))?,

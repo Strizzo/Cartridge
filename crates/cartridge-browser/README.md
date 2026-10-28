@@ -160,6 +160,8 @@ input; it opens no network listener and closes after at most 240 seconds. For
 example, send `{"command":"capture"}`, `{"command":"click","x":100,"y":200}`,
 `{"command":"status"}`, `{"command":"heap"}`, `{"command":"back"}`, or
 `{"command":"quit"}`. Captures are numbered PNGs under the new output directory.
+`{"command":"frame"}` saves the latest already-transferred native frame, avoiding
+a forced renderer screenshot; its reply includes the frame generation.
 Coordinates refer to the native 720×576 web surface. `navigate`, `scroll`, `key`
 and `zoom` commands are also available. This is an observation tool, not an
 automatic site pass; it retains normal memory, timeout and consent protections.
