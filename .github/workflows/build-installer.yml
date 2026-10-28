@@ -87,6 +87,24 @@ jobs:
             cargo build --workspace --release --target aarch64-unknown-linux-gnu
           sudo chown -R "$(id -u):$(id -g)" target
 
+      - name: Cross-compile browser regression fixtures for the real handheld
+        run: |
+          docker run --rm -v "$PWD":/src -w /src cartridge-device \
+            cargo test -p cartridge-browser --release --no-run --target aarch64-unknown-linux-gnu \
+              --test real_engine --test capabilities --test transport
+          sudo chown -R "$(id -u):$(id -g)" target
+          python3 - <<'PYTHON'
+          import os, pathlib, shutil
+          output = pathlib.Path('arm-browser-tests')
+          output.mkdir()
+          for name in ('real_engine', 'capabilities', 'transport'):
+              binaries = [p for p in pathlib.Path('target/aarch64-unknown-linux-gnu/release/deps').glob(name + '-*') if p.is_file() and os.access(p, os.X_OK)]
+              if len(binaries) != 1:
+                  raise RuntimeError('Expected one exact ARM test binary: ' + name)
+              shutil.copy2(binaries[0], output / name)
+          (output / 'build-revision').write_text(os.environ['GITHUB_SHA'] + '\n')
+          PYTHON
+
       - name: Generate overlay assets
         run: python3 scripts/generate_overlays.py
 
@@ -157,6 +175,13 @@ jobs:
           path: |
             system-update/*.tar.gz
             system-update/system-update.unsigned.json
+
+      - name: Upload ARM browser regression fixtures
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-tests-aarch64
+          if-no-files-found: error
+          path: arm-browser-tests/
 
       - name: Upload exact ARM browser checker for device iteration
         uses: actions/upload-artifact@v4
