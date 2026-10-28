@@ -167,12 +167,17 @@ const CONTROL_POINT: &str = r#"function(labels) {
     const node = this.nodeType === 1 ? this : this.parentElement;
     const control = node?.closest(selector);
     if (!control || control.matches(':disabled') || control.getAttribute('aria-disabled') === 'true') return null;
+    const normalize = text => (text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    // Most controls on a news page are unrelated links. Reject those without
+    // forcing style/layout for every ancestor. This is only a cheap prefilter;
+    // matching candidates still require visible innerText and full hit testing.
+    const possible = [control.textContent, control.getAttribute('aria-label'), control.getAttribute('title'), control.value].map(normalize);
+    if (!labels.some(label => possible.some(text => text.includes(normalize(label))))) return null;
     for (let e = control; e; e = e.parentElement || e.getRootNode().host) {
         const style = getComputedStyle(e);
         if (e.inert || style.display === 'none' || style.contentVisibility === 'hidden' || Number(style.opacity) === 0) return null;
     }
     if (getComputedStyle(control).visibility !== 'visible') return null;
-    const normalize = text => (text || '').replace(/\s+/g, ' ').trim().toLowerCase();
     const texts = [control.innerText, control.getAttribute('aria-label'), control.getAttribute('title'), control.value].map(normalize);
     const index = labels.findIndex(label => texts.some(text => text.includes(normalize(label))));
     if (index < 0) return null;
