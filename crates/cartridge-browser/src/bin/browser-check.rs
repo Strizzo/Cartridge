@@ -32,12 +32,18 @@ fn wait_for_visible_link(s: &mut Session, selector: &str) -> Result<(), String> 
     // Client-rendered news lists can appear after DOMContentLoaded or a
     // consent decision. Require a rendered link before real pointer input.
     let selector = serde_json::to_string(selector).unwrap();
-    wait(s, &format!("[...document.querySelectorAll({selector})].some(e=>{{const r=e.getBoundingClientRect();return r.width>1&&r.height>1}})"))?;
+    wait(
+        s,
+        &format!(
+            "[...document.querySelectorAll({selector})].some(e=>{{const r=e.getBoundingClientRect();return r.width>1&&r.height>1}})"
+        ),
+    )?;
     Ok(())
 }
-fn click_selector(s: &mut Session, selector: &str) -> Result<String, String> {
+fn selector_point_expression(selector: &str) -> String {
     let selector = serde_json::to_string(selector).unwrap();
-    let point = wait(s, &format!(r#"(async()=>{{
+    format!(
+        r#"(async()=>{{
         const selector={selector};
         const visible=e=>{{const r=e.getBoundingClientRect();return r.width>1&&r.height>1}};
         const first=[...document.querySelectorAll(selector)].find(visible);
@@ -49,19 +55,34 @@ fn click_selector(s: &mut Session, selector: &str) -> Result<String, String> {
         if(!e)return false;
         const r=[...e.getClientRects()].find(r=>r.width>1&&r.height>1);
         if(!r)return false;
-        const x=(Math.max(0,r.left)+Math.min(innerWidth,r.right))/2;
-        const y=(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2;
+        const left=Math.max(0,r.left),right=Math.min(innerWidth,r.right);
+        const top=Math.max(0,r.top),bottom=Math.min(innerHeight,r.bottom);
+        if(right-left<=1||bottom-top<=1)return false;
+        const x=(left+right)/2,y=(top+bottom)/2;
         const hit=document.elementFromPoint(x,y);
-        if(!hit||(hit!==e&&!e.contains(hit)))return false;
-        return [x,y,innerWidth,key];
-    }})()"#))?;
-    let scale = 720.0 / point[2].as_f64().ok_or("Missing viewport width")?;
-    log::debug!("Trusted click target: {}", point[3]);
+        if(!hit)return false;
+        const blocked=hit!==e&&!e.contains(hit),style=getComputedStyle(hit);
+        const overlay=blocked&&visible(hit)&&style.visibility==='visible'&&Number(style.opacity)>0;
+        return {{x,y,width:innerWidth,key,blocked,overlay,text:e.innerText}};
+    }})()"#
+    )
+}
+fn click_link_point(s: &mut Session, point: &Value) -> Result<String, String> {
+    let scale = 720.0 / point["width"].as_f64().ok_or("Missing viewport width")?;
+    log::debug!("Trusted click target: {}", point["key"]);
     s.action(Action::Click(
-        point[0].as_f64().ok_or("Missing clickable element")? * scale,
-        point[1].as_f64().ok_or("Missing clickable element")? * scale,
+        point["x"].as_f64().ok_or("Missing clickable element")? * scale,
+        point["y"].as_f64().ok_or("Missing clickable element")? * scale,
     ))?;
-    Ok(point[3].as_str().unwrap_or("").to_string())
+    Ok(point["key"].as_str().unwrap_or("").to_string())
+}
+fn click_selector(s: &mut Session, selector: &str) -> Result<String, String> {
+    let expression = selector_point_expression(selector);
+    let point = wait(
+        s,
+        &format!("(async()=>{{const p=await {expression};return p&&!p.blocked?p:false}})()"),
+    )?;
+    click_link_point(s, &point)
 }
 // Called on a candidate element (or CDP search text node). Read layout and
 // hit-test each shadow boundary; never scroll, reveal or activate a control in JS.
@@ -132,7 +153,7 @@ fn shadow_text_point(s: &mut Session, labels: &[&str]) -> Result<Value, String> 
     let mut search_id = None;
     let result: Result<Value, String> = (|| {
         s.call("DOM.getDocument", json!({"depth":0,"pierce":true}))?;
-        for label in labels {
+        for (index, label) in labels.iter().enumerate() {
             let found = s.call(
                 "DOM.performSearch",
                 json!({"query":label,"includeUserAgentShadowDOM":true}),
@@ -166,7 +187,9 @@ fn shadow_text_point(s: &mut Session, labels: &[&str]) -> Result<Value, String> 
                     return Err("Cannot inspect consent control".into());
                 }
                 if point["result"]["value"].is_object() {
-                    return Ok(point["result"]["value"].clone());
+                    let mut point = point["result"]["value"].clone();
+                    point["index"] = json!(index);
+                    return Ok(point);
                 }
             }
         }
@@ -190,20 +213,8 @@ fn shadow_text_point(s: &mut Session, labels: &[&str]) -> Result<Value, String> 
     Ok(point)
 }
 
-/// Prefer rendered controls without materializing the DevTools DOM. The CDP
-/// fallback checks up to 64 results per label, including closed shadow roots.
-/// Both paths use real input.
-fn click_text(s: &mut Session, labels: &[&str]) -> Result<bool, String> {
-    let mut point = visible_text_point(s, labels)?;
-    if !point.is_object() {
-        log::debug!("Consent controls {labels:?}: using CDP shadow fallback");
-        point = shadow_text_point(s, labels)?;
-    } else {
-        log::debug!("Consent controls {labels:?}: found rendered control without DOM search");
-    }
-    if !point.is_object() {
-        return Ok(false);
-    }
+// JS only locates a rendered control; activation stays trusted CDP input.
+fn click_control_point(s: &mut Session, point: &Value) -> Result<(), String> {
     let scale = 720.0 / point["width"].as_f64().ok_or("Missing viewport width")?;
     s.action(Action::Click(
         point["x"].as_f64().ok_or("Missing control x")? * scale,
@@ -213,7 +224,107 @@ fn click_text(s: &mut Session, labels: &[&str]) -> Result<bool, String> {
     while Instant::now() < until {
         s.pump(Duration::from_millis(30))?;
     }
+    Ok(())
+}
+#[cfg(test)]
+fn click_text(s: &mut Session, labels: &[&str]) -> Result<bool, String> {
+    let point = visible_text_point(s, labels)?;
+    if !point.is_object() {
+        return Ok(false);
+    }
+    click_control_point(s, &point)?;
     Ok(true)
+}
+
+fn news_interaction(
+    s: &mut Session,
+    selector: &str,
+    out: &Path,
+    checks: &mut Vec<&str>,
+    article_link: bool,
+) -> Result<String, String> {
+    // Rejection has priority over opening purposes. Missing controls alone are
+    // never a reason to index the hidden DOM when a normal article is clickable.
+    let labels = [
+        "Essential Cookies Only",
+        "I DO NOT ACCEPT",
+        "Reject All",
+        "Show Purposes",
+    ];
+    let deadline = Instant::now() + Duration::from_secs(35);
+    let expression = selector_point_expression(selector);
+    let mut shadow_searches = 0;
+    let mut next_shadow_search = Instant::now();
+    let mut choices = 0;
+    while Instant::now() < deadline {
+        let mut control = visible_text_point(s, &labels)?;
+        if !control.is_object() {
+            let point = s.evaluate(&expression)?;
+            if point.is_object() && point["blocked"] == false {
+                if !article_link {
+                    // This replaces the heading wait with the same 35-second
+                    // bound, while honoring consent that arrives on the article.
+                    if point["text"]
+                        .as_str()
+                        .is_some_and(|text| text.trim().len() > 10)
+                    {
+                        return Ok(String::new());
+                    }
+                    s.pump(Duration::from_millis(50))?;
+                    continue;
+                }
+                capture(s, out, "after-consent")?;
+                // Capturing can span a layout update; revalidate the same kind of
+                // intended link after two animation frames before real input.
+                let point = s.evaluate(&expression)?;
+                if point.is_object() && point["blocked"] == false {
+                    return click_link_point(s, &point);
+                }
+                continue;
+            }
+            if article_link && point["overlay"] == true {
+                // An asynchronous consent UI may have appeared during the link
+                // probe. Try ALL visible choices again before closed-shadow search.
+                control = visible_text_point(s, &labels)?;
+                if !control.is_object()
+                    && shadow_searches < 3
+                    && Instant::now() >= next_shadow_search
+                {
+                    log::debug!(
+                        "Stable intended link {} is visibly occluded; closed-shadow consent search",
+                        point["key"]
+                    );
+                    shadow_searches += 1;
+                    control = shadow_text_point(s, &labels)?;
+                    next_shadow_search = Instant::now() + Duration::from_millis(500);
+                }
+            }
+        }
+        if control.is_object() {
+            if choices == 6 {
+                return Err("Consent controls did not expose an actionable article".into());
+            }
+            choices += 1;
+            log::debug!(
+                "Trusted visible consent choice: {}",
+                labels[control["index"].as_u64().unwrap_or(0) as usize]
+            );
+            click_control_point(s, &control)?;
+            // Poll the newly exposed UI before paying for another shadow search.
+            next_shadow_search = Instant::now() + Duration::from_millis(500);
+            if control["index"].as_u64().unwrap_or(0) < 3
+                && !checks.contains(&"rejected optional consent through site control")
+            {
+                checks.push("rejected optional consent through site control");
+            }
+        } else {
+            s.pump(Duration::from_millis(50))?;
+            std::thread::sleep(Duration::from_millis(80));
+        }
+    }
+    Err(format!(
+        "News interaction timed out: no stable, unobstructed target {selector}"
+    ))
 }
 fn check_sandbox(engine: &Path, out: &Path) -> Result<(), String> {
     let out = out.join("sandbox");
@@ -345,34 +456,21 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
         checks.push("map search returned results");
         capture(&mut s, &out, "map-search")?;
     } else {
-        // Use the site's visible consent buttons, including shadow DOM.
-        for _ in 0..3 {
-            if click_text(
-                &mut s,
-                &["Essential Cookies Only", "I DO NOT ACCEPT", "Reject All"],
-            )? {
-                checks.push("rejected optional consent through site control");
-                break;
-            }
-            if !click_text(&mut s, &["Show Purposes"])? {
-                break;
-            }
-        }
-        capture(&mut s, &out, "after-consent")?;
         let selector = if site == "slashdot" {
             "a[href*='/story/']"
         } else {
             "a[href*='/202']:not([href*='/videos/']):not([href*='/live-news/'])"
         };
         let before = s.evaluate("location.href")?;
-        wait_for_visible_link(&mut s, selector)?;
-        let expected_article = click_selector(&mut s, selector)?;
+        let expected_article = news_interaction(&mut s, selector, &out, &mut checks, true)?;
         let expected = serde_json::to_string(&expected_article).unwrap();
         wait(
             &mut s,
-            &format!("(()=>{{const wanted=new URL({expected});return location.pathname===wanted.pathname&&location.hostname.split('.').slice(-2).join('.')===wanted.hostname.split('.').slice(-2).join('.')&&location.href!=={before}&&document.readyState!=='loading'}})()"),
+            &format!(
+                "(()=>{{const wanted=new URL({expected});return location.pathname===wanted.pathname&&location.hostname.split('.').slice(-2).join('.')===wanted.hostname.split('.').slice(-2).join('.')&&location.href!=={before}&&document.readyState!=='loading'}})()"
+            ),
         )?;
-        wait(&mut s, "document.querySelector('h1')?.innerText?.length>10")?;
+        news_interaction(&mut s, "h1", &out, &mut checks, false)?;
         checks.push("article opened through real link input");
         capture(&mut s, &out, "article")?;
         log::debug!("Article URL before Back: {}", s.evaluate("location.href")?);
@@ -548,7 +646,9 @@ mod tests {
             visible_text_point(&mut s, &["Closed reject"]).unwrap(),
             Value::Null
         );
-        assert!(click_text(&mut s, &["Closed reject"]).unwrap());
+        let point = shadow_text_point(&mut s, &["Closed reject"]).unwrap();
+        assert!(point.is_object());
+        click_control_point(&mut s, &point).unwrap();
         assert_eq!(s.evaluate("window.choice").unwrap(), true);
         assert_dom_disabled(&mut s);
         println!("PASS: closed shadow fallback, trusted click, DOM agent disabled after success");
@@ -559,6 +659,93 @@ mod tests {
         assert!(!click_text(&mut s, &["No such choice"]).unwrap());
         assert_dom_disabled(&mut s);
         println!("PASS: DOM agent disabled after inspection failure and missing label");
+        let out = profile.join("captures");
+        std::fs::create_dir_all(&out).unwrap();
+        println!("FIXTURE: normal listing with hidden consent tree");
+        s.evaluate(r##"(()=>{
+            document.body.innerHTML='<div id="vendors" hidden></div><a id="story" href="#article">Read intended story</a>';
+            for(let i=0;i<25000;i++) {
+                const button=document.createElement('button');button.textContent='Reject All';
+                document.getElementById('vendors').append(button);
+            }
+            window.articleClick=null;
+            document.getElementById('story').onclick=e=>window.articleClick=e.isTrusted;
+            return true;
+        })()"##).unwrap();
+        let mut checks = vec![];
+        assert!(
+            news_interaction(&mut s, "#story", &out, &mut checks, true)
+                .unwrap()
+                .ends_with("#article")
+        );
+        assert_eq!(s.evaluate("window.articleClick").unwrap(), true);
+        assert!(checks.is_empty());
+        assert_dom_disabled(&mut s);
+        println!("PASS: normal article click never indexes 25,000 hidden consent controls");
+
+        println!("FIXTURE: visible Show Purposes before asynchronous rejection");
+        s.evaluate(r#"(()=>{
+            document.body.insertAdjacentHTML('beforeend',`<div id="consent" style="position:fixed;inset:0;background:white;z-index:10">
+                <button id="purposes">Show Purposes</button><button id="later-reject" hidden>Reject All</button></div>`);
+            window.consentClicks=[];
+            document.getElementById('purposes').onclick=e=>{
+                window.consentClicks.push(['purposes',e.isTrusted]);e.target.hidden=true;
+                setTimeout(()=>document.getElementById('later-reject').hidden=false,750);
+            };
+            document.getElementById('later-reject').onclick=e=>{
+                window.consentClicks.push(['reject',e.isTrusted]);document.getElementById('consent').remove();
+            };
+            window.articleClick=null;
+            return true;
+        })()"#).unwrap();
+        let mut checks = vec![];
+        news_interaction(&mut s, "#story", &out, &mut checks, true).unwrap();
+        assert_eq!(
+            s.evaluate("window.consentClicks").unwrap(),
+            json!([["purposes", true], ["reject", true]])
+        );
+        assert_eq!(s.evaluate("window.articleClick").unwrap(), true);
+        assert!(checks.contains(&"rejected optional consent through site control"));
+        assert_dom_disabled(&mut s);
+        println!(
+            "PASS: visible Show Purposes then delayed rejection and intended article, no DOM search"
+        );
+
+        println!("FIXTURE: consent arriving on the article");
+        s.evaluate(r#"(()=>{
+            document.body.insertAdjacentHTML('beforeend',`<h1>Intended rendered article heading</h1>
+                <div id="late-consent" style="position:fixed;inset:0;background:white;z-index:10"><button>Reject All</button></div>`);
+            window.lateChoice=null;window.articleClick=null;
+            document.querySelector('#late-consent button').onclick=e=>{window.lateChoice=e.isTrusted;document.getElementById('late-consent').remove()};
+            return true;
+        })()"#).unwrap();
+        news_interaction(&mut s, "h1", &out, &mut checks, false).unwrap();
+        assert_eq!(s.evaluate("window.lateChoice").unwrap(), true);
+        assert_eq!(s.evaluate("window.articleClick").unwrap(), Value::Null);
+        assert_dom_disabled(&mut s);
+        println!("PASS: late visible consent honored before unobstructed heading verification");
+
+        println!("FIXTURE: closed-shadow overlay blocks intended link");
+        s.evaluate(r#"(()=>{
+            document.getElementById('vendors').remove();
+            const host=document.createElement('div');host.id='closed-overlay';
+            host.style='position:fixed;inset:0;background:white;z-index:10';document.body.append(host);
+            const root=host.attachShadow({mode:'closed'});
+            root.innerHTML='<button style="width:180px;height:44px">Reject All</button>';
+            window.closedChoice=null;window.articleClick=null;
+            root.querySelector('button').onclick=e=>{window.closedChoice=e.isTrusted;host.remove()};
+            return true;
+        })()"#).unwrap();
+        let point = s.evaluate(&selector_point_expression("#story")).unwrap();
+        assert_eq!(point["overlay"], true);
+        let mut checks = vec![];
+        news_interaction(&mut s, "#story", &out, &mut checks, true).unwrap();
+        assert_eq!(s.evaluate("window.closedChoice").unwrap(), true);
+        assert_eq!(s.evaluate("window.articleClick").unwrap(), true);
+        assert_dom_disabled(&mut s);
+        println!(
+            "PASS: closed-shadow search requires blocked intended link, real choice, and DOM cleanup"
+        );
         drop(s);
         std::fs::remove_dir_all(profile).unwrap();
     }
