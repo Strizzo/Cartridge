@@ -1,7 +1,7 @@
 # Build your first Cartridge app
 
 Build a small app on your Mac before using a handheld. This guide targets the
-public stable **CartridgeOS v0.7.0** runtime. The finished app counts A presses,
+public stable **CartridgeOS v0.7.1** runtime. The finished app counts A presses,
 resets with B and saves its count locally. You can run and edit it without
 installing anything on a device or preparing an SD card.
 
@@ -36,7 +36,7 @@ brew install sdl2 sdl2_ttf sdl2_image sdl2_gfx
 Clone the release tag, which keeps the runtime at the API version used here:
 
 ```bash
-git clone --depth 1 --branch v0.7.0 https://github.com/Strizzo/Cartridge.git Cartridge
+git clone --depth 1 --branch v0.7.1 https://github.com/Strizzo/Cartridge.git Cartridge
 cd Cartridge
 ```
 
@@ -47,25 +47,11 @@ device installation is a separate workflow in [INSTALL.md](../INSTALL.md).
 
 ## 2. Get and run the starter
 
-This tutorial and its starter were added **after** the v0.7.0 release, so they
-are absent from that tag. Download just the two starter files from the current
-documentation branch into your pinned runtime checkout:
+The starter is included in the release checkout:
 
 ```bash
-mkdir -p examples/hello-cartridge
-curl --fail --location \
-  https://raw.githubusercontent.com/Strizzo/Cartridge/main/examples/hello-cartridge/cartridge.json \
-  --output examples/hello-cartridge/cartridge.json
-curl --fail --location \
-  https://raw.githubusercontent.com/Strizzo/Cartridge/main/examples/hello-cartridge/main.lua \
-  --output examples/hello-cartridge/main.lua
 ./sim.sh app examples/hello-cartridge
 ```
-
-If you already have a current `main` checkout containing
-[`examples/hello-cartridge`](../examples/hello-cartridge/), run the last command
-there directly. `main` currently carries the v0.7.0 runtime plus documentation;
-the tag above is the reproducible runtime baseline.
 
 You should see a 720×720 window showing **Hello, Cartridge** with a count of 0.
 Use the controller's face buttons or these keyboard equivalents:
@@ -108,8 +94,8 @@ selects its Lua entry point and declares permissions:
 
 `version` is your app's version; `min_runtime` is the minimum CartridgeOS
 version, a plain semantic version such as `0.7.0`. The runtime checks it when
-loading the manifest. Keep this starter's minimum at `0.7.0`, the baseline
-tested by this tutorial. Use a unique ID for a new app: storage is scoped by
+loading the manifest. Keep this starter's minimum at `0.7.0`, the API baseline
+used by this starter. Use v0.7.1 or newer for the runtime security fixes. Use a unique ID for a new app: storage is scoped by
 that ID. Request only permissions you use. Here, `storage` enables
 `storage.load` and `storage.save`; without it the `storage` table is absent.
 Drawing, input callbacks, `theme`, `ui`, `json` and `app` need no permission.

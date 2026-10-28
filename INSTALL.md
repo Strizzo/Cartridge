@@ -19,7 +19,7 @@ establish a failure rate for all bundled cards.
 
 ## What this download supports
 
-These instructions describe the **v0.7.0 application bundle**, developed and tested
+These instructions describe the **v0.7.1 application bundle**, developed and tested
 on an R36S Plus with an existing working Linux/EmulationStation setup. Other
 models, similarly named hardware and firmware variants have not been validated.
 Primary startup setup checks the expected stock service and refuses unrecognized
@@ -32,27 +32,29 @@ layouts. Do not bypass that check.
   system or its drivers.
 - The macOS image installer is a prototype for verified local images and empty
   cards. A general-purpose public image installer is not included in this release.
-- The default `main` branch now contains the released v0.7.0 runtime and the
+- The default `main` branch now contains the released v0.7.1 runtime and the
   current installation guidance. The immutable
-  [v0.7.0 tag](https://github.com/Strizzo/Cartridge/tree/v0.7.0) identifies the
+  [v0.7.1 tag](https://github.com/Strizzo/Cartridge/tree/v0.7.1) identifies the
   release source. Older boot-selector scripts have different behavior and must
   not be mixed with this procedure.
 
 ## Add Cartridge while retaining normal startup
 
 1. Make the backup described above. Download `cartridge-r36s-plus.zip` from the
-   [v0.7.0 release](https://github.com/Strizzo/Cartridge/releases/tag/v0.7.0).
+   [v0.7.1 release](https://github.com/Strizzo/Cartridge/releases/tag/v0.7.1).
    Use the ZIP for this initial install; the `cartridgeos-…tar.gz` file is an
    update payload for an already bootstrapped installation.
 
-   The v0.7.0 ZIP's SHA-256 is:
+   Download `SHA256SUMS` from the same release into the same folder as the ZIP.
+   Verify the archive there before extracting (on macOS):
 
-   ```text
-   7f01a61d924ef4017579a403508d1fb878d968c1d6b9928356d03af78a2014c7
+   ```bash
+   shasum -a 256 -c SHA256SUMS
    ```
 
-   On macOS, run `shasum -a 256 /path/to/cartridge-r36s-plus.zip` and compare
-   the result. This checksum applies only to the v0.7.0 ZIP.
+   Continue only if it reports `cartridge-r36s-plus.zip: OK`. This checksum
+   detects an incomplete or changed download; signed online updates have a
+   separate signature verification step.
 
 2. Power off the handheld normally, remove its card, and insert it into your
    computer. Open the existing ROMS volume, often labelled `EASYROMS`. It may
@@ -86,7 +88,7 @@ layouts. Do not bypass that check.
 
 5. Safely eject the card, put it back in the powered-off handheld, then boot
    normally into EmulationStation. Open **Options → Tools → Cartridge** (some
-   themes show Tools directly). With the v0.7.0 scripts this launches Cartridge
+   themes show Tools directly). With the v0.7.1 scripts this launches Cartridge
    without changing the startup service.
 
 6. Confirm that the launcher and the apps you need work, and that you can return
@@ -114,7 +116,7 @@ resolved and Setup is run again. This relies on the existing stock system being
 healthy; it cannot recover a broken kernel or unreadable card.
 
 For implementation details, see the release's
-[primary-session guide](https://github.com/Strizzo/Cartridge/blob/v0.7.0/docs/primary-session.md).
+[primary-session guide](https://github.com/Strizzo/Cartridge/blob/v0.7.1/docs/primary-session.md).
 
 ## Return to EmulationStation and undo
 
@@ -128,7 +130,7 @@ For implementation details, see the release's
   Remove the recovery file when you want Cartridge to start again.
 - Deleting the payload copy of `Cartridge/cartridge-boot.service` does **not**
   undo an installed Linux service override. The recovery file and Undo tool
-  above apply to the v0.7.0 primary-session setup. Legacy installations need
+  above apply to the v0.7.1 primary-session setup. Legacy installations need
   their own configuration inspected first.
 
 ## Updates, development and troubleshooting
@@ -137,7 +139,7 @@ For implementation details, see the release's
   are in place, use Settings → System Update for signed Cartridge runtime
   updates, and the Store for app updates. Linux, drivers and the kernel are
   outside that updater. See
-  [the update guide](https://github.com/Strizzo/Cartridge/blob/v0.7.0/docs/online-updates.md)
+  [the update guide](https://github.com/Strizzo/Cartridge/blob/v0.7.1/docs/online-updates.md)
   for power, space and bootstrap requirements.
 - **No Tools entry:** check the three scripts really are in the volume's root
   `tools/` folder, not only in `Cartridge/tools/`.
@@ -151,7 +153,7 @@ For implementation details, see the release's
   version, the action that failed and relevant logs. Remove passwords, network
   credentials and other private information before sharing logs.
 - **Try it on a computer first:** use the release's
-  [simulator guide](https://github.com/Strizzo/Cartridge/blob/v0.7.0/docs/simulator.md)
-  and [app development guide](https://github.com/Strizzo/Cartridge/blob/v0.7.0/docs/app-development.md).
+  [simulator guide](https://github.com/Strizzo/Cartridge/blob/v0.7.1/docs/simulator.md)
+  and [app development guide](https://github.com/Strizzo/Cartridge/blob/v0.7.1/docs/app-development.md).
   The simulator runs the real app code; device drivers and physical performance
   still need testing on the handheld.

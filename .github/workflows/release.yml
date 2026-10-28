@@ -111,16 +111,21 @@ jobs:
         working-directory: release
         run: zip -r ../cartridge-r36s-plus.zip .
 
+      - name: Checksum the install archive
+        run: sha256sum cartridge-r36s-plus.zip > SHA256SUMS
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: cartridge-r36s-plus.zip
+          files: |
+            cartridge-r36s-plus.zip
+            SHA256SUMS
           generate_release_notes: true
           draft: true
           body: |
             ## Installation
 
-            1. Download `cartridge-r36s-plus.zip`
+            1. Download `cartridge-r36s-plus.zip` and `SHA256SUMS`; verify the checksum before extracting
             2. Extract the zip to your SD card's `roms/` folder (creates `roms/Cartridge/`)
             3. Copy the 3 `.sh` files from `roms/Cartridge/tools/` into `roms/tools/`
             4. Boot your device into EmulationStation
