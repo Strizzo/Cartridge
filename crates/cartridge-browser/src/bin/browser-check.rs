@@ -1,9 +1,82 @@
 //! Opt-in live-site checks for the local engine; not part of offline CI.
 use base64::Engine as _;
-use cartridge_browser::engine::{Action, Session, Shared, discover};
+use cartridge_browser::engine::{Action, Session as EngineSession, Shared, discover};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+
+// Match ui.rs: real input keeps transfer at 24 fps for two seconds; an idle
+// page transfers at 8 fps. Inspection is not user input. The direct engine API
+// otherwise stays at its initial rate even during a long network/consent wait.
+struct Session {
+    engine: EngineSession,
+    last_input: Instant,
+    frame_rate: u8,
+}
+impl Session {
+    fn start(engine: &Path, profile: &Path, shared: Shared) -> Result<Self, String> {
+        Ok(Self {
+            engine: EngineSession::start(engine, profile, shared)?,
+            last_input: Instant::now(),
+            frame_rate: 24,
+        })
+    }
+    fn pace(&mut self) -> Result<(), String> {
+        let fps = if self.last_input.elapsed() < Duration::from_secs(2) {
+            24
+        } else {
+            8
+        };
+        if self.frame_rate != fps {
+            self.engine.action(Action::FrameRate(fps))?;
+            self.frame_rate = fps;
+            log::debug!("Native page-transfer budget: {fps} fps");
+        }
+        Ok(())
+    }
+    fn action(&mut self, action: Action) -> Result<(), String> {
+        if matches!(
+            &action,
+            Action::Navigate(_)
+                | Action::Back
+                | Action::Forward
+                | Action::Reload
+                | Action::Stop
+                | Action::Pointer(..)
+                | Action::Button(..)
+                | Action::Click(..)
+                | Action::Scroll(..)
+                | Action::Key(..)
+                | Action::Text(_)
+                | Action::Zoom(_)
+        ) {
+            self.last_input = Instant::now();
+        }
+        self.pace()?;
+        if let Action::Click(x, y) = action {
+            // The frontend points, presses and releases through these actions.
+            // Exercise that path (including buttons=1/0), rather than the raw
+            // convenience click whose pressed event omits the buttons state.
+            self.engine.action(Action::Pointer(x, y))?;
+            self.engine.action(Action::Button(x, y, true))?;
+            self.engine.action(Action::Button(x, y, false))
+        } else {
+            self.engine.action(action)
+        }
+    }
+    fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
+        self.pace()?;
+        self.engine.call(method, params)
+    }
+    fn evaluate(&mut self, expression: &str) -> Result<Value, String> {
+        self.pace()?;
+        self.engine.evaluate(expression)
+    }
+    fn pump(&mut self, timeout: Duration) -> Result<(), String> {
+        self.pace()?;
+        self.engine.pump(timeout)
+    }
+}
 
 fn wait(s: &mut Session, expression: &str) -> Result<Value, String> {
     let deadline = Instant::now() + Duration::from_secs(35);
@@ -16,7 +89,10 @@ fn wait(s: &mut Session, expression: &str) -> Result<Value, String> {
         }
         std::thread::sleep(Duration::from_millis(80));
     }
-    Err(format!("Site condition timed out: {expression}"))
+    let state = s.evaluate("({url:location.href,ready:document.readyState,title:document.title,body_chars:document.body?.innerText.length,h1:document.querySelector('h1')?.innerText})");
+    Err(format!(
+        "Site condition timed out: {expression}; actual page: {state:?}"
+    ))
 }
 fn capture(s: &mut Session, out: &Path, name: &str) -> Result<(), String> {
     let result = s.call(
@@ -250,6 +326,7 @@ fn news_interaction(
     selector: &str,
     checks: &mut Vec<&str>,
     article_link: bool,
+    require_consent: bool,
 ) -> Result<String, String> {
     // Rejection has priority over opening purposes. Missing controls alone are
     // never a reason to index the hidden DOM when a normal article is clickable.
@@ -267,6 +344,15 @@ fn news_interaction(
     while Instant::now() < deadline {
         let mut control = visible_text_point(s, &labels)?;
         if !control.is_object() {
+            if require_consent
+                && !checks.contains(&"rejected optional consent through site control")
+            {
+                // Exercise a reader who waits for the site's own privacy UI.
+                // Do not navigate away early merely because a link is ready.
+                s.pump(Duration::from_millis(50))?;
+                std::thread::sleep(Duration::from_millis(80));
+                continue;
+            }
             let point = s.evaluate(&expression)?;
             if point.is_object() && point["blocked"] == false {
                 if !article_link {
@@ -327,6 +413,9 @@ fn news_interaction(
             std::thread::sleep(Duration::from_millis(80));
         }
     }
+    if require_consent && !checks.contains(&"rejected optional consent through site control") {
+        return Err("The required visible consent flow did not finish within 35 seconds".into());
+    }
     Err(format!(
         "News interaction timed out: no stable, unobstructed target {selector}"
     ))
@@ -381,9 +470,9 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
     let mut s = Session::start(engine, &profile, shared.clone())?;
     let url = match site {
         "slashdot" => "https://slashdot.org/",
-        "cnn" => "https://www.cnn.com/",
+        "cnn" | "cnn-consent" => "https://www.cnn.com/",
         "osm" => "https://www.openstreetmap.org/",
-        _ => return Err("Choose slashdot, cnn or osm".into()),
+        _ => return Err("Choose slashdot, cnn, cnn-consent or osm".into()),
     };
     s.action(Action::Navigate(url.into()))?;
     s.action(Action::Zoom(0.75))?;
@@ -400,7 +489,7 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
     capture(&mut s, &out, "initial")?;
-    if site == "cnn"
+    if matches!(site, "cnn" | "cnn-consent")
         && inspect["body"]
             .as_str()
             .is_some_and(|s| s.trim() == "Unknown Error")
@@ -467,7 +556,8 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
             "a[href*='/202']:not([href*='/videos/']):not([href*='/live-news/'])"
         };
         let before = s.evaluate("location.href")?;
-        let expected_article = news_interaction(&mut s, selector, &mut checks, true)?;
+        let expected_article =
+            news_interaction(&mut s, selector, &mut checks, true, site == "cnn-consent")?;
         let expected = serde_json::to_string(&expected_article).unwrap();
         wait(
             &mut s,
@@ -475,7 +565,7 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
                 "(()=>{{const wanted=new URL({expected});return location.pathname===wanted.pathname&&location.hostname.split('.').slice(-2).join('.')===wanted.hostname.split('.').slice(-2).join('.')&&location.href!=={before}&&document.readyState!=='loading'}})()"
             ),
         )?;
-        news_interaction(&mut s, "h1", &mut checks, false)?;
+        news_interaction(&mut s, "h1", &mut checks, false, false)?;
         checks.push("article opened through real link input");
         capture(&mut s, &out, "article")?;
         log::debug!("Article URL before Back: {}", s.evaluate("location.href")?);
@@ -512,7 +602,7 @@ fn run() -> Result<(), String> {
             "--engine" => engine = Some(PathBuf::from(args.next().ok_or("Missing engine path")?)),
             "--help" => {
                 println!(
-                    "browser-check --site all|slashdot|cnn|osm|sandbox --out NEW-DIRECTORY [--engine PATH]\nOpt-in real-site checks. Creates isolated profiles and public-page captures, never personal browser sessions."
+                    "browser-check --site all|slashdot|cnn|cnn-consent|osm|sandbox --out NEW-DIRECTORY [--engine PATH]\nOpt-in real-site checks. Creates isolated profiles and public-page captures, never personal browser sessions."
                 );
                 return Ok(());
             }
@@ -671,18 +761,23 @@ mod tests {
                 const button=document.createElement('button');button.textContent='Reject All';
                 document.getElementById('vendors').append(button);
             }
-            window.articleClick=null;
+            window.articleClick=null;window.buttonStates=[];
+            for(const kind of ['pointerdown','pointerup']) document.getElementById('story').addEventListener(kind,e=>window.buttonStates.push([e.buttons,e.isTrusted]));
             document.getElementById('story').onclick=e=>window.articleClick=e.isTrusted;
             return true;
         })()"##).unwrap();
         let mut checks = vec![];
         assert!(
-            news_interaction(&mut s, "#story", &mut checks, true)
+            news_interaction(&mut s, "#story", &mut checks, true, false)
                 .unwrap()
                 .ends_with("#article")
         );
         assert_eq!(s.evaluate("window.articleClick").unwrap(), true);
         assert!(checks.is_empty());
+        assert_eq!(
+            s.evaluate("window.buttonStates").unwrap(),
+            json!([[1, true], [0, true]])
+        );
         assert_dom_disabled(&mut s);
         println!("PASS: normal article click never indexes 25,000 hidden consent controls");
 
@@ -702,7 +797,7 @@ mod tests {
             return true;
         })()"#).unwrap();
         let mut checks = vec![];
-        news_interaction(&mut s, "#story", &mut checks, true).unwrap();
+        news_interaction(&mut s, "#story", &mut checks, true, true).unwrap();
         assert_eq!(
             s.evaluate("window.consentClicks").unwrap(),
             json!([["purposes", true], ["reject", true]])
@@ -722,7 +817,7 @@ mod tests {
             document.querySelector('#late-consent button').onclick=e=>{window.lateChoice=e.isTrusted;document.getElementById('late-consent').remove()};
             return true;
         })()"#).unwrap();
-        news_interaction(&mut s, "h1", &mut checks, false).unwrap();
+        news_interaction(&mut s, "h1", &mut checks, false, false).unwrap();
         assert_eq!(s.evaluate("window.lateChoice").unwrap(), true);
         assert_eq!(s.evaluate("window.articleClick").unwrap(), Value::Null);
         assert_dom_disabled(&mut s);
@@ -742,7 +837,7 @@ mod tests {
         let point = s.evaluate(&selector_point_expression("#story")).unwrap();
         assert_eq!(point["overlay"], true);
         let mut checks = vec![];
-        news_interaction(&mut s, "#story", &mut checks, true).unwrap();
+        news_interaction(&mut s, "#story", &mut checks, true, false).unwrap();
         assert_eq!(s.evaluate("window.closedChoice").unwrap(), true);
         assert_eq!(s.evaluate("window.articleClick").unwrap(), true);
         assert_dom_disabled(&mut s);
