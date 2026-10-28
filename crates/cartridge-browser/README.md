@@ -154,6 +154,11 @@ reject optional cookies before opening an article, use `--site cnn-consent`.
 This is a separate, currently failing handheld acceptance case; an ordinary CNN
 navigation pass does not imply it passes.
 
+For isolated transfer-cost experiments, the checker accepts
+`CARTRIDGE_BROWSER_CHECK_ACTIVE_FPS` and `CARTRIDGE_BROWSER_CHECK_IDLE_FPS`
+(integers 1–30). Defaults remain 24/8, matching the native interface; alternate
+budgets appear in `report.json` and do not change the production frontend.
+
 This exercises news article links and Back on Slashdot/CNN, and map dragging,
 zoom controls and location search on OpenStreetMap. It saves public-page captures,
 inspection metadata and reports using its own profiles. A blocked consent dialog,

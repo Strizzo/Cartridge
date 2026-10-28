@@ -12,20 +12,41 @@ struct Session {
     engine: EngineSession,
     last_input: Instant,
     frame_rate: u8,
+    active_fps: u8,
+    idle_fps: u8,
 }
 impl Session {
     fn start(engine: &Path, profile: &Path, shared: Shared) -> Result<Self, String> {
-        Ok(Self {
+        let budget = |name: &str, default| -> Result<u8, String> {
+            match std::env::var(name) {
+                Ok(value) => value
+                    .parse::<u8>()
+                    .ok()
+                    .filter(|fps| (1..=30).contains(fps))
+                    .ok_or_else(|| format!("{name} must be an integer from 1 to 30")),
+                Err(std::env::VarError::NotPresent) => Ok(default),
+                Err(_) => Err(format!("{name} must be valid text")),
+            }
+        };
+        // Diagnostic overrides never change the production frontend's budget.
+        let active_fps = budget("CARTRIDGE_BROWSER_CHECK_ACTIVE_FPS", 24)?;
+        let idle_fps = budget("CARTRIDGE_BROWSER_CHECK_IDLE_FPS", 8)?;
+        log::debug!("Checker transfer budget: {active_fps} active / {idle_fps} idle fps");
+        let mut session = Self {
             engine: EngineSession::start(engine, profile, shared)?,
             last_input: Instant::now(),
             frame_rate: 24,
-        })
+            active_fps,
+            idle_fps,
+        };
+        session.pace()?;
+        Ok(session)
     }
     fn pace(&mut self) -> Result<(), String> {
         let fps = if self.last_input.elapsed() < Duration::from_secs(2) {
-            24
+            self.active_fps
         } else {
-            8
+            self.idle_fps
         };
         if self.frame_rate != fps {
             self.engine.action(Action::FrameRate(fps))?;
@@ -582,7 +603,7 @@ fn check(site: &str, engine: &Path, out: &Path) -> Result<(), String> {
     }
     let final_url = s.evaluate("location.href")?;
     let engine_version = shared.lock().unwrap().info.engine_version.clone();
-    let report = json!({"site":site,"engine":engine_version,"elapsed_seconds":started.elapsed().as_secs_f64(),"checks":checks,"final_url":final_url});
+    let report = json!({"transfer_fps":{"active":s.active_fps,"idle":s.idle_fps},"site":site,"engine":engine_version,"elapsed_seconds":started.elapsed().as_secs_f64(),"checks":checks,"final_url":final_url});
     std::fs::write(
         out.join("report.json"),
         serde_json::to_vec_pretty(&report).unwrap(),
